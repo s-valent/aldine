@@ -65,13 +65,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const buf = Buffer.from(zipBase64, 'base64');
       if (buf.length > 60 * 1024 * 1024) return reply.code(413).send({ error: 'ZIP too large (max 60 MB)' });
       const entries = unzip(buf);
-      const paths = Object.keys(entries).filter((p) => !p.includes('..') && !p.startsWith('/') && !p.startsWith('__MACOSX/') && !p.includes('/.git/'));
+      const paths = Object.keys(entries).filter((p) => !p.includes('..') && !p.startsWith('/') && !p.startsWith('__MACOSX/') && !isHiddenPath(p));
       if (!paths.length) return reply.code(400).send({ error: 'ZIP had no usable files' });
       // create with text files seeded; write binaries as buffers afterward
       const textFiles: Record<string, string> = {};
       const binFiles: string[] = [];
       for (const p of paths) {
-        if (isTextFile(p)) textFiles[p] = entries[p].toString('utf8');
+        const data = entries[p];
+        // treat as text only if the extension says so AND there's no NUL byte in the head
+        const looksBinary = data.subarray(0, 8000).includes(0);
+        if (isTextFile(p) && !looksBinary) textFiles[p] = data.toString('utf8');
         else binFiles.push(p);
       }
       const meta = await store.createProject(name || 'Imported project', textFiles);

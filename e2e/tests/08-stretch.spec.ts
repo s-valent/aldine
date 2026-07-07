@@ -55,6 +55,24 @@ test.describe('ZIP import', () => {
     await expect(page.locator('.cm-content')).toContainText('ZIP-IMPORTED');
     fs.rmSync(tmp, { recursive: true, force: true });
   });
+
+  test('import rejects .git/ entries (no config injection)', async ({ request }) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-evil-'));
+    fs.writeFileSync(path.join(tmp, 'main.tex'), '\\documentclass{article}\\begin{document}x\\end{document}');
+    fs.mkdirSync(path.join(tmp, '.git'));
+    fs.writeFileSync(path.join(tmp, '.git', 'config'), '[core]\n  evil = true');
+    execSync(`cd ${tmp} && zip -q -r evil.zip main.tex .git`);
+    const b64 = fs.readFileSync(path.join(tmp, 'evil.zip')).toString('base64');
+    const res = await request.post('/api/projects/import', { data: { name: 'Evil', zipBase64: b64 } });
+    expect(res.ok()).toBeTruthy();
+    const { id } = await res.json();
+    const files = await (await request.get(`/api/projects/${id}/files?branch=main`)).json();
+    const paths = files.filter((f: { type: string }) => f.type === 'file').map((f: { path: string }) => f.path);
+    expect(paths).toContain('main.tex');
+    expect(paths.some((p: string) => p.startsWith('.git/'))).toBeFalsy();
+    await request.delete(`/api/projects/${id}`);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
 });
 
 test.describe('project-wide \\ref indexing', () => {

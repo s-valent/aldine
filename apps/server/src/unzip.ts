@@ -5,8 +5,12 @@ import zlib from 'node:zlib';
  * Parses the End-of-Central-Directory + central directory, then local headers.
  * Returns { path -> Buffer } for files (directories skipped).
  */
+const MAX_ENTRY_BYTES = 40 * 1024 * 1024;   // 40 MB per file
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024;  // 200 MB inflated total
+
 export function unzip(buf: Buffer): Record<string, Buffer> {
   const out: Record<string, Buffer> = {};
+  let total = 0;
   // find End of Central Directory (0x06054b50), scanning from the end
   let eocd = -1;
   for (let i = buf.length - 22; i >= 0 && i > buf.length - 22 - 65536; i--) {
@@ -36,8 +40,10 @@ export function unzip(buf: Buffer): Record<string, Buffer> {
     const comp = buf.subarray(dataStart, dataStart + compSize);
     let data: Buffer;
     if (method === 0) data = comp;
-    else if (method === 8) data = zlib.inflateRawSync(comp);
+    else if (method === 8) data = zlib.inflateRawSync(comp, { maxOutputLength: MAX_ENTRY_BYTES });
     else continue; // unsupported method
+    total += data.length;
+    if (total > MAX_TOTAL_BYTES) throw new Error('archive expands too large');
     out[name] = data;
   }
   return out;

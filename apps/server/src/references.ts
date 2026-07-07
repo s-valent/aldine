@@ -20,20 +20,29 @@ export async function fetchBibEntry(query: string): Promise<string | null> {
   return null;
 }
 
+/** Read a response body but abort if it exceeds a sane cap (defends against huge redirect targets). */
+async function readCapped(res: Response, cap = 2 * 1024 * 1024): Promise<string> {
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len && len > cap) throw new Error('reference response too large');
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > cap) throw new Error('reference response too large');
+  return buf.toString('utf8');
+}
+
 async function fetchDoi(doi: string): Promise<string | null> {
   const res = await fetch(`${DOI_BASE}/${encodeURIComponent(doi)}`, {
     headers: { Accept: 'application/x-bibtex; charset=utf-8' },
     redirect: 'follow',
   });
   if (!res.ok) throw new Error(`DOI lookup failed (HTTP ${res.status})`);
-  const bib = (await res.text()).trim();
+  const bib = (await readCapped(res)).trim();
   return bib.startsWith('@') ? bib : null;
 }
 
 async function fetchArxiv(id: string): Promise<string | null> {
   const res = await fetch(`${ARXIV_BASE}/api/query?id_list=${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`arXiv lookup failed (HTTP ${res.status})`);
-  const feed = await res.text();
+  const feed = await readCapped(res);
   // parse within the <entry> element only — the feed also has its own <title>
   const xml = (feed.match(/<entry>([\s\S]*?)<\/entry>/) || [])[1];
   if (!xml) return null;
