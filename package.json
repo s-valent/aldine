@@ -1,0 +1,20 @@
+{
+  "name": "papyr",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Slim, fast, open-source LaTeX collaboration platform",
+  "workspaces": [
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w apps/server",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:compiler": "node apps/compiler/server.js",
+    "build": "npm run build -w apps/web && npm run build -w apps/server",
+    "test:e2e": "npx playwright test -c e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0"
+  }
+}

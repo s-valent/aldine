@@ -1,0 +1,277 @@
+import type { FastifyInstance } from 'fastify';
+import fs from 'node:fs';
+import path from 'node:path';
+import * as store from './store.js';
+import * as gitops from './gitops.js';
+import * as zotero from './zotero.js';
+import { compileProject, synctexLookup } from './compile.js';
+import { flushBranchDocs, refreshBranchDocsFromDisk } from './collab.js';
+import { parseBib, BibEntry } from './bib.js';
+import { listPlugins, pluginAssetPath } from './plugins.js';
+import { safeJoin } from './util.js';
+
+type Q = { branch?: string; path?: string; name?: string; force?: string };
+
+function publicMeta(meta: store.ProjectMeta) {
+  const { zotero: z, ...rest } = meta;
+  return {
+    ...rest,
+    zotero: z ? {
+      libraryPrefix: z.libraryPrefix,
+      collectionKey: z.collectionKey,
+      bibFile: z.bibFile,
+      lastSyncedAt: z.lastSyncedAt,
+      username: z.username,
+    } : null,
+  };
+}
+
+export async function registerRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/health', async () => ({ ok: true, name: 'papyr' }));
+
+  // ---------- projects ----------
+  app.get('/api/projects', async () => store.listProjects().map(publicMeta));
+
+  app.post<{ Body: { name?: string; files?: Record<string, string> } }>('/api/projects', async (req) => {
+    const { name = 'Untitled Project', files } = req.body || {};
+    const meta = await store.createProject(name, files);
+    return publicMeta(meta);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
+    try {
+      const meta = store.readMeta(req.params.id);
+      const branches = await gitops.listBranches(meta.id);
+      return { ...publicMeta(meta), branches };
+    } catch {
+      return reply.code(404).send({ error: 'project not found' });
+    }
+  });
+
+  app.patch<{ Params: { id: string }; Body: Partial<Pick<store.ProjectMeta, 'name' | 'rootFile' | 'engine'>> }>(
+    '/api/projects/:id', async (req) => {
+      const meta = store.readMeta(req.params.id);
+      const { name, rootFile, engine } = req.body || {};
+      if (name) meta.name = name;
+      if (rootFile) meta.rootFile = rootFile;
+      if (engine) meta.engine = engine;
+      store.writeMeta(meta);
+      return publicMeta(meta);
+    });
+
+  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req) => {
+    store.deleteProject(req.params.id);
+    return { ok: true };
+  });
+
+  // ---------- files ----------
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/files', async (req) => {
+    const branch = req.query.branch || 'main';
+    await gitops.ensureWorktree(req.params.id, branch);
+    return store.listFiles(req.params.id, branch);
+  });
+
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/file', async (req, reply) => {
+    const { branch = 'main', path: rel } = req.query;
+    if (!rel) return reply.code(400).send({ error: 'path required' });
+    try {
+      const buf = store.readFile(req.params.id, branch, rel);
+      const ext = path.extname(rel).toLowerCase();
+      const mime = ext === '.pdf' ? 'application/pdf'
+        : ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].includes(ext)
+          ? `image/${ext === '.jpg' ? 'jpeg' : ext.slice(1)}`
+          : 'text/plain; charset=utf-8';
+      return reply.type(mime).send(buf);
+    } catch {
+      return reply.code(404).send({ error: 'file not found' });
+    }
+  });
+
+  app.put<{ Params: { id: string }; Body: { branch?: string; path: string; content?: string; encoding?: 'utf8' | 'base64' } }>(
+    '/api/projects/:id/file', async (req, reply) => {
+      const { branch = 'main', path: rel, content = '', encoding = 'utf8' } = req.body || {};
+      if (!rel) return reply.code(400).send({ error: 'path required' });
+      await gitops.ensureWorktree(req.params.id, branch);
+      store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
+      refreshBranchDocsFromDisk(req.params.id, branch);
+      return { ok: true };
+    });
+
+  app.post<{ Params: { id: string }; Body: { branch?: string; from: string; to: string } }>(
+    '/api/projects/:id/file/rename', async (req, reply) => {
+      const { branch = 'main', from, to } = req.body || {};
+      if (!from || !to) return reply.code(400).send({ error: 'from/to required' });
+      store.renameFile(req.params.id, branch, from, to);
+      return { ok: true };
+    });
+
+  app.delete<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/file', async (req, reply) => {
+    const { branch = 'main', path: rel } = req.query;
+    if (!rel) return reply.code(400).send({ error: 'path required' });
+    store.deleteFile(req.params.id, branch, rel);
+    return { ok: true };
+  });
+
+  /** Serve compile artifacts (PDF, synctex) from the branch's .papyr-out. */
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/output', async (req, reply) => {
+    const { branch = 'main', path: rel } = req.query;
+    if (!rel || !rel.startsWith('.papyr-out/')) return reply.code(400).send({ error: 'bad output path' });
+    try {
+      const abs = safeJoin(store.branchDir(req.params.id, branch), rel);
+      const buf = fs.readFileSync(abs);
+      const type = rel.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+      return reply.type(type).header('cache-control', 'no-store').send(buf);
+    } catch {
+      return reply.code(404).send({ error: 'artifact not found' });
+    }
+  });
+
+  // ---------- compile ----------
+  app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/compile', async (req) => {
+    const branch = req.body?.branch || 'main';
+    return compileProject(req.params.id, branch);
+  });
+
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> & { branch?: string } }>(
+    '/api/projects/:id/synctex', async (req) => {
+      const { branch = 'main', ...payload } = req.body || {};
+      return synctexLookup(req.params.id, branch, payload);
+    });
+
+  // ---------- bib index (for \cite autocomplete) ----------
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/bib', async (req) => {
+    const branch = req.query.branch || 'main';
+    flushBranchDocs(req.params.id, branch);
+    const entries: BibEntry[] = [];
+    for (const f of store.listFiles(req.params.id, branch)) {
+      if (f.type === 'file' && f.path.endsWith('.bib')) {
+        try {
+          entries.push(...parseBib(store.readFile(req.params.id, branch, f.path).toString('utf8'), f.path));
+        } catch { /* skip broken bib */ }
+      }
+    }
+    return entries;
+  });
+
+  // ---------- git ----------
+  app.get<{ Params: { id: string } }>('/api/projects/:id/branches', async (req) => gitops.listBranches(req.params.id));
+
+  app.post<{ Params: { id: string }; Body: { name: string; from?: string } }>(
+    '/api/projects/:id/branches', async (req, reply) => {
+      const { name, from = 'main' } = req.body || {};
+      if (!name) return reply.code(400).send({ error: 'name required' });
+      // capture latest edits so the new branch starts from what the user sees
+      flushBranchDocs(req.params.id, from);
+      await gitops.commitAll(req.params.id, from, 'papyr: checkpoint before branching').catch(() => {});
+      await gitops.createBranch(req.params.id, name, from);
+      return { ok: true };
+    });
+
+  app.delete<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/branches', async (req, reply) => {
+    const { name } = req.query;
+    if (!name) return reply.code(400).send({ error: 'name required' });
+    await gitops.deleteBranch(req.params.id, name);
+    return { ok: true };
+  });
+
+  app.post<{ Params: { id: string }; Body: { branch?: string; message?: string; author?: string } }>(
+    '/api/projects/:id/commit', async (req) => {
+      const { branch = 'main', message = 'papyr: manual commit', author } = req.body || {};
+      flushBranchDocs(req.params.id, branch);
+      return gitops.commitAll(req.params.id, branch, message, author);
+    });
+
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/log', async (req) => {
+    return gitops.log(req.params.id, req.query.branch || 'main');
+  });
+
+  app.post<{ Params: { id: string }; Body: { from: string; into: string; author?: string } }>(
+    '/api/projects/:id/merge', async (req, reply) => {
+      const { from, into, author } = req.body || {};
+      if (!from || !into) return reply.code(400).send({ error: 'from/into required' });
+      flushBranchDocs(req.params.id, from);
+      flushBranchDocs(req.params.id, into);
+      const result = await gitops.merge(req.params.id, from, into, author);
+      if (result.ok) refreshBranchDocsFromDisk(req.params.id, into);
+      return result;
+    });
+
+  // ---------- zotero ----------
+  app.post<{ Body: { apiKey: string } }>('/api/zotero/validate', async (req, reply) => {
+    const { apiKey } = req.body || {};
+    if (!apiKey) return reply.code(400).send({ error: 'apiKey required' });
+    try {
+      const info = await zotero.validateKey(apiKey);
+      const groups = await zotero.listGroups(apiKey, info.userID);
+      return { ...info, groups };
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  app.post<{ Body: { apiKey: string; libraryPrefix: string } }>('/api/zotero/collections', async (req, reply) => {
+    const { apiKey, libraryPrefix } = req.body || {};
+    if (!apiKey || !libraryPrefix) return reply.code(400).send({ error: 'apiKey and libraryPrefix required' });
+    try {
+      return await zotero.listCollections(apiKey, libraryPrefix);
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  app.post<{ Params: { id: string }; Body: { apiKey: string; libraryPrefix: string; collectionKey?: string; bibFile?: string } }>(
+    '/api/projects/:id/zotero/link', async (req, reply) => {
+      const { apiKey, libraryPrefix, collectionKey, bibFile = 'zotero.bib' } = req.body || {};
+      if (!apiKey || !libraryPrefix) return reply.code(400).send({ error: 'apiKey and libraryPrefix required' });
+      try {
+        const info = await zotero.validateKey(apiKey);
+        const meta = store.readMeta(req.params.id);
+        meta.zotero = { apiKey, userId: info.userID, username: info.username, libraryPrefix, collectionKey, bibFile };
+        store.writeMeta(meta);
+        const sync = await zotero.syncProject(req.params.id, 'main', true);
+        return { ok: true, ...sync };
+      } catch (err: any) {
+        return reply.code(400).send({ error: err.message });
+      }
+    });
+
+  app.post<{ Params: { id: string }; Body: { branch?: string; force?: boolean } }>(
+    '/api/projects/:id/zotero/sync', async (req, reply) => {
+      try {
+        return await zotero.syncProject(req.params.id, req.body?.branch || 'main', !!req.body?.force);
+      } catch (err: any) {
+        return reply.code(400).send({ error: err.message });
+      }
+    });
+
+  app.delete<{ Params: { id: string } }>('/api/projects/:id/zotero', async (req) => {
+    const meta = store.readMeta(req.params.id);
+    delete meta.zotero;
+    store.writeMeta(meta);
+    return { ok: true };
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { q?: string } }>('/api/projects/:id/zotero/search', async (req, reply) => {
+    const meta = store.readMeta(req.params.id);
+    if (!meta.zotero) return reply.code(400).send({ error: 'no Zotero link' });
+    try {
+      return await zotero.searchItems(meta.zotero.apiKey, meta.zotero.libraryPrefix, req.query.q || '');
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message });
+    }
+  });
+
+  // ---------- plugins ----------
+  app.get('/api/plugins', async () => listPlugins());
+
+  app.get<{ Params: { pluginId: string; '*': string } }>('/plugins/:pluginId/*', async (req, reply) => {
+    const abs = pluginAssetPath(req.params.pluginId, req.params['*']);
+    if (!abs) return reply.code(404).send({ error: 'not found' });
+    const ext = path.extname(abs);
+    const type = ext === '.js' || ext === '.mjs' ? 'text/javascript'
+      : ext === '.css' ? 'text/css'
+      : ext === '.json' ? 'application/json'
+      : 'application/octet-stream';
+    return reply.type(type).send(fs.readFileSync(abs));
+  });
+}

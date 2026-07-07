@@ -1,0 +1,188 @@
+#!/usr/bin/env node
+/**
+ * Papyr compile service — zero-dependency Node HTTP server wrapping latexmk.
+ *
+ * Contract:
+ *   POST /compile  { projectDir, rootFile, engine? }  ->
+ *     { ok, pdf: <path in OUT_DIR>, log, errors: [{file,line,message,type}], durationMs }
+ *   GET  /health   -> { ok: true }
+ *
+ * The compiler shares the projects volume (read) and an output cache volume
+ * (write) with the app server, so no file transfer is needed.
+ * Security: -no-shell-escape, nonstopmode, wall-clock timeout, output confined
+ * to OUT_DIR/<hash>.
+ */
+const http = require('http');
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4020;
+const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../.data');
+const TIMEOUT_MS = Number(process.env.COMPILE_TIMEOUT_MS || 120_000);
+// Aux/PDF output lives inside the project tree (relative path) so TeX path
+// restrictions (openout_any=p) never apply and incremental caches persist.
+const OUT_SUBDIR = '.papyr-out';
+
+function json(res, code, body) {
+  const buf = Buffer.from(JSON.stringify(body));
+  res.writeHead(code, { 'content-type': 'application/json', 'content-length': buf.length });
+  res.end(buf);
+}
+
+/** Parse LaTeX log for errors/warnings with file/line where possible. */
+function parseLog(log) {
+  const errors = [];
+  const lines = log.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // -file-line-error format: ./main.tex:31: Undefined control sequence.
+    const fle = line.match(/^(?:\.\/)?([^:\s][^:]*\.\w+):(\d+):\s*(.*)$/);
+    if (fle && !/^\d+$/.test(fle[1]) && !fle[3].startsWith('==>')) {
+      let message = fle[3] || 'LaTeX error';
+      // the offending token often follows on the next lines (e.g. "\thisisnotacommand")
+      const next = (lines[i + 1] || '').trim();
+      if (message && next.startsWith('\\') && !next.startsWith('\\l.')) message += ` — ${next}`;
+      errors.push({ type: 'error', file: fle[1], line: Number(fle[2]), message });
+      continue;
+    }
+    // ! LaTeX Error / ! Undefined control sequence, followed by l.<n>
+    if (line.startsWith('!')) {
+      let message = line.replace(/^!\s*/, '');
+      let lineNo = null;
+      for (let j = i + 1; j < Math.min(i + 12, lines.length); j++) {
+        const m = lines[j].match(/^l\.(\d+)/);
+        if (m) { lineNo = Number(m[1]); break; }
+      }
+      errors.push({ type: 'error', line: lineNo, message });
+    } else if (/^(LaTeX|Package|Class) .*Warning/.test(line)) {
+      let message = line;
+      const m = line.match(/on input line (\d+)/) || (lines[i + 1] || '').match(/on input line (\d+)/);
+      errors.push({ type: 'warning', line: m ? Number(m[1]) : null, message: message.trim() });
+    } else if (/^Underfull|^Overfull/.test(line)) {
+      const m = line.match(/at lines (\d+)/);
+      errors.push({ type: 'typesetting', line: m ? Number(m[1]) : null, message: line.trim() });
+    }
+  }
+  return errors;
+}
+
+function run(cmd, args, opts, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { ...opts });
+    let out = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch {} }
+    }, timeoutMs);
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { out += d; });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: timedOut ? -1 : code, out, timedOut });
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ code: -2, out: String(err), timedOut: false });
+    });
+  });
+}
+
+async function compile(body) {
+  const { projectDir, rootFile = 'main.tex', engine = 'pdf' } = body;
+  if (!projectDir || projectDir.includes('..')) throw new Error('invalid projectDir');
+  if (rootFile.includes('..') || path.isAbsolute(rootFile)) throw new Error('invalid rootFile');
+  const absDir = path.resolve(DATA_DIR, projectDir);
+  if (!absDir.startsWith(path.resolve(DATA_DIR))) throw new Error('projectDir escapes DATA_DIR');
+  if (!fs.existsSync(path.join(absDir, rootFile))) throw new Error(`root file not found: ${rootFile}`);
+
+  fs.mkdirSync(path.join(absDir, OUT_SUBDIR), { recursive: true });
+
+  const engineFlag = engine === 'xelatex' ? '-pdfxe' : engine === 'lualatex' ? '-pdflua' : '-pdf';
+  const args = [
+    engineFlag,
+    '-g', // user asked for a typeset: run even if latexmk thinks it's up-to-date (also recovers from stale failed state)
+    '-interaction=nonstopmode',
+    '-halt-on-error',
+    '-file-line-error',
+    '-no-shell-escape',
+    '-synctex=1',
+    `-outdir=${OUT_SUBDIR}`,
+    rootFile,
+  ];
+  const t0 = Date.now();
+  const { code, out, timedOut } = await run('latexmk', args, { cwd: absDir, detached: true, env: { ...process.env, HOME: process.env.HOME || '/tmp' } }, TIMEOUT_MS);
+  const durationMs = Date.now() - t0;
+
+  const base = path.basename(rootFile).replace(/\.tex$/, '');
+  const rel = (f) => path.join(OUT_SUBDIR, f);
+  const pdfPath = path.join(absDir, OUT_SUBDIR, `${base}.pdf`);
+  const logPath = path.join(absDir, OUT_SUBDIR, `${base}.log`);
+  let log = '';
+  try { log = fs.readFileSync(logPath, 'utf8'); } catch { log = out; }
+  const errors = parseLog(log);
+  const ok = code === 0 && fs.existsSync(pdfPath);
+  return {
+    ok,
+    timedOut,
+    exitCode: code,
+    // paths relative to the project dir; the app server serves them
+    pdf: fs.existsSync(pdfPath) ? rel(`${base}.pdf`) : null,
+    synctex: fs.existsSync(path.join(absDir, OUT_SUBDIR, `${base}.synctex.gz`)) ? rel(`${base}.synctex.gz`) : null,
+    log: log.length > 200_000 ? log.slice(-200_000) : log,
+    latexmkOutput: out.length > 20_000 ? out.slice(-20_000) : out,
+    errors,
+    durationMs,
+  };
+}
+
+/** SyncTeX forward (code->pdf) and inverse (pdf->code) lookups. */
+async function synctex(body) {
+  const { projectDir, rootFile = 'main.tex', direction, line, column = 0, page, x, y } = body;
+  if (!projectDir || projectDir.includes('..')) throw new Error('invalid projectDir');
+  const absDir = path.resolve(DATA_DIR, projectDir);
+  if (!absDir.startsWith(path.resolve(DATA_DIR))) throw new Error('projectDir escapes DATA_DIR');
+  const base = path.basename(rootFile).replace(/\.tex$/, '');
+  const pdf = path.join(OUT_SUBDIR, `${base}.pdf`);
+  let args;
+  if (direction === 'forward') {
+    args = ['view', '-i', `${line}:${column}:${body.file || rootFile}`, '-o', pdf];
+  } else {
+    args = ['edit', '-o', `${page}:${x}:${y}:${pdf}`];
+  }
+  const { out } = await run('synctex', args, { cwd: absDir, detached: true }, 10_000);
+  // parse "Page:1" / "x:..." / "Input:..." / "Line:..." records
+  const records = [];
+  let cur = null;
+  for (const l of out.split('\n')) {
+    const m = l.match(/^(Page|x|y|h|v|W|H|Input|Line|Column):(.*)$/);
+    if (!m) continue;
+    if (m[1] === 'Page' || m[1] === 'Input') { if (cur) records.push(cur); cur = {}; }
+    if (cur) cur[m[1].toLowerCase()] = isNaN(Number(m[2])) ? m[2].trim() : Number(m[2]);
+  }
+  if (cur) records.push(cur);
+  return { ok: true, records };
+}
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/health') return json(res, 200, { ok: true });
+  if (req.method === 'POST' && (req.url === '/compile' || req.url === '/synctex')) {
+    let raw = '';
+    req.on('data', (d) => { raw += d; });
+    req.on('end', async () => {
+      try {
+        const body = JSON.parse(raw || '{}');
+        const result = req.url === '/compile' ? await compile(body) : await synctex(body);
+        json(res, 200, result);
+      } catch (err) {
+        json(res, 400, { ok: false, error: String(err && err.message || err) });
+      }
+    });
+    return;
+  }
+  json(res, 404, { ok: false, error: 'not found' });
+});
+
+server.listen(PORT, () => console.log(`[compiler] listening on :${PORT}, data=${DATA_DIR}`));

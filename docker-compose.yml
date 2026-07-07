@@ -1,0 +1,34 @@
+name: papyr
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    ports:
+      - "8080:3000"
+    environment:
+      DATA_DIR: /data
+      COMPILER_URL: http://compiler:4020
+    volumes:
+      - papyr-data:/data
+    depends_on:
+      - compiler
+    restart: unless-stopped
+
+  compiler:
+    build:
+      context: apps/compiler
+    environment:
+      DATA_DIR: /data
+      COMPILE_TIMEOUT_MS: "120000"
+    volumes:
+      - papyr-data:/data
+    mem_limit: 2g
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges
+    restart: unless-stopped
+
+volumes:
+  papyr-data:
