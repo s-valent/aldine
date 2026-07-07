@@ -10,7 +10,8 @@ import { parseBib, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
 import { fetchBibEntry } from './references.js';
-import { safeJoin } from './util.js';
+import { unzip, guessRoot } from './unzip.js';
+import { safeJoin, isTextFile } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
 
@@ -55,6 +56,34 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/templates', async () => listTemplates());
+
+  // Import an Overleaf/project ZIP (base64) as a new project.
+  app.post<{ Body: { name?: string; zipBase64: string } }>('/api/projects/import', async (req, reply) => {
+    const { name, zipBase64 } = req.body || {};
+    if (!zipBase64) return reply.code(400).send({ error: 'zipBase64 required' });
+    try {
+      const buf = Buffer.from(zipBase64, 'base64');
+      if (buf.length > 60 * 1024 * 1024) return reply.code(413).send({ error: 'ZIP too large (max 60 MB)' });
+      const entries = unzip(buf);
+      const paths = Object.keys(entries).filter((p) => !p.includes('..') && !p.startsWith('/') && !p.startsWith('__MACOSX/') && !p.includes('/.git/'));
+      if (!paths.length) return reply.code(400).send({ error: 'ZIP had no usable files' });
+      // create with text files seeded; write binaries as buffers afterward
+      const textFiles: Record<string, string> = {};
+      const binFiles: string[] = [];
+      for (const p of paths) {
+        if (isTextFile(p)) textFiles[p] = entries[p].toString('utf8');
+        else binFiles.push(p);
+      }
+      const meta = await store.createProject(name || 'Imported project', textFiles);
+      for (const p of binFiles) store.writeFile(meta.id, 'main', p, entries[p]);
+      if (binFiles.length) await gitops.commitAll(meta.id, 'main', 'papyr: import assets').catch(() => {});
+      const root = guessRoot(entries);
+      if (root) { meta.rootFile = root; store.writeMeta(meta); }
+      return publicMeta(meta);
+    } catch (err: any) {
+      return reply.code(400).send({ error: `Could not import ZIP: ${err.message}` });
+    }
+  });
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     try {
@@ -180,6 +209,23 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     return entries;
+  });
+
+  // ---------- label index (for \ref autocomplete across files) ----------
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/labels', async (req) => {
+    const branch = req.query.branch || 'main';
+    flushBranchDocs(req.params.id, branch);
+    const labels: Array<{ label: string; file: string }> = [];
+    const re = /\\label\{([^}]+)\}/g;
+    for (const f of store.listFiles(req.params.id, branch)) {
+      if (f.type !== 'file' || !f.path.endsWith('.tex')) continue;
+      try {
+        const text = store.readFile(req.params.id, branch, f.path).toString('utf8');
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(text))) labels.push({ label: m[1], file: f.path });
+      } catch { /* skip */ }
+    }
+    return labels;
   });
 
   // ---------- git ----------

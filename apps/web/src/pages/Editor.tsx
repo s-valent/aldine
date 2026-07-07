@@ -11,6 +11,7 @@ import Presence, { PresenceUser } from '../components/Presence';
 import { PluginHost, PluginPanel } from '../plugins/host';
 import { hintFor } from '../editor/errorHints';
 import { IconChevronLeft } from '../components/Icons';
+import CommandPalette, { Command } from '../components/CommandPalette';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -33,6 +34,8 @@ export default function Editor() {
   const [stats, setStats] = useState<{ words: number; selWords: number | null }>({ words: 0, selWords: null });
   const [zoom, setZoom] = useState(1);
   const [showLog, setShowLog] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('papyr.spellcheck') === '1');
   const codeRef = useRef<CodePaneHandle>(null);
   const pdfRef = useRef<PdfPaneHandle>(null);
   const compilingRef = useRef(false);
@@ -103,12 +106,15 @@ export default function Editor() {
     localStorage.setItem('papyr.autoTypeset', next ? '1' : '0');
   };
 
-  // Cmd+S / Ctrl+S → typeset now
+  // Cmd+S → typeset, Cmd+K → command palette
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         doCompile();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -174,6 +180,28 @@ export default function Editor() {
     compile: doCompile,
     toast,
   }), [id, branch, activeFile, insertAtCursor, loadFiles, loadProject, doCompile, toast]);
+
+  const commands: Command[] = useMemo(() => {
+    const cmds: Command[] = [
+      { id: 'typeset', group: 'Action', title: 'Typeset document', hint: '⌘S', run: doCompile },
+      { id: 'auto', group: 'Action', title: auto ? 'Turn auto-typeset off' : 'Turn auto-typeset on', run: toggleAuto },
+      { id: 'jump-pdf', group: 'Action', title: 'Jump PDF to cursor', hint: '⌘J', run: () => jumpToPdf() },
+      { id: 'spell', group: 'Action', title: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on', run: () => setSpellcheck((s) => { localStorage.setItem('papyr.spellcheck', s ? '0' : '1'); return !s; }) },
+      { id: 'commit', group: 'Git', title: 'Save a checkpoint…', run: () => { setTab('history'); } },
+      { id: 'newbranch', group: 'Git', title: 'New branch…', run: () => { setTab('files'); document.querySelector<HTMLElement>('[data-testid="branch-menu"]')?.click(); } },
+    ];
+    for (const s of [
+      { id: 'fig', title: 'Insert figure', text: '\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\linewidth]{}\n  \\caption{}\n  \\label{fig:}\n\\end{figure}\n' },
+      { id: 'tab', title: 'Insert table', text: '\\begin{table}[htbp]\n  \\centering\n  \\begin{tabular}{ll}\n    \\hline\n    A & B \\\\\n    \\hline\n  \\end{tabular}\n  \\caption{}\n  \\label{tab:}\n\\end{table}\n' },
+      { id: 'eq', title: 'Insert equation', text: '\\begin{equation}\n  \\label{eq:}\n\\end{equation}\n' },
+    ]) {
+      cmds.push({ id: `snippet-${s.id}`, group: 'Insert', title: s.title, run: () => insertAtCursor(s.text) });
+    }
+    for (const f of files.filter((f) => f.type === 'file' && !f.binary)) {
+      cmds.push({ id: `open-${f.path}`, group: 'Open', title: f.path, run: () => setActiveFile(f.path) });
+    }
+    return cmds;
+  }, [files, auto, spellcheck, doCompile, toggleAuto, jumpToPdf, insertAtCursor]);
 
   const errors = compile.result?.errors.filter((e) => e.type !== 'typesetting') || [];
   const errCount = errors.filter((e) => e.type === 'error').length;
@@ -282,7 +310,7 @@ export default function Editor() {
                 </span>
               </div>
               <CodePane
-                key={`${id}::${branch}::${activeFile}`}
+                key={`${id}::${branch}::${activeFile}::${spellcheck}`}
                 ref={codeRef}
                 projectId={id}
                 branch={branch}
@@ -292,6 +320,7 @@ export default function Editor() {
                 onDocChanged={onDocChanged}
                 onStats={setStats}
                 onJumpToPdf={jumpToPdf}
+                spellcheck={spellcheck}
               />
             </>
           ) : (
@@ -364,6 +393,8 @@ export default function Editor() {
           <PdfPane ref={pdfRef} pdfUrl={compile.result?.pdfUrl || null} status={compile.status} zoom={zoom} onFirstOpen={doCompile} onInverse={onPdfInverse} />
         </section>
       </div>
+
+      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
 
       {showLog && compile.result && (
         <div className="modal-backdrop" onClick={() => setShowLog(false)}>

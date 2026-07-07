@@ -70,21 +70,53 @@ export function citeCompletionSource(projectId: string, branch: string): Extensi
   });
 }
 
-export function refCompletionSource(): Extension {
-  return asSource((ctx) => {
+let labelCache: { key: string; labels: Array<{ label: string; file: string }>; at: number } | null = null;
+
+async function loadLabels(projectId: string, branch: string): Promise<Array<{ label: string; file: string }>> {
+  const cacheKey = `${projectId}::${branch}`;
+  if (labelCache && labelCache.key === cacheKey && Date.now() - labelCache.at < 15_000) return labelCache.labels;
+  try {
+    const labels = await api.labels(projectId, branch);
+    labelCache = { key: cacheKey, labels, at: Date.now() };
+    return labels;
+  } catch {
+    return labelCache?.labels || [];
+  }
+}
+
+export function invalidateLabelCache(): void {
+  labelCache = null;
+}
+
+export function refCompletionSource(projectId: string, branch: string, currentFile: () => string): Extension {
+  return asSource(async (ctx) => {
     const line = ctx.state.doc.lineAt(ctx.pos);
     const before = ctx.state.sliceDoc(line.from, ctx.pos);
     const m = before.match(REF_RE);
     if (!m) return null;
     const q = m[1].toLowerCase();
-    const labels = new Set<string>();
+
+    // current-file labels first (instant), then project-wide (cached)
+    const local = new Map<string, string>();
     const text = ctx.state.doc.toString();
     const re = /\\label\{([^}]+)\}/g;
     let mm: RegExpExecArray | null;
-    while ((mm = re.exec(text))) labels.add(mm[1]);
-    const options = Array.from(labels)
-      .filter((l) => !q || l.toLowerCase().includes(q))
-      .map((l) => ({ label: l, type: 'variable' as const }));
+    const cur = currentFile();
+    while ((mm = re.exec(text))) local.set(mm[1], cur);
+
+    const project = await loadLabels(projectId, branch);
+    const merged = new Map<string, string>(local);
+    for (const { label, file } of project) if (!merged.has(label)) merged.set(label, file);
+
+    const options = Array.from(merged.entries())
+      .filter(([l]) => !q || l.toLowerCase().includes(q))
+      .slice(0, 100)
+      .map(([l, file]) => ({
+        label: l,
+        detail: file === cur ? undefined : file,
+        type: 'variable' as const,
+        boost: local.has(l) ? 1 : 0,
+      }));
     if (!options.length) return null;
     return { from: ctx.pos - m[1].length, options, validFor: /^[^}]*$/ };
   });

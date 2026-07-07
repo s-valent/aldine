@@ -28,6 +28,21 @@ export default function Home() {
     }
   };
 
+  const importZip = async (file: File) => {
+    if (!/\.zip$/i.test(file.name)) { toast('Please drop a .zip file', 'error'); return; }
+    if (file.size > 60 * 1024 * 1024) { toast('ZIP is larger than 60 MB', 'error'); return; }
+    toast('Importing…');
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      const p = await api.importZip(file.name.replace(/\.zip$/i, ''), btoa(bin));
+      navigate(`/p/${p.id}`);
+    } catch (err: any) {
+      toast(`Import failed: ${err.message}`, 'error');
+    }
+  };
+
   const remove = async (e: React.MouseEvent, p: ProjectSummary) => {
     e.stopPropagation();
     if (!window.confirm(`Delete “${p.name}”? This removes the project and its history.`)) return;
@@ -36,17 +51,36 @@ export default function Home() {
     load();
   };
 
+  const [dragOver, setDragOver] = useState(false);
+
   return (
-    <div className="home">
+    <div
+      className={`home ${dragOver ? 'home--drag' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const f = e.dataTransfer.files[0];
+        if (f) await importZip(f);
+      }}
+    >
       <div className="home__inner">
         <div className="home__bar">
           <div>
             <h1 className="home__brand">papyr<em>.</em></h1>
             <p className="home__tag">Write LaTeX together. Fast, versioned, yours.</p>
           </div>
-          <button className="btn btn--primary" onClick={() => setCreating(true)} data-testid="new-project">
-            New project
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label className="btn" data-testid="import-zip">
+              Import ZIP
+              <input type="file" accept=".zip" hidden data-testid="import-input"
+                onChange={async (e) => { if (e.target.files?.[0]) await importZip(e.target.files[0]); e.target.value = ''; }} />
+            </label>
+            <button className="btn btn--primary" onClick={() => setCreating(true)} data-testid="new-project">
+              New project
+            </button>
+          </div>
         </div>
 
         {projects === null ? (

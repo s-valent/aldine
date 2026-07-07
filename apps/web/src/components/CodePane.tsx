@@ -29,6 +29,7 @@ interface Props {
   onDocChanged?(): void;
   onStats?(stats: { words: number; selWords: number | null }): void;
   onJumpToPdf?(): void;
+  spellcheck?: boolean;
 }
 
 /** Approximate word count for LaTeX prose: strips comments, commands, math. */
@@ -74,7 +75,7 @@ const papyrTheme = EditorView.theme({
   '.cm-panels': { backgroundColor: 'var(--bg-inset)', color: 'var(--text)', borderColor: 'var(--hairline)' },
 });
 
-const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf }, ref) {
+const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf, spellcheck = false }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const cbRef = useRef({ onDocChanged, onStats, onSave, onJumpToPdf });
@@ -155,7 +156,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           // its builtin command completions still register via languageData.
           latex({ autoCloseTags: true, enableLinting: false, enableAutocomplete: false }),
           citeCompletionSource(projectId, branch),
-          refCompletionSource(),
+          refCompletionSource(projectId, branch, () => filePath),
           keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,
@@ -183,6 +184,12 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           }),
           papyrTheme,
           EditorView.lineWrapping,
+          // browser-native spellcheck on prose (only meaningful for .tex/.md)
+          EditorView.contentAttributes.of({
+            spellcheck: spellcheck && /\.(tex|md|txt)$/i.test(filePath) ? 'true' : 'false',
+            autocorrect: 'off',
+            autocapitalize: 'off',
+          }),
           yCollab(ytext, provider.awareness),
         ],
       }),

@@ -45,6 +45,8 @@ export const api = {
   createProject: (name: string, files?: Record<string, string>, template?: string) =>
     req<ProjectSummary>('/api/projects', { method: 'POST', body: JSON.stringify({ name, files, template }) }),
   templates: () => req<TemplateInfo[]>('/api/templates'),
+  importZip: (name: string, zipBase64: string) =>
+    req<ProjectSummary>('/api/projects/import', { method: 'POST', body: JSON.stringify({ name, zipBase64 }) }),
   getProject: (id: string) => req<ProjectDetail>(`/api/projects/${id}`),
   patchProject: (id: string, patch: Partial<Pick<ProjectSummary, 'name' | 'rootFile' | 'engine'>>) =>
     req<ProjectSummary>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
@@ -68,6 +70,7 @@ export const api = {
   synctex: (id: string, branch: string, payload: Record<string, unknown>) =>
     req<{ ok: boolean; records: Array<Record<string, number | string>> }>(`/api/projects/${id}/synctex`, { method: 'POST', body: JSON.stringify({ branch, ...payload }) }),
   bib: (id: string, branch: string) => req<BibEntry[]>(`/api/projects/${id}/bib?branch=${encodeURIComponent(branch)}`),
+  labels: (id: string, branch: string) => req<Array<{ label: string; file: string }>>(`/api/projects/${id}/labels?branch=${encodeURIComponent(branch)}`),
 
   branches: (id: string) => req<BranchInfo[]>(`/api/projects/${id}/branches`),
   createBranch: (id: string, name: string, from: string) =>
