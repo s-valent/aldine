@@ -38,10 +38,13 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface TemplateInfo { id: string; name: string; description?: string; icon?: string }
+
 export const api = {
   listProjects: () => req<ProjectSummary[]>('/api/projects'),
-  createProject: (name: string, files?: Record<string, string>) =>
-    req<ProjectSummary>('/api/projects', { method: 'POST', body: JSON.stringify({ name, files }) }),
+  createProject: (name: string, files?: Record<string, string>, template?: string) =>
+    req<ProjectSummary>('/api/projects', { method: 'POST', body: JSON.stringify({ name, files, template }) }),
+  templates: () => req<TemplateInfo[]>('/api/templates'),
   getProject: (id: string) => req<ProjectDetail>(`/api/projects/${id}`),
   patchProject: (id: string, patch: Partial<Pick<ProjectSummary, 'name' | 'rootFile' | 'engine'>>) =>
     req<ProjectSummary>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),

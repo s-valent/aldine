@@ -32,7 +32,10 @@ export function repoDir(id: string): string {
 export function branchDir(id: string, branch: string): string {
   if (!BRANCH_RE.test(branch) || branch.includes('..')) throw new Error('bad branch name');
   if (branch === 'main') return repoDir(id);
-  return path.join(worktreesDir, id, branch);
+  // Flatten hierarchical names (feature/x) to a single dir segment so a branch
+  // named "feature" can't collide with "feature/x"'s worktree parent.
+  const safe = branch.replace(/[^A-Za-z0-9._-]/g, '__');
+  return path.join(worktreesDir, id, safe);
 }
 
 export function git(dir: string): SimpleGit {

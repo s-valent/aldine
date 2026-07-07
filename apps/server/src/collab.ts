@@ -31,7 +31,14 @@ const scheduleAutoCommit = debouncePerKey(20_000, (key: string) => {
   commitAll(projectId, branch, 'papyr: autosave').catch((err) => console.error('[collab] autocommit failed', err.message));
 });
 
-function writeDocToDisk(name: string, document: Y.Doc): void {
+/** Docs evicted because their file/branch was deleted — never write these back. */
+const tombstoned = new Set<string>();
+
+export function tombstone(name: string): void { tombstoned.add(name); }
+export function untombstone(name: string): void { tombstoned.delete(name); }
+
+export function writeDocToDisk(name: string, document: Y.Doc): void {
+  if (tombstoned.has(name)) return;
   const parsed = parseDocName(name);
   if (!parsed) return;
   const { projectId, branch, filePath } = parsed;
@@ -69,6 +76,29 @@ export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
     writeDocToDisk(documentName, document);
   },
 });
+
+/** Flush ALL loaded docs to disk (graceful shutdown). */
+export function flushAllDocs(): number {
+  let n = 0;
+  hocuspocus.documents.forEach((doc: Y.Doc, name: string) => { writeDocToDisk(name, doc); n++; });
+  return n;
+}
+
+/**
+ * Evict a doc so its pending final store won't resurrect a deleted/renamed file.
+ * Removes it from Hocuspocus's registry after tombstoning.
+ */
+export function evictDoc(projectId: string, branch: string, filePath: string): void {
+  const name = docName(projectId, branch, filePath);
+  tombstone(name);
+  const doc = hocuspocus.documents.get(name) as (Y.Doc & { destroy?: () => void }) | undefined;
+  if (doc) {
+    hocuspocus.documents.delete(name);
+    try { doc.destroy?.(); } catch { /* noop */ }
+  }
+  // allow a later re-create of the same path to persist again
+  setTimeout(() => untombstone(name), 5000);
+}
 
 /** Synchronously flush every loaded doc of a project+branch to disk (before compile/commit/merge). */
 export function flushBranchDocs(projectId: string, branch: string): number {

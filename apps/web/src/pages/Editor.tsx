@@ -9,6 +9,8 @@ import BranchMenu from '../components/BranchMenu';
 import HistoryPanel from '../components/HistoryPanel';
 import Presence, { PresenceUser } from '../components/Presence';
 import { PluginHost, PluginPanel } from '../plugins/host';
+import { hintFor } from '../editor/errorHints';
+import { IconChevronLeft } from '../components/Icons';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -27,8 +29,16 @@ export default function Editor() {
   const [pdfWidth, setPdfWidth] = useState(() => Math.max(360, Math.round(window.innerWidth * 0.4)));
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [pluginPanels, setPluginPanels] = useState<PluginPanel[]>([]);
+  const [auto, setAuto] = useState(() => localStorage.getItem('papyr.autoTypeset') !== '0');
+  const [stats, setStats] = useState<{ words: number; selWords: number | null }>({ words: 0, selWords: null });
+  const [zoom, setZoom] = useState(1);
+  const [showLog, setShowLog] = useState(false);
   const codeRef = useRef<CodePaneHandle>(null);
   const compilingRef = useRef(false);
+  const pendingRef = useRef(false);
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoRef = useRef(auto);
+  autoRef.current = auto;
 
   const loadProject = useCallback(async () => {
     try {
@@ -59,25 +69,40 @@ export default function Editor() {
   }, [id, branch]);
 
   const doCompile = useCallback(async () => {
-    if (compilingRef.current) return;
+    if (compilingRef.current) { pendingRef.current = true; return; }
     compilingRef.current = true;
     setCompile((c) => ({ ...c, status: 'compiling' }));
     try {
       const result = await api.compile(id, branch);
       setCompile({ status: result.ok ? 'ok' : 'error', result });
-      if (!result.ok) {
-        const n = result.errors.filter((e) => e.type === 'error').length;
-        toast(result.timedOut ? 'Typesetting timed out' : `Typesetting failed — ${n || 'see'} error${n === 1 ? '' : 's'}`, 'error');
-      }
     } catch (err: any) {
       setCompile({ status: 'error', result: null });
       toast(`Typesetting failed: ${err.message}`, 'error');
     } finally {
       compilingRef.current = false;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        setTimeout(() => doCompile(), 400);
+      }
     }
   }, [id, branch]);
 
-  // Cmd+S / Ctrl+S → typeset
+  /** Auto-typeset ~2s after edits settle. */
+  const onDocChanged = useCallback(() => {
+    if (!autoRef.current) return;
+    if (autoTimer.current) clearTimeout(autoTimer.current);
+    autoTimer.current = setTimeout(() => doCompile(), 2000);
+  }, [doCompile]);
+
+  useEffect(() => () => { if (autoTimer.current) clearTimeout(autoTimer.current); }, []);
+
+  const toggleAuto = () => {
+    const next = !auto;
+    setAuto(next);
+    localStorage.setItem('papyr.autoTypeset', next ? '1' : '0');
+  };
+
+  // Cmd+S / Ctrl+S → typeset now
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
@@ -100,12 +125,11 @@ export default function Editor() {
     setProject((prev) => (prev ? { ...prev, name: p.name } : prev));
   };
 
-  const jumpToLine = (line: number | null) => {
-    if (line != null && project) {
-      // errors reference the root file; open it if needed
-      if (activeFile !== project.rootFile) setActiveFile(project.rootFile);
-      requestAnimationFrame(() => codeRef.current?.gotoLine(line));
-    }
+  const jumpToLine = (line: number | null, file?: string) => {
+    if (line == null || !project) return;
+    const target = file && files.some((f) => f.path === file) ? file : project.rootFile;
+    if (activeFile !== target) setActiveFile(target);
+    requestAnimationFrame(() => setTimeout(() => codeRef.current?.gotoLine(line), 60));
   };
 
   const insertAtCursor = useCallback((text: string) => codeRef.current?.insertAtCursor(text), []);
@@ -123,6 +147,7 @@ export default function Editor() {
 
   const errors = compile.result?.errors.filter((e) => e.type !== 'typesetting') || [];
   const errCount = errors.filter((e) => e.type === 'error').length;
+  const showErrors = compile.result != null && (errors.length > 0 || !compile.result.ok);
 
   if (!project) return <div className="editor-shell" />;
 
@@ -130,7 +155,7 @@ export default function Editor() {
     <div className="editor-shell" data-testid="editor-shell">
       <PluginHost ctx={pluginCtx} onPanels={setPluginPanels} />
       <header className="toolbar">
-        <button className="btn btn--ghost" onClick={() => navigate('/')} title="All projects" aria-label="Back to projects">⌂</button>
+        <button className="btn btn--ghost" onClick={() => navigate('/')} title="All projects" aria-label="Back to projects"><IconChevronLeft /></button>
         <span
           className="toolbar__name"
           contentEditable
@@ -180,8 +205,14 @@ export default function Editor() {
                 files={files}
                 active={activeFile}
                 rootFile={project.rootFile}
+                projectId={id}
+                branch={branch}
                 onOpen={setActiveFile}
                 onCreate={async (path) => { await api.writeFile(id, branch, path, ''); await loadFiles(); setActiveFile(path); }}
+                onUploaded={async (paths) => {
+                  await loadFiles();
+                  toast(paths.length === 1 ? `Uploaded ${paths[0]}` : `Uploaded ${paths.length} files`, 'ok');
+                }}
                 onDelete={async (path) => {
                   await api.deleteFile(id, branch, path);
                   await loadFiles();
@@ -208,27 +239,55 @@ export default function Editor() {
 
         <main className="pane" style={{ flex: 1 }}>
           {activeFile ? (
-            <CodePane
-              key={`${id}::${branch}::${activeFile}`}
-              ref={codeRef}
-              projectId={id}
-              branch={branch}
-              filePath={activeFile}
-              onUsers={setUsers}
-              onSave={doCompile}
-            />
+            <>
+              <div className="pane__header">
+                <span className="statusbar__file">{activeFile}</span>
+                <span className="toolbar__spacer" />
+                <span className="pdf-status" data-testid="word-count">
+                  {stats.selWords != null
+                    ? `${stats.selWords.toLocaleString()} of ${stats.words.toLocaleString()} words`
+                    : `${stats.words.toLocaleString()} words`}
+                </span>
+              </div>
+              <CodePane
+                key={`${id}::${branch}::${activeFile}`}
+                ref={codeRef}
+                projectId={id}
+                branch={branch}
+                filePath={activeFile}
+                onUsers={setUsers}
+                onSave={doCompile}
+                onDocChanged={onDocChanged}
+                onStats={setStats}
+              />
+            </>
           ) : (
             <div className="pdf-empty"><p>Select a file to start writing.</p></div>
           )}
-          {compile.result && errors.length > 0 && (
+          {showErrors && (
             <div className="errors" data-testid="errors-panel">
-              {errors.slice(0, 50).map((e, i) => (
-                <button key={i} className="errors__row" onClick={() => jumpToLine(e.line)}>
-                  <span className={`errors__badge errors__badge--${e.type}`}>{e.type === 'error' ? 'Error' : 'Warning'}</span>
-                  {e.line != null && <span className="errors__line">line {e.line}</span>}
-                  <span className="errors__msg" title={e.message}>{e.message}</span>
-                </button>
-              ))}
+              <div className="errors__head">
+                <span>{errCount > 0 ? `${errCount} error${errCount === 1 ? '' : 's'}` : 'Problems'}</span>
+                <button className="btn btn--ghost btn--small" onClick={() => setShowLog(true)} data-testid="view-log">View log</button>
+              </div>
+              {errors.slice(0, 50).map((e, i) => {
+                const hint = hintFor(e.message);
+                return (
+                  <button key={i} className="errors__row" onClick={() => jumpToLine(e.line, (e as { file?: string }).file)}>
+                    <span className={`errors__badge errors__badge--${e.type}`}>{e.type === 'error' ? 'Error' : 'Warning'}</span>
+                    {e.line != null && <span className="errors__line">line {e.line}</span>}
+                    <span className="errors__msgwrap">
+                      <span className="errors__msg" title={e.message}>{e.message}</span>
+                      {hint && <span className="errors__hint">{hint}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+              {errors.length === 0 && (
+                <div className="errors__row" style={{ cursor: 'default' }}>
+                  <span className="errors__msg">Typesetting failed — open the log for details.</span>
+                </div>
+              )}
             </div>
           )}
         </main>
@@ -248,15 +307,41 @@ export default function Editor() {
         <section className="pane" style={{ width: pdfWidth, flex: 'none' }}>
           <div className="pane__header">
             <span>Preview</span>
+            <button
+              className={`auto-toggle ${auto ? 'auto-toggle--on' : ''}`}
+              onClick={toggleAuto}
+              title={auto ? 'Auto-typeset is on — typesets shortly after you stop typing' : 'Auto-typeset is off'}
+              data-testid="auto-toggle"
+            >
+              <span className="auto-toggle__knob" />
+              Auto
+            </button>
+            <div className="zoom" data-testid="zoom-controls">
+              <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))} title="Zoom out" aria-label="Zoom out">−</button>
+              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width">{Math.round(zoom * 100)}%</button>
+              <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))} title="Zoom in" aria-label="Zoom in">+</button>
+            </div>
             <span className="pdf-status" data-testid="pdf-status">
               {compile.status === 'compiling' && <><span className="dot dot--busy" /> Typesetting…</>}
               {compile.status === 'ok' && compile.result && <><span className="dot dot--ok" /> Typeset in {(compile.result.durationMs / 1000).toFixed(1)}s</>}
               {compile.status === 'error' && <><span className="dot dot--error" /> {errCount > 0 ? `${errCount} error${errCount === 1 ? '' : 's'}` : 'Failed'}</>}
             </span>
           </div>
-          <PdfPane pdfUrl={compile.result?.pdfUrl || null} status={compile.status} onFirstOpen={doCompile} />
+          <PdfPane pdfUrl={compile.result?.pdfUrl || null} status={compile.status} zoom={zoom} onFirstOpen={doCompile} />
         </section>
       </div>
+
+      {showLog && compile.result && (
+        <div className="modal-backdrop" onClick={() => setShowLog(false)}>
+          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+            <h2>Typesetting log</h2>
+            <pre className="logview" data-testid="log-view">{compile.result.log || '(no log)'}</pre>
+            <div className="modal__row">
+              <button className="btn" onClick={() => setShowLog(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

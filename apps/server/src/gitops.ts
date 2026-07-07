@@ -18,6 +18,7 @@ export async function listBranches(id: string): Promise<BranchInfo[]> {
 /** Create branch from a base and materialize its worktree. */
 export async function createBranch(id: string, name: string, from = 'main'): Promise<void> {
   if (!BRANCH_RE.test(name) || name.includes('..')) throw new Error('bad branch name');
+  if (!BRANCH_RE.test(from) || from.includes('..')) throw new Error('bad base branch name');
   if (name === 'main') throw new Error('main already exists');
   const g = git(repoDir(id));
   const dir = branchDir(id, name);

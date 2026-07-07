@@ -16,7 +16,7 @@ COPY server.js .
 
 ENV PORT=4020 \
     DATA_DIR=/data \
-    openin_any=a \
+    openin_any=p \
     openout_any=p
 
 EXPOSE 4020

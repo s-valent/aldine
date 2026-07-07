@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, LogEntry, localUser } from '../api';
 import { useToast } from './Toast';
+import { friendlyDate } from '../util/dates';
 
 export default function HistoryPanel({ projectId, branch }: { projectId: string; branch: string }) {
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -39,7 +40,7 @@ export default function HistoryPanel({ projectId, branch }: { projectId: string;
       {log.map((c) => (
         <div key={c.hash} className="history__item" title={c.hash}>
           <div className="history__msg">{c.message}</div>
-          <div className="history__meta">{c.author} · {new Date(c.date).toLocaleString()}</div>
+          <div className="history__meta">{c.author} · {friendlyDate(c.date)}</div>
         </div>
       ))}
       {log.length === 0 && <p style={{ color: 'var(--text-2)', padding: 8 }}>No history yet on this branch.</p>}

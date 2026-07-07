@@ -157,9 +157,10 @@ export default {
           }
 
           if (state.view === 'connect') {
+            Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 6px' });
             wrap.append(
               section('Connect Zotero'),
-              h('p', { style: { color: 'var(--text-2)', fontSize: '12px', margin: '2px 2px 8px' } },
+              h('p', { style: { color: 'var(--text-2)', fontSize: '12px', lineHeight: '1.5', margin: '0' } },
                 'Paste a Zotero API key with library read access. ',
                 h('a', { href: 'https://www.zotero.org/settings/keys/new', target: '_blank', style: { color: 'var(--accent)' } }, 'Create one'),
                 '.'),
@@ -175,7 +176,7 @@ export default {
               }),
               h('button', {
                 class: 'btn btn--primary',
-                style: { marginTop: '8px', width: '100%', justifyContent: 'center' },
+                style: { width: '100%', justifyContent: 'center' },
                 dataset: { testid: 'zotero-connect' },
                 disabled: busy ? '' : null,
                 onclick: connect,

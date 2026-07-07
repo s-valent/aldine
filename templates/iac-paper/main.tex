@@ -1,0 +1,39 @@
+% IAC manuscript — built on the iac class (github.com/trahloff/iac-latex).
+\documentclass{iac}
+
+\IACconference{77}
+\IAClocation{City, Country}
+\IACdates{5--9 October}
+\IACyear{2026}
+\IACpapernumber{X.X.x}
+
+\IACauthor*{First Author}{Affiliation, City, Country}{author@example.org}
+\IACauthor{Second Author}{Affiliation, City, Country}{second@example.org}
+
+\IACcopyright[B1]{First Author}{2026}
+
+\title{Your Paper Title}
+
+\abstract{A structured abstract: context, gap, contribution, method, and the
+headline result in 150--250 words.}
+
+\addbibresource{references.bib}
+
+\begin{document}
+\maketitle
+
+\acronyms{%
+IAC \quad International Astronautical Congress}
+
+\section{Introduction}
+Motivate the problem and cite prior work~\cite{knuth1984}.
+
+\section{Method}
+Describe the approach.
+
+\section{Conclusion}
+Summarize the contribution.
+
+\printbibliography
+
+\end{document}

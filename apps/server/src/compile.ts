@@ -23,7 +23,27 @@ function relProjectDir(projectId: string, branch: string): string {
   return path.relative(config.dataDir, branchDir(projectId, branch));
 }
 
-export async function compileProject(projectId: string, branch: string): Promise<CompileResult> {
+/**
+ * Serialize compiles per project::branch so two clients can't run latexmk in
+ * the same .papyr-out dir concurrently (which corrupts aux files / the PDF).
+ * A queued request coalesces onto the in-flight one's successor.
+ */
+const compileChain = new Map<string, Promise<unknown>>();
+
+export function compileProject(projectId: string, branch: string): Promise<CompileResult> {
+  const key = `${projectId}::${branch}`;
+  const prev = compileChain.get(key) || Promise.resolve();
+  const result = prev.catch(() => undefined).then(() => runCompile(projectId, branch));
+  // The chain tail must never reject (would surface as an unhandled rejection);
+  // the caller gets `result` (which may reject and is awaited/handled by the route).
+  const tail = result.catch(() => undefined).then(() => {
+    if (compileChain.get(key) === tail) compileChain.delete(key);
+  });
+  compileChain.set(key, tail);
+  return result;
+}
+
+async function runCompile(projectId: string, branch: string): Promise<CompileResult> {
   const meta = readMeta(projectId);
   await ensureWorktree(projectId, branch);
   flushBranchDocs(projectId, branch);

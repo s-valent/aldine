@@ -1,0 +1,7 @@
+{
+  "id": "iac-paper",
+  "name": "IAC Conference Paper",
+  "description": "International Astronautical Congress manuscript (iac class, biblatex).",
+  "icon": "🛰",
+  "order": 2
+}

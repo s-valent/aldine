@@ -7,8 +7,13 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 export const config = {
   port: Number(process.env.PORT || 3000),
-  /** Root for project git repos: <dataDir>/projects/<id> */
+  /** Root for project git repos: <dataDir>/projects/<id>. Shared with the compiler. */
   dataDir: process.env.DATA_DIR || path.join(repoRoot, '.data'),
+  /**
+   * Secrets & project metadata. MUST live outside dataDir so the compiler
+   * container (which mounts dataDir) can never read Zotero API keys via \openin.
+   */
+  metaRoot: process.env.META_DIR || path.join(repoRoot, '.secrets'),
   /** Shared with compiler service; PDFs land here */
   cacheDir: process.env.CACHE_DIR || path.join(repoRoot, '.cache/latex'),
   compilerUrl: process.env.COMPILER_URL || 'http://localhost:4020',
@@ -20,8 +25,18 @@ export const config = {
 
 export const projectsDir = path.join(config.dataDir, 'projects');
 export const worktreesDir = path.join(config.dataDir, 'worktrees');
-export const metaDir = path.join(config.dataDir, 'meta');
+export const metaDir = path.join(config.metaRoot, 'meta');
 
 for (const d of [projectsDir, worktreesDir, metaDir, config.cacheDir]) {
   fs.mkdirSync(d, { recursive: true });
+}
+
+// Migrate meta from the old in-dataDir location (pre-security-fix) if present.
+const legacyMeta = path.join(config.dataDir, 'meta');
+if (fs.existsSync(legacyMeta) && legacyMeta !== metaDir) {
+  for (const f of fs.readdirSync(legacyMeta)) {
+    const dest = path.join(metaDir, f);
+    if (!fs.existsSync(dest)) fs.renameSync(path.join(legacyMeta, f), dest);
+  }
+  try { fs.rmdirSync(legacyMeta); } catch { /* not empty; leave it */ }
 }

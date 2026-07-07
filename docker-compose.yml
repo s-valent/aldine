@@ -9,12 +9,15 @@ services:
       - "8080:3000"
     environment:
       DATA_DIR: /data
+      META_DIR: /secrets
       COMPILER_URL: http://compiler:4020
     volumes:
       - papyr-data:/data
+      - papyr-secrets:/secrets
     depends_on:
       - compiler
     restart: unless-stopped
+    stop_grace_period: 30s
 
   compiler:
     build:
@@ -32,3 +35,4 @@ services:
 
 volumes:
   papyr-data:
+  papyr-secrets:

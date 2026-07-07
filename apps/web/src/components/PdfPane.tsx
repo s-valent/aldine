@@ -6,10 +6,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.m
 interface Props {
   pdfUrl: string | null;
   status: 'idle' | 'compiling' | 'ok' | 'error';
+  zoom?: number; // multiplier on fit-width (1 = fit width)
   onFirstOpen(): void;
 }
 
-export default function PdfPane({ pdfUrl, status, onFirstOpen }: Props) {
+export default function PdfPane({ pdfUrl, status, zoom = 1, onFirstOpen }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [rendered, setRendered] = useState(false);
@@ -35,7 +36,7 @@ export default function PdfPane({ pdfUrl, status, onFirstOpen }: Props) {
       try {
         const doc = await pdfjs.getDocument(pdfUrl).promise;
         if (my !== renderTask.current) return;
-        const width = Math.max(320, scroller.clientWidth - 36);
+        const width = Math.max(320, scroller.clientWidth - 36) * zoom;
         const frag = document.createDocumentFragment();
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         for (let i = 1; i <= doc.numPages; i++) {
@@ -63,7 +64,7 @@ export default function PdfPane({ pdfUrl, status, onFirstOpen }: Props) {
         console.error('[pdf] render failed', err);
       }
     })();
-  }, [pdfUrl]);
+  }, [pdfUrl, zoom]);
 
   return (
     <div className="pdf-pane" ref={scrollRef} data-testid="pdf-pane">

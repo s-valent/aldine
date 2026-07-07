@@ -5,7 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { registerRoutes } from './routes.js';
-import { hocuspocus } from './collab.js';
+import { hocuspocus, flushAllDocs } from './collab.js';
+import { commitAll } from './gitops.js';
+import { listProjects } from './store.js';
+
+// Never let a stray rejection take down the collaboration server.
+process.on('unhandledRejection', (reason) => console.error('[papyr] unhandledRejection', reason));
 
 const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 32 * 1024 * 1024 });
 
@@ -37,3 +42,22 @@ app.server.on('upgrade', (request, socket, head) => {
 });
 
 console.log(`[papyr] server on :${config.port} — data=${config.dataDir} compiler=${config.compilerUrl}`);
+
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[papyr] ${signal} — flushing ${hocuspocus.documents.size} open documents…`);
+  try {
+    const n = flushAllDocs();
+    // best-effort commit of every project's main branch so nothing is lost
+    await Promise.allSettled(listProjects().map((p) => commitAll(p.id, 'main', 'papyr: autosave on shutdown')));
+    console.log(`[papyr] flushed ${n} documents; exiting`);
+  } catch (err) {
+    console.error('[papyr] shutdown flush error', err);
+  }
+  try { await app.close(); } catch { /* noop */ }
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -90,7 +90,30 @@ function run(cmd, args, opts, timeoutMs) {
   });
 }
 
+// Bound concurrent latexmk runs so a burst can't OOM the container.
+let running = 0;
+const waiters = [];
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_COMPILES || 2);
+async function acquire() {
+  if (running >= MAX_CONCURRENT) await new Promise((r) => waiters.push(r));
+  running++;
+}
+function release() {
+  running--;
+  const next = waiters.shift();
+  if (next) next();
+}
+
 async function compile(body) {
+  await acquire();
+  try {
+    return await compileInner(body);
+  } finally {
+    release();
+  }
+}
+
+async function compileInner(body) {
   const { projectDir, rootFile = 'main.tex', engine = 'pdf' } = body;
   if (!projectDir || projectDir.includes('..')) throw new Error('invalid projectDir');
   if (rootFile.includes('..') || path.isAbsolute(rootFile)) throw new Error('invalid rootFile');

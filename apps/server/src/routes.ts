@@ -5,12 +5,19 @@ import * as store from './store.js';
 import * as gitops from './gitops.js';
 import * as zotero from './zotero.js';
 import { compileProject, synctexLookup } from './compile.js';
-import { flushBranchDocs, refreshBranchDocsFromDisk } from './collab.js';
+import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc } from './collab.js';
 import { parseBib, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
+import { listTemplates, templateFiles } from './templates.js';
 import { safeJoin } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
+
+/** git internals and compile output are never user-addressable. */
+function isHiddenPath(rel: string): boolean {
+  const first = rel.split('/')[0];
+  return first === '.git' || first.startsWith('.papyr');
+}
 
 function publicMeta(meta: store.ProjectMeta) {
   const { zotero: z, ...rest } = meta;
@@ -32,11 +39,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- projects ----------
   app.get('/api/projects', async () => store.listProjects().map(publicMeta));
 
-  app.post<{ Body: { name?: string; files?: Record<string, string> } }>('/api/projects', async (req) => {
-    const { name = 'Untitled Project', files } = req.body || {};
-    const meta = await store.createProject(name, files);
+  app.post<{ Body: { name?: string; files?: Record<string, string>; template?: string } }>('/api/projects', async (req, reply) => {
+    const { name = 'Untitled Project', files, template } = req.body || {};
+    let seed = files;
+    if (template) {
+      try {
+        seed = templateFiles(template);
+      } catch (err: any) {
+        return reply.code(400).send({ error: err.message });
+      }
+    }
+    const meta = await store.createProject(name, seed);
     return publicMeta(meta);
   });
+
+  app.get('/api/templates', async () => listTemplates());
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     try {
@@ -74,6 +91,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/file', async (req, reply) => {
     const { branch = 'main', path: rel } = req.query;
     if (!rel) return reply.code(400).send({ error: 'path required' });
+    if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
     try {
       const buf = store.readFile(req.params.id, branch, rel);
       const ext = path.extname(rel).toLowerCase();
@@ -91,6 +109,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/file', async (req, reply) => {
       const { branch = 'main', path: rel, content = '', encoding = 'utf8' } = req.body || {};
       if (!rel) return reply.code(400).send({ error: 'path required' });
+      if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
       await gitops.ensureWorktree(req.params.id, branch);
       store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
       refreshBranchDocsFromDisk(req.params.id, branch);
@@ -101,6 +120,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/file/rename', async (req, reply) => {
       const { branch = 'main', from, to } = req.body || {};
       if (!from || !to) return reply.code(400).send({ error: 'from/to required' });
+      if (isHiddenPath(from) || isHiddenPath(to)) return reply.code(403).send({ error: 'forbidden path' });
+      // evict the source doc first so its final store can't recreate the old file
+      evictDoc(req.params.id, branch, from);
       store.renameFile(req.params.id, branch, from, to);
       return { ok: true };
     });
@@ -108,6 +130,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/file', async (req, reply) => {
     const { branch = 'main', path: rel } = req.query;
     if (!rel) return reply.code(400).send({ error: 'path required' });
+    if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
+    evictDoc(req.params.id, branch, rel); // prevent resurrection via pending store
     store.deleteFile(req.params.id, branch, rel);
     return { ok: true };
   });
@@ -127,9 +151,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- compile ----------
-  app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/compile', async (req) => {
+  app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/compile', async (req, reply) => {
     const branch = req.body?.branch || 'main';
-    return compileProject(req.params.id, branch);
+    try {
+      return await compileProject(req.params.id, branch);
+    } catch (err: any) {
+      return reply.code(400).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: err.message });
+    }
   });
 
   app.post<{ Params: { id: string }; Body: Record<string, unknown> & { branch?: string } }>(

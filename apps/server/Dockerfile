@@ -17,12 +17,15 @@ COPY apps/server/package.json apps/server/
 RUN npm install --workspace apps/server --include-workspace-root=false --omit=dev
 COPY apps/server apps/server
 COPY plugins plugins
+COPY templates templates
 COPY --from=webbuild /build/apps/web/dist apps/web/dist
 
 ENV PORT=3000 \
     DATA_DIR=/data \
+    META_DIR=/secrets \
     COMPILER_URL=http://compiler:4020 \
     PLUGINS_DIR=/srv/plugins \
+    TEMPLATES_DIR=/srv/templates \
     WEB_DIST=/srv/apps/web/dist
 
 EXPOSE 3000

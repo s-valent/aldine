@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language';
+import { tags as t } from '@lezer/highlight';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
@@ -24,12 +25,40 @@ interface Props {
   filePath: string;
   onUsers(users: PresenceUser[]): void;
   onSave(): void;
+  onDocChanged?(): void;
+  onStats?(stats: { words: number; selWords: number | null }): void;
 }
+
+/** Approximate word count for LaTeX prose: strips comments, commands, math. */
+export function latexWordCount(src: string): number {
+  const stripped = src
+    .replace(/(^|[^\\])%.*$/gm, '$1')            // comments
+    .replace(/\\begin\{[^}]*\}|\\end\{[^}]*\}/g, ' ')
+    .replace(/\$\$[\s\S]*?\$\$|\$[^$]*\$/g, ' EQN ') // math counts as one word
+    .replace(/\\[a-zA-Z@]+\*?(\[[^\]]*\])*/g, ' ')   // commands (keep brace contents)
+    .replace(/[{}~]/g, ' ');
+  const words = stripped.match(/[\p{L}\p{N}][\p{L}\p{N}'’\-]*/gu);
+  return words ? words.length : 0;
+}
+
+/** Calm, ink-blue syntax palette that flips with the color scheme via CSS vars. */
+const papyrHighlight = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.tagName, t.macroName, t.function(t.variableName)], color: 'var(--syn-command)' },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--syn-comment)', fontStyle: 'italic' },
+  { tag: [t.string, t.attributeValue, t.inserted], color: 'var(--syn-string)' },
+  { tag: [t.number, t.literal, t.bool, t.escape], color: 'var(--syn-value)' },
+  { tag: [t.labelName, t.typeName, t.attributeName], color: 'var(--syn-value)' },
+  { tag: [t.heading], fontWeight: '600', color: 'var(--text)' },
+  { tag: [t.link, t.url], color: 'var(--accent)' },
+  { tag: [t.processingInstruction, t.meta, t.bracket], color: 'var(--text-2)' },
+  { tag: t.strong, fontWeight: '600' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+]);
 
 const papyrTheme = EditorView.theme({
   '&': { backgroundColor: 'var(--bg-panel)', color: 'var(--text)' },
   '.cm-cursor': { borderLeftColor: 'var(--text)' },
-  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--accent-soft) !important' },
+  '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection) !important' },
   '.cm-tooltip': {
     backgroundColor: 'var(--bg-panel)',
     border: '1px solid var(--hairline)',
@@ -43,9 +72,11 @@ const papyrTheme = EditorView.theme({
   '.cm-panels': { backgroundColor: 'var(--bg-inset)', color: 'var(--text)', borderColor: 'var(--hairline)' },
 });
 
-const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave }, ref) {
+const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const cbRef = useRef({ onDocChanged, onStats, onSave });
+  cbRef.current = { onDocChanged, onStats, onSave };
 
   useImperativeHandle(ref, () => ({
     gotoLine(line: number) {
@@ -66,6 +97,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
 
   useEffect(() => {
     if (!hostRef.current) return;
+    let statsTimer: ReturnType<typeof setTimeout> | null = null;
     const docName = `${projectId}::${branch}::${filePath}`;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ydoc = new Y.Doc();
@@ -80,13 +112,13 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
 
     const awareness = provider.awareness!;
     const reportUsers = () => {
-      const states = Array.from(awareness.getStates().values());
-      const seen = new Map<string, PresenceUser>();
-      for (const s of states) {
+      // key by Yjs clientID so two collaborators with the same display name stay distinct
+      const byClient = new Map<number, PresenceUser>();
+      awareness.getStates().forEach((s, clientId) => {
         const u = (s as { user?: PresenceUser }).user;
-        if (u?.name && !seen.has(u.name)) seen.set(u.name, u);
-      }
-      onUsers(Array.from(seen.values()));
+        if (u?.name) byClient.set(clientId, u);
+      });
+      onUsers(Array.from(byClient.values()));
     };
     awareness.on('change', reportUsers);
     reportUsers();
@@ -103,6 +135,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           drawSelection(),
           EditorState.allowMultipleSelections.of(true),
           indentOnInput(),
+          syntaxHighlighting(papyrHighlight),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           bracketMatching(),
           closeBrackets(),
@@ -123,8 +156,23 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
             ...yUndoManagerKeymap,
             ...completionKeymap,
             indentWithTab,
-            { key: 'Mod-s', run: () => { onSave(); return true; } },
+            { key: 'Mod-s', run: () => { cbRef.current.onSave(); return true; } },
           ]),
+          EditorView.updateListener.of((u) => {
+            if (u.docChanged) cbRef.current.onDocChanged?.();
+            if (u.docChanged || u.selectionSet) {
+              if (statsTimer) clearTimeout(statsTimer);
+              statsTimer = setTimeout(() => {
+                const state = viewRef.current?.state;
+                if (!state || !cbRef.current.onStats) return;
+                const sel = state.selection.main;
+                cbRef.current.onStats({
+                  words: latexWordCount(state.doc.toString()),
+                  selWords: sel.empty ? null : latexWordCount(state.sliceDoc(sel.from, sel.to)),
+                });
+              }, 350);
+            }
+          }),
           papyrTheme,
           EditorView.lineWrapping,
           yCollab(ytext, provider.awareness),
@@ -133,7 +181,14 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
     });
     viewRef.current = view;
 
+    const initialStats = () => {
+      cbRef.current.onStats?.({ words: latexWordCount(view.state.doc.toString()), selWords: null });
+    };
+    provider.on('synced', initialStats);
+
     return () => {
+      if (statsTimer) clearTimeout(statsTimer);
+      provider.off('synced', initialStats);
       awareness.off('change', reportUsers);
       view.destroy();
       provider.destroy();
