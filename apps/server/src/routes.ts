@@ -9,6 +9,7 @@ import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc } from './collab.j
 import { parseBib, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
+import { fetchBibEntry } from './references.js';
 import { safeJoin } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
@@ -288,6 +289,30 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: err.message });
     }
   });
+
+  // ---------- reference lookup (DOI / arXiv → BibTeX) ----------
+  app.post<{ Params: { id: string }; Body: { query: string; branch?: string; bibFile?: string } }>(
+    '/api/projects/:id/references/add', async (req, reply) => {
+      const { query, branch = 'main', bibFile = 'references.bib' } = req.body || {};
+      if (!query) return reply.code(400).send({ error: 'query required' });
+      try {
+        const entry = await fetchBibEntry(query.trim());
+        if (!entry) return reply.code(404).send({ error: 'No reference found for that DOI/arXiv id' });
+        // append to the .bib (create if missing), skipping duplicate keys
+        await gitops.ensureWorktree(req.params.id, branch);
+        let existing = '';
+        try { existing = store.readFile(req.params.id, branch, bibFile).toString('utf8'); } catch { /* new file */ }
+        const key = (entry.match(/@\w+\s*\{\s*([^,\s]+)/) || [])[1];
+        if (key && new RegExp(`@\\w+\\s*\\{\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,`).test(existing)) {
+          return { ok: true, key, duplicate: true };
+        }
+        store.writeFile(req.params.id, branch, bibFile, existing.trimEnd() + '\n\n' + entry.trim() + '\n');
+        refreshBranchDocsFromDisk(req.params.id, branch);
+        return { ok: true, key, bibFile };
+      } catch (err: any) {
+        return reply.code(502).send({ error: err.message });
+      }
+    });
 
   // ---------- plugins ----------
   app.get('/api/plugins', async () => listPlugins());

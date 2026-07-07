@@ -1,4 +1,4 @@
-/** Mock Zotero Web API for e2e tests. Accepts key "test-key-123". */
+/** Mock Zotero Web API + DOI/arXiv reference lookup for e2e tests. */
 import http from 'node:http';
 
 const KEY = 'test-key-123';
@@ -27,6 +27,16 @@ const server = http.createServer((req, res) => {
     res.end(buf);
   };
 
+  // --- DOI content negotiation (any 10.x path) ---
+  if (url.pathname.startsWith('/10.')) {
+    return send(200, `@article{doe2020,\n  title = {A Mock Paper for Testing},\n  author = {Doe, Jane},\n  year = {2020},\n  doi = {${url.pathname.slice(1)}},\n}`);
+  }
+  // --- arXiv Atom feed ---
+  if (url.pathname === '/api/query') {
+    const id = url.searchParams.get('id_list') || '0000.00000';
+    return send(200, `<?xml version="1.0"?>\n<feed><title>arXiv Query</title><entry><title>A Mock arXiv Paper</title><published>2019-01-01T00:00:00Z</published><author><name>Alice Smith</name></author><author><name>Bob Jones</name></author></entry></feed>`);
+  }
+
   if (auth !== KEY) return send(403, { error: 'bad key' });
 
   if (url.pathname === '/keys/current') {
@@ -40,6 +50,7 @@ const server = http.createServer((req, res) => {
       { key: 'COLL1', data: { name: 'GSaaS Research', parentCollection: false } },
     ]);
   }
+  // (references DOI/arXiv mock handled by a separate server below; keep Zotero paths here)
   if (url.pathname.includes('/items/top')) {
     if (req.headers['if-modified-since-version'] && Number(req.headers['if-modified-since-version']) >= 42) {
       res.writeHead(304); return res.end();

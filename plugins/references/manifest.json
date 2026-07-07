@@ -1,0 +1,9 @@
+{
+  "id": "references",
+  "name": "Cite",
+  "description": "Add a reference by DOI or arXiv id — fetches BibTeX, appends it, and inserts the \\cite.",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "icon": "＋",
+  "slots": ["sidebarPanel"]
+}

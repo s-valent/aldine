@@ -32,11 +32,14 @@ for (const d of [projectsDir, worktreesDir, metaDir, config.cacheDir]) {
 }
 
 // Migrate meta from the old in-dataDir location (pre-security-fix) if present.
+// Copy+unlink (not rename) since the new location may be a different volume.
 const legacyMeta = path.join(config.dataDir, 'meta');
-if (fs.existsSync(legacyMeta) && legacyMeta !== metaDir) {
+if (fs.existsSync(legacyMeta) && path.resolve(legacyMeta) !== path.resolve(metaDir)) {
   for (const f of fs.readdirSync(legacyMeta)) {
+    const src = path.join(legacyMeta, f);
     const dest = path.join(metaDir, f);
-    if (!fs.existsSync(dest)) fs.renameSync(path.join(legacyMeta, f), dest);
+    if (!fs.existsSync(dest)) fs.copyFileSync(src, dest);
+    fs.rmSync(src, { force: true });
   }
   try { fs.rmdirSync(legacyMeta); } catch { /* not empty; leave it */ }
 }

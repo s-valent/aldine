@@ -75,3 +75,25 @@ test.describe('v0.2 features', () => {
     }
   });
 });
+
+test.describe('DOI / arXiv citation (references plugin)', () => {
+  test('add a reference by DOI and insert the cite', async ({ page, request }) => {
+    const id = await createProject(request, 'DOI Cite');
+    try {
+      await openProject(page, id);
+      const tab = page.getByTestId('tab-plugin:references');
+      await expect(tab).toBeVisible({ timeout: 15_000 });
+      await tab.click();
+      await page.getByTestId('reference-query').fill('10.1145/mock.12345');
+      await page.getByTestId('reference-add').click();
+      // cite inserted into the editor
+      await expect(page.locator('.cm-content')).toContainText('\\cite{doe2020}', { timeout: 15_000 });
+      // entry landed in references.bib
+      const bib = await request.get(`/api/projects/${id}/bib?branch=main`);
+      const entries = await bib.json();
+      expect(entries.some((e: { key: string }) => e.key === 'doe2020')).toBeTruthy();
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+});
