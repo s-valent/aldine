@@ -148,6 +148,8 @@ export default function Editor() {
   const errors = compile.result?.errors.filter((e) => e.type !== 'typesetting') || [];
   const errCount = errors.filter((e) => e.type === 'error').length;
   const showErrors = compile.result != null && (errors.length > 0 || !compile.result.ok);
+  // a PDF is already on screen when the last compile produced one (recompiles keep it visible)
+  const hasPdf = compile.result?.pdfUrl != null;
 
   if (!project) return <div className="editor-shell" />;
 
@@ -307,6 +309,17 @@ export default function Editor() {
         <section className="pane" style={{ width: pdfWidth, flex: 'none' }}>
           <div className="pane__header">
             <span>Preview</span>
+            <span className="pdf-status" data-testid="pdf-status" style={{ marginLeft: 10 }}>
+              {compile.status === 'compiling' && hasPdf && <><span className="dot dot--busy" /> Typesetting…</>}
+              {compile.status === 'ok' && compile.result && <><span className="dot dot--ok" /> Typeset in {(compile.result.durationMs / 1000).toFixed(1)}s</>}
+              {compile.status === 'error' && <><span className="dot dot--error" /> {errCount > 0 ? `${errCount} error${errCount === 1 ? '' : 's'}` : 'Failed'}</>}
+            </span>
+            <span className="toolbar__spacer" />
+            <div className="zoom" data-testid="zoom-controls">
+              <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))} title="Zoom out" aria-label="Zoom out">−</button>
+              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width">{Math.round(zoom * 100)}%</button>
+              <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))} title="Zoom in" aria-label="Zoom in">+</button>
+            </div>
             <button
               className={`auto-toggle ${auto ? 'auto-toggle--on' : ''}`}
               onClick={toggleAuto}
@@ -316,16 +329,6 @@ export default function Editor() {
               <span className="auto-toggle__knob" />
               Auto
             </button>
-            <div className="zoom" data-testid="zoom-controls">
-              <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))} title="Zoom out" aria-label="Zoom out">−</button>
-              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width">{Math.round(zoom * 100)}%</button>
-              <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))} title="Zoom in" aria-label="Zoom in">+</button>
-            </div>
-            <span className="pdf-status" data-testid="pdf-status">
-              {compile.status === 'compiling' && <><span className="dot dot--busy" /> Typesetting…</>}
-              {compile.status === 'ok' && compile.result && <><span className="dot dot--ok" /> Typeset in {(compile.result.durationMs / 1000).toFixed(1)}s</>}
-              {compile.status === 'error' && <><span className="dot dot--error" /> {errCount > 0 ? `${errCount} error${errCount === 1 ? '' : 's'}` : 'Failed'}</>}
-            </span>
           </div>
           <PdfPane pdfUrl={compile.result?.pdfUrl || null} status={compile.status} zoom={zoom} onFirstOpen={doCompile} />
         </section>

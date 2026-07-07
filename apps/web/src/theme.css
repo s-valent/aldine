@@ -37,8 +37,10 @@
 
   --ok: #28a745;
   --warn: #b58a00;
+  --warn-soft: rgba(181, 138, 0, 0.12);
   --error: #d70015;
   --error-soft: rgba(215, 0, 21, 0.08);
+  --bg-panel-raised: #ffffff;
 
   --radius-s: 6px;
   --radius-m: 8px;
@@ -82,8 +84,12 @@
 
     --ok: #32d74b;
     --warn: #ffd60a;
+    --warn-soft: rgba(255, 214, 10, 0.14);
     --error: #ff453a;
     --error-soft: rgba(255, 69, 58, 0.12);
+    --bg-panel-raised: #28282c;
+
+    --syn-comment: #84848e;
 
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
     --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.5);
