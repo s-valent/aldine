@@ -43,12 +43,29 @@ Product-management subagents propose UX improvements each major cycle.
 Example paper: /Users/rahloff/projects/paper-gsaas-2026/paper (iac.cls, biblatex, references.bib)
 — must compile in Papyr.
 
-## Status log
-- [x] Research agents launched (Bibby features, tech stack, Zotero)
-- [ ] Scaffold monorepo
-- [ ] Compile service works on example paper
-- [ ] Editor + collab
-- [ ] Git branches
-- [ ] Plugins
-- [ ] Zotero
-- [ ] Playwright suite green
+## Status log — v0.2 COMPLETE (all acceptance criteria met + verified on Docker)
+- [x] Research (Bibby features, tech stack, Zotero) — 3 agents
+- [x] Scaffold monorepo (app / compiler / web)
+- [x] Compile service — IAC example paper → PDF, incremental, sandboxed
+- [x] Editor + real-time collab (Yjs/CM6, presence, PDF.js)
+- [x] Git multi-branch (worktrees: create/switch/merge/history)
+- [x] Plugin system (2 plugins: zotero, references)
+- [x] Native Zotero (link/collection/sync/cite/autocomplete)
+- [x] Playwright suite — 22 tests green (dev + docker)
+- [x] Apple-style UX — 2 design-review rounds applied
+- [x] Security fixes C1/C2/H1/H2/H4/M2 (key exfil, restart flush, etc.)
+
+### Stretch shipped
+- [x] Templates gallery (article/IAC/beamer/report)
+- [x] DOI/arXiv → BibTeX cite
+- [x] SyncTeX code↔PDF jump (double-click + ⌘J)
+- [x] Auto-typeset on idle, word count, PDF zoom, drag-drop upload
+- [x] Plain-English error hints + raw log viewer
+- [x] Command palette (⌘K), spellcheck toggle, Overleaf ZIP import
+- [x] Project-wide \ref indexing
+
+### Remaining ideas (future)
+- AI error auto-fix (Bibby parity — needs LLM/BYO key)
+- Track changes / review mode
+- Better BibTeX local companion (CAYW)
+- Hunspell WASM spellcheck (upgrade from native)
