@@ -65,6 +65,8 @@ export const api = {
 
   compile: (id: string, branch: string) =>
     req<CompileResult>(`/api/projects/${id}/compile`, { method: 'POST', body: JSON.stringify({ branch }) }),
+  synctex: (id: string, branch: string, payload: Record<string, unknown>) =>
+    req<{ ok: boolean; records: Array<Record<string, number | string>> }>(`/api/projects/${id}/synctex`, { method: 'POST', body: JSON.stringify({ branch, ...payload }) }),
   bib: (id: string, branch: string) => req<BibEntry[]>(`/api/projects/${id}/bib?branch=${encodeURIComponent(branch)}`),
 
   branches: (id: string) => req<BranchInfo[]>(`/api/projects/${id}/branches`),

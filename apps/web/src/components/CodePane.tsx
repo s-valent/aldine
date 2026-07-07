@@ -17,6 +17,7 @@ import type { PresenceUser } from './Presence';
 export interface CodePaneHandle {
   gotoLine(line: number): void;
   insertAtCursor(text: string): void;
+  currentLine(): number | null;
 }
 
 interface Props {
@@ -27,6 +28,7 @@ interface Props {
   onSave(): void;
   onDocChanged?(): void;
   onStats?(stats: { words: number; selWords: number | null }): void;
+  onJumpToPdf?(): void;
 }
 
 /** Approximate word count for LaTeX prose: strips comments, commands, math. */
@@ -72,11 +74,11 @@ const papyrTheme = EditorView.theme({
   '.cm-panels': { backgroundColor: 'var(--bg-inset)', color: 'var(--text)', borderColor: 'var(--hairline)' },
 });
 
-const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats }, ref) {
+const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const cbRef = useRef({ onDocChanged, onStats, onSave });
-  cbRef.current = { onDocChanged, onStats, onSave };
+  const cbRef = useRef({ onDocChanged, onStats, onSave, onJumpToPdf });
+  cbRef.current = { onDocChanged, onStats, onSave, onJumpToPdf };
 
   useImperativeHandle(ref, () => ({
     gotoLine(line: number) {
@@ -92,6 +94,11 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       if (!view) return;
       view.dispatch(view.state.replaceSelection(text));
       view.focus();
+    },
+    currentLine() {
+      const view = viewRef.current;
+      if (!view) return null;
+      return view.state.doc.lineAt(view.state.selection.main.head).number;
     },
   }), []);
 
@@ -157,6 +164,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
             ...completionKeymap,
             indentWithTab,
             { key: 'Mod-s', run: () => { cbRef.current.onSave(); return true; } },
+            { key: 'Mod-j', run: () => { cbRef.current.onJumpToPdf?.(); return true; } },
           ]),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) cbRef.current.onDocChanged?.();

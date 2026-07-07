@@ -22,11 +22,17 @@ no Redis, no 13-microservice sprawl.
   collection* (Overleaf can't), keep a `.bib` in sync with cheap
   version-aware refresh, insert citations from a search panel or via
   `\cite{` autocomplete.
+- **Cite by DOI / arXiv** — paste an identifier, get BibTeX appended and the
+  `\cite` inserted (no account, free public APIs).
+- **SyncTeX both ways** — double-click the PDF to jump to source; ⌘J to jump
+  the PDF to your cursor, with a highlight flash.
 - **Plugin system** — manifest + ES module plugins extend the sidebar,
-  editor, and commands. Zotero ships as a plugin; write your own in a folder.
+  editor, and commands. Zotero and DOI-cite ship as plugins; write your own.
 - **Templates** — article, IAC conference paper, beamer, report/thesis.
+- **Editor niceties** — auto-typeset on idle, live word count, PDF zoom,
+  drag-drop figure upload, plain-English error hints + raw log.
 - **Apple-style UI** — system fonts, hairline borders, light & dark mode,
-  keyboard-first (⌘S to typeset).
+  keyboard-first (⌘S typeset, ⌘J jump).
 
 ## Quick start
 

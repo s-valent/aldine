@@ -4,7 +4,7 @@ import { api, CompileResult, ProjectDetail, TreeEntry } from '../api';
 import { useToast } from '../components/Toast';
 import FileTree from '../components/FileTree';
 import CodePane, { CodePaneHandle } from '../components/CodePane';
-import PdfPane from '../components/PdfPane';
+import PdfPane, { PdfPaneHandle } from '../components/PdfPane';
 import BranchMenu from '../components/BranchMenu';
 import HistoryPanel from '../components/HistoryPanel';
 import Presence, { PresenceUser } from '../components/Presence';
@@ -34,6 +34,7 @@ export default function Editor() {
   const [zoom, setZoom] = useState(1);
   const [showLog, setShowLog] = useState(false);
   const codeRef = useRef<CodePaneHandle>(null);
+  const pdfRef = useRef<PdfPaneHandle>(null);
   const compilingRef = useRef(false);
   const pendingRef = useRef(false);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -133,6 +134,35 @@ export default function Editor() {
   };
 
   const insertAtCursor = useCallback((text: string) => codeRef.current?.insertAtCursor(text), []);
+
+  // Inverse SyncTeX: double-click in the PDF → open the source file at that line.
+  const onPdfInverse = useCallback(async (page: number, x: number, y: number) => {
+    try {
+      const res = await api.synctex(id, branch, { direction: 'inverse', page, x, y });
+      const rec = res.records?.find((r) => r.input || r.line != null);
+      if (!rec) return;
+      const line = Number(rec.line);
+      let file = String(rec.input || '');
+      // synctex returns an absolute/relative path; reduce to a project-relative one
+      const match = files.find((f) => file.endsWith('/' + f.path) || file.endsWith(f.path) || f.path === file);
+      if (match) file = match.path;
+      if (file && files.some((f) => f.path === file)) setActiveFile(file);
+      if (!Number.isNaN(line)) requestAnimationFrame(() => setTimeout(() => codeRef.current?.gotoLine(line), 80));
+    } catch { /* synctex unavailable */ }
+  }, [id, branch, files]);
+
+  // Forward SyncTeX: from the editor, jump the PDF to the current line.
+  const jumpToPdf = useCallback(async () => {
+    if (!activeFile) return;
+    const line = codeRef.current?.currentLine();
+    if (line == null) return;
+    try {
+      const res = await api.synctex(id, branch, { direction: 'forward', file: activeFile, line, column: 0 });
+      const rec = res.records?.find((r) => r.page != null && (r.y != null || r.v != null));
+      if (!rec) return;
+      pdfRef.current?.showForward(Number(rec.page), Number(rec.y ?? rec.v));
+    } catch { /* synctex unavailable */ }
+  }, [id, branch, activeFile]);
 
   const pluginCtx = useMemo(() => ({
     projectId: id,
@@ -261,6 +291,7 @@ export default function Editor() {
                 onSave={doCompile}
                 onDocChanged={onDocChanged}
                 onStats={setStats}
+                onJumpToPdf={jumpToPdf}
               />
             </>
           ) : (
@@ -330,7 +361,7 @@ export default function Editor() {
               Auto
             </button>
           </div>
-          <PdfPane pdfUrl={compile.result?.pdfUrl || null} status={compile.status} zoom={zoom} onFirstOpen={doCompile} />
+          <PdfPane ref={pdfRef} pdfUrl={compile.result?.pdfUrl || null} status={compile.status} zoom={zoom} onFirstOpen={doCompile} onInverse={onPdfInverse} />
         </section>
       </div>
 

@@ -512,7 +512,18 @@
   gap: 10px;
   color: var(--text-2);
 }
-.pdf-status { display: flex; align-items: center; gap: 6px; margin-left: auto; font-weight: 500; color: var(--text-2); font-size: 12px; }
+.pdf-status { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--text-2); font-size: 12px; }
+.pdf-pane__inner { position: relative; }
+.pdf-flash {
+  position: absolute;
+  background: var(--accent);
+  opacity: 0;
+  border-radius: 3px;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  animation: pdf-flash 1.4s var(--ease);
+}
+@keyframes pdf-flash { 15% { opacity: 0.35; } 100% { opacity: 0; } }
 
 /* errors panel */
 .errors {

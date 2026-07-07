@@ -97,3 +97,28 @@ test.describe('DOI / arXiv citation (references plugin)', () => {
     }
   });
 });
+
+test.describe('SyncTeX jump', () => {
+  test('double-click in the PDF jumps to the source line', async ({ page, request }) => {
+    const { createPaperProject } = await import('./helpers');
+    const id = await createPaperProject(request, 'SyncTeX');
+    try {
+      await openProject(page, id);
+      await page.getByTestId('typeset-button').click();
+      await expect(page.locator('canvas.pdf-page').first()).toBeVisible({ timeout: 120_000 });
+      // cursor starts at line 1; double-click well into the first page body
+      const canvas = page.locator('canvas.pdf-page').first();
+      const box = await canvas.boundingBox();
+      await page.mouse.dblclick(box!.x + box!.width * 0.5, box!.y + box!.height * 0.55);
+      // editor gains focus and scrolls to the mapped source location (not line 1)
+      await expect(page.locator('.cm-content')).toBeFocused({ timeout: 10_000 });
+      await expect.poll(async () => {
+        const nums = await page.locator('.cm-gutterElement').allTextContents();
+        const lines = nums.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+        return lines.length ? Math.max(...lines) : 0;
+      }, { timeout: 10_000 }).toBeGreaterThan(10);
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+});
