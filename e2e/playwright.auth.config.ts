@@ -1,0 +1,21 @@
+import { defineConfig } from '@playwright/test';
+
+/** Auth-enabled stack on :3200, isolated from the main (no-auth) suite. */
+const BASE = process.env.PAPYR_AUTH_URL || 'http://localhost:3200';
+
+export default defineConfig({
+  testDir: './auth-tests',
+  timeout: 120_000,
+  expect: { timeout: 15_000 },
+  retries: 1,
+  workers: 1,
+  reporter: [['list']],
+  use: { baseURL: BASE, trace: 'retain-on-failure', viewport: { width: 1440, height: 900 } },
+  webServer: process.env.PAPYR_AUTH_URL ? undefined : {
+    command: 'npm run build -w apps/web && PORT=3200 AUTH_ENABLED=1 DATA_DIR=$(pwd)/.data-auth META_DIR=$(pwd)/.secrets-auth npx tsx apps/server/src/index.ts',
+    cwd: '..',
+    port: 3200,
+    reuseExistingServer: true,
+    timeout: 240_000,
+  },
+});

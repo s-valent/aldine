@@ -12,9 +12,16 @@ import { listTemplates, templateFiles } from './templates.js';
 import { fetchBibEntry } from './references.js';
 import { unzip, guessRoot } from './unzip.js';
 import { aiConfigured, diagnose } from './ai.js';
+import * as auth from './auth.js';
+import { canAccess, isOwner, ownerName } from './authz.js';
 import { safeJoin, isTextFile } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
+
+/** current user for a request (null when auth disabled or not signed in) */
+function reqUser(req: { headers: { cookie?: string } }): auth.PublicUser | null {
+  return auth.userFromRequest(req.headers.cookie);
+}
 
 /** git internals and compile output are never user-addressable. */
 function isHiddenPath(rel: string): boolean {
@@ -22,10 +29,13 @@ function isHiddenPath(rel: string): boolean {
   return first === '.git' || first.startsWith('.papyr');
 }
 
-function publicMeta(meta: store.ProjectMeta) {
-  const { zotero: z, ...rest } = meta;
+function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null) {
+  const { zotero: z, ownerId, ...rest } = meta;
   return {
     ...rest,
+    ownerId,
+    ownerName: ownerName(meta),
+    isOwner: user !== undefined ? isOwner(meta, user) : undefined,
     zotero: z ? {
       libraryPrefix: z.libraryPrefix,
       collectionKey: z.collectionKey,
@@ -39,8 +49,54 @@ function publicMeta(meta: store.ProjectMeta) {
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => ({ ok: true, name: 'papyr' }));
 
+  // ---------- auth (env-gated) ----------
+  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, user: reqUser(req) }));
+
+  app.post<{ Body: { email: string; password: string; name?: string } }>('/api/auth/register', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    try {
+      const user = auth.register(req.body.email, req.body.password, req.body.name);
+      reply.header('set-cookie', auth.sessionCookie(auth.mintToken(user.id)));
+      return { user };
+    } catch (err: any) { return reply.code(400).send({ error: err.message }); }
+  });
+
+  app.post<{ Body: { email: string; password: string } }>('/api/auth/login', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    try {
+      const user = auth.login(req.body.email, req.body.password);
+      reply.header('set-cookie', auth.sessionCookie(auth.mintToken(user.id)));
+      return { user };
+    } catch (err: any) { return reply.code(401).send({ error: err.message }); }
+  });
+
+  app.post('/api/auth/logout', async (_req, reply) => {
+    reply.header('set-cookie', auth.clearCookie());
+    return { ok: true };
+  });
+
+  // Global guard: decorate user + enforce project access when auth is on.
+  app.addHook('preHandler', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return;
+    const url = req.url.split('?')[0];
+    // require sign-in to list/create/import projects
+    if (/^\/api\/projects(\/import)?$/.test(url) && !reqUser(req)) {
+      return reply.code(401).send({ error: 'Sign in required' });
+    }
+    const m = url.match(/^\/api\/projects\/([a-z0-9]{4,20})(?:\/|$)/);
+    if (!m) return;
+    let meta: store.ProjectMeta;
+    try { meta = store.readMeta(m[1]); } catch { return reply.code(404).send({ error: 'project not found' }); }
+    const user = reqUser(req);
+    if (!user) return reply.code(401).send({ error: 'Sign in required' });
+    if (!canAccess(meta, user)) return reply.code(403).send({ error: 'You do not have access to this project' });
+  });
+
   // ---------- projects ----------
-  app.get('/api/projects', async () => store.listProjects().map(publicMeta));
+  app.get('/api/projects', async (req) => {
+    const user = reqUser(req);
+    return store.listProjects().filter((m) => canAccess(m, user)).map((m) => publicMeta(m, user));
+  });
 
   app.post<{ Body: { name?: string; files?: Record<string, string>; template?: string } }>('/api/projects', async (req, reply) => {
     const { name = 'Untitled Project', files, template } = req.body || {};
@@ -52,9 +108,23 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: err.message });
       }
     }
-    const meta = await store.createProject(name, seed);
-    return publicMeta(meta);
+    const meta = await store.createProject(name, seed, reqUser(req)?.id);
+    return publicMeta(meta, reqUser(req));
   });
+
+  // ---------- sharing (owner only) ----------
+  app.post<{ Params: { id: string }; Body: { mode?: 'private' | 'link'; collaborators?: string[] } }>(
+    '/api/projects/:id/share', async (req, reply) => {
+      const meta = store.readMeta(req.params.id);
+      if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can change sharing' });
+      const mode = req.body?.mode === 'link' ? 'link' : 'private';
+      const collaborators = Array.isArray(req.body?.collaborators)
+        ? req.body!.collaborators.map((c) => c.trim().toLowerCase()).filter((c) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c)).slice(0, 50)
+        : (meta.share?.collaborators || []);
+      meta.share = { mode, collaborators };
+      store.writeMeta(meta);
+      return publicMeta(meta, reqUser(req));
+    });
 
   app.get('/api/templates', async () => listTemplates());
 
@@ -93,7 +163,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     try {
       const meta = store.readMeta(req.params.id);
       const branches = await gitops.listBranches(meta.id);
-      return { ...publicMeta(meta), branches };
+      return { ...publicMeta(meta, reqUser(req)), branches };
     } catch {
       return reply.code(404).send({ error: 'project not found' });
     }
@@ -110,7 +180,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return publicMeta(meta);
     });
 
-  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req) => {
+  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
+    const meta = store.readMeta(req.params.id);
+    if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can delete this project' });
     store.deleteProject(req.params.id);
     return { ok: true };
   });

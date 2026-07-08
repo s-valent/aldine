@@ -12,6 +12,7 @@ import { PluginHost, PluginPanel } from '../plugins/host';
 import { hintFor } from '../editor/errorHints';
 import { IconChevronLeft } from '../components/Icons';
 import CommandPalette, { Command } from '../components/CommandPalette';
+import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -59,6 +60,9 @@ export default function Editor() {
   const loadFiles = useCallback(async () => {
     const f = await api.listFiles(id, branch);
     setFiles(f);
+    // files changed (rename/delete/upload/Zotero import) → bib & label indexes are stale
+    invalidateBibCache();
+    invalidateLabelCache();
     return f;
   }, [id, branch]);
 
@@ -174,7 +178,7 @@ export default function Editor() {
     projectId: id,
     branch,
     getActiveFile: () => activeFile,
-    getCompileResult: () => (compile.result ? { ok: compile.result.ok, errors: compile.result.errors, log: compile.result.log } : null),
+    getCompileResult: () => (compile.result ? { ok: compile.result.ok, errors: compile.result.errors || [], log: compile.result.log || '' } : null),
     insertAtCursor,
     refreshFiles: loadFiles,
     refreshProject: loadProject,
@@ -225,7 +229,7 @@ export default function Editor() {
     return cmds;
   }, [files, activeFile, id, branch, auto, spellcheck, doCompile, toggleAuto, jumpToPdf, insertAtCursor, loadFiles]);
 
-  const errors = compile.result?.errors.filter((e) => e.type !== 'typesetting') || [];
+  const errors = compile.result?.errors?.filter((e) => e.type !== 'typesetting') || [];
   const errCount = errors.filter((e) => e.type === 'error').length;
   const showErrors = compile.result != null && (errors.length > 0 || !compile.result.ok);
   // a PDF is already on screen when the last compile produced one (recompiles keep it visible)

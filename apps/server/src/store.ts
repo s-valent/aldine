@@ -10,6 +10,10 @@ export interface ProjectMeta {
   rootFile: string;
   engine: 'pdf' | 'xelatex' | 'lualatex';
   createdAt: string;
+  /** owner user id (auth mode only; undefined = legacy/anonymous, open access) */
+  ownerId?: string;
+  /** sharing: 'private' (owner + collaborators) or 'link' (any signed-in user) */
+  share?: { mode: 'private' | 'link'; collaborators: string[] };
   /** secrets & integration state live here, outside the git repo */
   zotero?: {
     apiKey: string;
@@ -62,7 +66,7 @@ export function listProjects(): ProjectMeta[] {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export async function createProject(name: string, files: Record<string, string> = {}): Promise<ProjectMeta> {
+export async function createProject(name: string, files: Record<string, string> = {}, ownerId?: string): Promise<ProjectMeta> {
   const id = newId();
   const dir = repoDir(id);
   fs.mkdirSync(dir, { recursive: true });
@@ -87,6 +91,7 @@ export async function createProject(name: string, files: Record<string, string> 
   const rootFile = fs.existsSync(path.join(dir, 'main.tex')) ? 'main.tex'
     : Object.keys(seed).find((f) => f.endsWith('.tex')) || 'main.tex';
   const meta: ProjectMeta = { id, name, rootFile, engine: 'pdf', createdAt: new Date().toISOString() };
+  if (ownerId) { meta.ownerId = ownerId; meta.share = { mode: 'private', collaborators: [] }; }
   writeMeta(meta);
   return meta;
 }

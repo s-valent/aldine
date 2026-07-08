@@ -1,9 +1,14 @@
+export interface AuthUser { id: string; email: string; name: string }
 export interface ProjectSummary {
   id: string;
   name: string;
   rootFile: string;
   engine: string;
   createdAt: string;
+  ownerId?: string;
+  ownerName?: string;
+  isOwner?: boolean;
+  share?: { mode: 'private' | 'link'; collaborators: string[] } | null;
   zotero: { libraryPrefix: string; collectionKey?: string; bibFile: string; lastSyncedAt?: string; username?: string } | null;
 }
 
@@ -94,6 +99,15 @@ export const api = {
   zoteroUnlink: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/zotero`, { method: 'DELETE' }),
 
   plugins: () => req<PluginManifest[]>('/api/plugins'),
+
+  me: () => req<{ authEnabled: boolean; user: AuthUser | null }>('/api/auth/me'),
+  login: (email: string, password: string) =>
+    req<{ user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  register: (email: string, password: string, name?: string) =>
+    req<{ user: AuthUser }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
+  logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  share: (id: string, mode: 'private' | 'link', collaborators: string[]) =>
+    req<ProjectSummary>(`/api/projects/${id}/share`, { method: 'POST', body: JSON.stringify({ mode, collaborators }) }),
 };
 
 /** Local identity for presence + commit attribution. */

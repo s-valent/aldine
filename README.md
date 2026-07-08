@@ -34,8 +34,12 @@ no Redis, no 13-microservice sprawl.
 - **Templates** — article, IAC conference paper, beamer, report/thesis.
 - **Editor niceties** — auto-typeset on idle, live word count, PDF zoom,
   drag-drop figure upload, plain-English error hints + raw log.
+- **Multi-user auth** (optional) — set `AUTH_ENABLED=1` for email/password
+  login, per-project ownership, and sharing (invite-only or link). Off by
+  default (single-tenant). Passwords are scrypt-hashed; sessions are signed
+  HTTP-only cookies; the collab socket is access-checked.
 - **Apple-style UI** — system fonts, hairline borders, light & dark mode,
-  keyboard-first (⌘S typeset, ⌘J jump).
+  keyboard-first (⌘S typeset, ⌘J jump, ⌘K command palette).
 
 ## Quick start
 

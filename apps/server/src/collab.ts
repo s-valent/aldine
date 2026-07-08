@@ -3,9 +3,11 @@ import path from 'node:path';
 import { Server as HocuspocusServer } from '@hocuspocus/server';
 import type { Hocuspocus } from '@hocuspocus/server';
 import * as Y from 'yjs';
-import { branchDir } from './store.js';
+import { branchDir, readMeta } from './store.js';
 import { commitAll, ensureWorktree } from './gitops.js';
 import { safeJoin, debouncePerKey } from './util.js';
+import { AUTH_ENABLED, userFromRequest } from './auth.js';
+import { canAccess } from './authz.js';
 
 /**
  * Document naming: `${projectId}/${branch}/${filePath}`
@@ -53,11 +55,26 @@ export function writeDocToDisk(name: string, document: Y.Doc): void {
   scheduleAutoCommit(`${projectId}::${branch}`);
 }
 
+// Defining onAuthenticate makes Hocuspocus require a token from every client,
+// so only include it when auth is actually enabled (default is open).
+const authHook = AUTH_ENABLED ? {
+  async onAuthenticate({ documentName, requestHeaders }: { documentName: string; requestHeaders: Record<string, string | string[] | undefined> }) {
+    const parsed = parseDocName(documentName);
+    if (!parsed) throw new Error('invalid document');
+    const user = userFromRequest(requestHeaders.cookie as string | undefined);
+    if (!user) throw new Error('Not authenticated');
+    let meta;
+    try { meta = readMeta(parsed.projectId); } catch { throw new Error('project not found'); }
+    if (!canAccess(meta, user)) throw new Error('Access denied');
+  },
+} : {};
+
 export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
   // We handle upgrades ourselves from the Fastify HTTP server.
   quiet: true,
   debounce: 1500,
   maxDebounce: 8000,
+  ...authHook,
   async onLoadDocument({ documentName, document }) {
     const parsed = parseDocName(documentName);
     if (!parsed) throw new Error(`invalid document name: ${documentName}`);

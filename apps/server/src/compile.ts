@@ -57,7 +57,19 @@ async function runCompile(projectId: string, branch: string): Promise<CompileRes
       engine: meta.engine,
     }),
   });
-  const body = (await res.json()) as Omit<CompileResult, 'pdfUrl'>;
+  const raw = (await res.json()) as Partial<Omit<CompileResult, 'pdfUrl'>> & { error?: string };
+  // Normalize: the compiler may return a bare {ok:false,error} on a 4xx — always
+  // hand the client a well-formed CompileResult so the UI never sees undefined fields.
+  const body: Omit<CompileResult, 'pdfUrl'> = {
+    ok: !!raw.ok,
+    timedOut: raw.timedOut,
+    exitCode: raw.exitCode,
+    pdf: raw.pdf ?? null,
+    log: raw.log ?? (raw.error ? `Compiler error: ${raw.error}` : ''),
+    errors: Array.isArray(raw.errors) ? raw.errors : [],
+    durationMs: raw.durationMs ?? 0,
+    error: raw.error,
+  };
   const pdfUrl = body.pdf
     ? `/api/projects/${projectId}/output?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(body.pdf)}&t=${Date.now()}`
     : null;

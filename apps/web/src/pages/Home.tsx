@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ProjectSummary, TemplateInfo } from '../api';
 import { useToast } from '../components/Toast';
+import { useAuth } from '../components/Auth';
 import { IconDoc, IconLink, IconX } from '../components/Icons';
 import { friendlyDate } from '../util/dates';
 
@@ -11,8 +12,10 @@ export default function Home() {
   const [newName, setNewName] = useState('');
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [template, setTemplate] = useState('article');
+  const [sharing, setSharing] = useState<ProjectSummary | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
+  const { authEnabled, user, setUser } = useAuth();
 
   const load = () => api.listProjects().then(setProjects).catch(() => setProjects([]));
   useEffect(() => { load(); }, []);
@@ -71,7 +74,13 @@ export default function Home() {
             <h1 className="home__brand">papyr<em>.</em></h1>
             <p className="home__tag">Write LaTeX together. Fast, versioned, yours.</p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {authEnabled && user && (
+              <span className="user-chip">
+                <span className="user-chip__name" data-testid="user-name">{user.name}</span>
+                <button className="btn btn--small" data-testid="logout" onClick={async () => { await api.logout(); setUser(null); }}>Sign out</button>
+              </span>
+            )}
             <label className="btn" data-testid="import-zip">
               Import ZIP
               <input type="file" accept=".zip" hidden data-testid="import-input"
@@ -106,14 +115,23 @@ export default function Home() {
                 <span className="project-card__name">{p.name}</span>
                 <span className="project-card__meta">
                   <span>{friendlyDate(p.createdAt)}</span>
+                  {authEnabled && p.ownerId && !p.isOwner && <span title={`Shared by ${p.ownerName || 'someone'}`}>· shared</span>}
                   {p.zotero && <span title="Zotero linked" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><IconLink /> Zotero</span>}
-                  <button className="project-card__del" title="Delete project" aria-label={`Delete ${p.name}`} onClick={(e) => remove(e, p)}><IconX /></button>
+                  {authEnabled && p.isOwner && (
+                    <button className="project-card__del" title="Share project" style={{ marginLeft: 'auto' }} data-testid={`share-${p.id}`}
+                      onClick={(e) => { e.stopPropagation(); setSharing(p); }}><IconLink /></button>
+                  )}
+                  <button className="project-card__del" title="Delete project" aria-label={`Delete ${p.name}`} style={authEnabled && p.isOwner ? undefined : { marginLeft: 'auto' }} onClick={(e) => remove(e, p)}><IconX /></button>
                 </span>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {sharing && (
+        <ShareModal project={sharing} onClose={() => setSharing(null)} onSaved={() => { setSharing(null); load(); }} toast={toast} />
+      )}
 
       {creating && (
         <div className="modal-backdrop" onClick={() => setCreating(false)}>
@@ -153,6 +171,59 @@ export default function Home() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ShareModal({ project, onClose, onSaved, toast }: {
+  project: ProjectSummary;
+  onClose(): void;
+  onSaved(): void;
+  toast(text: string, kind?: 'info' | 'error' | 'ok'): void;
+}) {
+  const [mode, setMode] = useState<'private' | 'link'>(project.share?.mode || 'private');
+  const [emails, setEmails] = useState((project.share?.collaborators || []).join(', '));
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const list = emails.split(',').map((e) => e.trim()).filter(Boolean);
+      await api.share(project.id, mode, list);
+      toast('Sharing updated', 'ok');
+      onSaved();
+    } catch (err: any) {
+      toast(`Could not update sharing: ${err.message}`, 'error');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} data-testid="share-modal">
+        <h2>Share “{project.name}”</h2>
+        <p className="modal__sub">Choose who can open and edit this project.</p>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <input type="radio" checked={mode === 'private'} onChange={() => setMode('private')} data-testid="share-private" />
+          <span><strong>Invite only</strong> — you and the collaborators below</span>
+        </label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+          <input type="radio" checked={mode === 'link'} onChange={() => setMode('link')} data-testid="share-link" />
+          <span><strong>Anyone signed in</strong> with the link can edit</span>
+        </label>
+        <input
+          className="input"
+          style={{ width: '100%' }}
+          placeholder="Collaborator emails, comma-separated"
+          value={emails}
+          data-testid="share-emails"
+          onChange={(e) => setEmails(e.target.value)}
+        />
+        <div className="modal__row">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn--primary" onClick={save} disabled={busy} data-testid="share-save">Save</button>
+        </div>
+      </div>
     </div>
   );
 }
