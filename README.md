@@ -117,6 +117,22 @@ limits guard login, AI, and reference lookups; compiles are concurrency-capped.
 - Compile output stays inside the project tree (`.papyr-out/`, gitignored)
   which keeps latexmk's incremental cache warm.
 
+### Data & storage
+
+Two separate concerns, behind two seams:
+
+- **Project files** — real git repos + worktrees on disk (`store.ts`). This is
+  what gives you branches and history.
+- **Relational/metadata** — users, sessions, project metadata, review comments,
+  and usage — go through the `DataStore` interface (`db/`). Two backends:
+  - **JSON files** (default, zero-dependency) — the slim single-node self-host.
+  - **Postgres** (set `DATABASE_URL`) — the horizontally-scalable backend, for
+    running multiple app nodes. `pg` is an optional dependency; the same test
+    suite passes on both.
+
+For how this scales past one box (and what the remaining walls are), see
+[docs/SCALING.md](docs/SCALING.md).
+
 ## Plugins
 
 A plugin is a folder in `plugins/`:
