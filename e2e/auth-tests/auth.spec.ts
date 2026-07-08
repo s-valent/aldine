@@ -213,3 +213,18 @@ test.describe('auth depth', () => {
     await expect(page.getByTestId('oauth-github')).toHaveCount(0);
   });
 });
+
+test.describe('plan metering', () => {
+  test('/api/usage requires sign-in and reports compile usage', async ({ browser }) => {
+    const anon = await browser.newContext();
+    expect((await anon.request.get('/api/usage')).status()).toBe(401);
+    const ctx = await browser.newContext();
+    await ctx.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    const u = await (await ctx.request.get('/api/usage')).json();
+    expect(typeof u.seconds).toBe('number');
+    expect(typeof u.quotaSeconds).toBe('number');
+    expect(typeof u.metering).toBe('boolean');
+    expect(u.month).toMatch(/^\d{4}-\d{2}$/);
+    await anon.close(); await ctx.close();
+  });
+});

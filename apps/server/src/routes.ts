@@ -6,6 +6,7 @@ import * as store from './store.js';
 import * as gitops from './gitops.js';
 import * as zotero from './zotero.js';
 import { compileProject, synctexLookup } from './compile.js';
+import * as usage from './usage.js';
 import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc } from './collab.js';
 import { parseBib, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
@@ -365,17 +366,31 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- compile ----------
   app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/compile', async (req, reply) => {
     const branch = req.body?.branch || 'main';
-    const key = clientKey(req, reqUser(req)?.id);
+    const user = reqUser(req);
+    const key = clientKey(req, user?.id);
+    // plan metering: block once a signed-in user is over their monthly compile budget
+    if (user && usage.overQuota(user.id)) {
+      return reply.code(402).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: 'Monthly typeset limit reached — upgrade your plan for more compile time.', quotaExceeded: true });
+    }
     if (!compileGate.tryAcquire(key)) {
       return reply.code(429).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: 'Too many typesets in flight — let the current ones finish' });
     }
     try {
-      return await compileProject(req.params.id, branch);
+      const result = await compileProject(req.params.id, branch);
+      if (user) usage.recordCompile(user.id, result.durationMs || 0);
+      return result;
     } catch (err: any) {
       return reply.code(400).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: err.message });
     } finally {
       compileGate.release(key);
     }
+  });
+
+  // per-user plan usage (compile-minutes this month) — for a billing/plan UI
+  app.get('/api/usage', async (req, reply) => {
+    const user = reqUser(req);
+    if (!user) return reply.code(401).send({ error: 'Sign in required' });
+    return { metering: usage.meteringEnabled(), ...usage.usageFor(user.id) };
   });
 
   app.post<{ Params: { id: string }; Body: Record<string, unknown> & { branch?: string } }>(

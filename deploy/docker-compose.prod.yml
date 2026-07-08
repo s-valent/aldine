@@ -1,0 +1,33 @@
+# Production overrides for a single VPS behind Caddy TLS.
+# Usage (from the repo root):
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
+#
+# What this changes vs the base compose:
+#   - the app is no longer published on a public 0.0.0.0:8080 — only Caddy (80/443) faces the internet
+#   - log rotation so a long-running box can't fill its disk with container logs
+
+# NOTE: set PAPYR_APP_BIND=127.0.0.1 in .env so the app publishes on loopback
+# only (Caddy reaches it over the compose network). We don't override `ports`
+# here because compose *merges* port lists rather than replacing them, which
+# would leave the public binding in place.
+services:
+  app:
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    environment:
+      # set these in a .env file next to docker-compose.yml (see deploy/README.md)
+      PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
+      COOKIE_SECURE: "1"          # HTTPS-only session cookies in production
+      TRUST_PROXY: "1"            # req.ip comes from Caddy's X-Forwarded-For
+      PAPYR_COMPILE_QUOTA_MIN: ${PAPYR_COMPILE_QUOTA_MIN:-}  # monthly compile-minutes/user (blank = unmetered)
+
+  compiler:
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  caddy:
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

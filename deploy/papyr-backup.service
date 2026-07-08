@@ -1,0 +1,14 @@
+# systemd service: one Papyr backup run. Pair with papyr-backup.timer.
+# Install: copy both files to /etc/systemd/system/, edit WorkingDirectory + the
+# backup destination, then: systemctl enable --now papyr-backup.timer
+[Unit]
+Description=Papyr volume backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# repo checkout that holds docker-compose.yml + deploy/
+WorkingDirectory=/opt/papyr
+# keep 14 daily snapshots under /var/backups/papyr
+ExecStart=/bin/bash -lc 'mkdir -p /var/backups/papyr && deploy/backup.sh /var/backups/papyr/papyr-$(date +%%Y%%m%%d).tar.gz && ls -1t /var/backups/papyr/papyr-*.tar.gz | tail -n +15 | xargs -r rm -f'
