@@ -8,15 +8,72 @@ const DOI_RE = /10\.\d{4,9}\/[^\s"']+/;
 
 const DOI_BASE = process.env.DOI_API_BASE || 'https://doi.org';
 const ARXIV_BASE = process.env.ARXIV_API_BASE || 'https://export.arxiv.org';
+const OPENALEX_BASE = process.env.OPENALEX_API_BASE || 'https://api.openalex.org';
+
+export interface SearchHit { id: string; doi: string | null; title: string; authors: string; year: number | null; venue: string }
+
+/** Full-text search across OpenAlex (250M+ works, no key). */
+export async function searchWorks(query: string, limit = 12): Promise<SearchHit[]> {
+  const url = `${OPENALEX_BASE}/works?search=${encodeURIComponent(query)}&per_page=${limit}&mailto=papyr@localhost`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Search failed (HTTP ${res.status})`);
+  const data = JSON.parse(await readCapped(res, 4 * 1024 * 1024)) as { results?: Array<Record<string, unknown>> };
+  return (data.results || []).map((w) => {
+    const authorships = (w.authorships as Array<{ author?: { display_name?: string } }> | undefined) || [];
+    const authors = authorships.slice(0, 4).map((a) => a.author?.display_name).filter(Boolean).join(', ') + (authorships.length > 4 ? ', et al.' : '');
+    const loc = (w.primary_location as { source?: { display_name?: string } } | undefined)?.source?.display_name;
+    return {
+      id: String(w.id || '').split('/').pop() || '',
+      doi: w.doi ? String(w.doi).replace(/^https?:\/\/doi\.org\//, '') : null,
+      title: String(w.title || w.display_name || 'Untitled'),
+      authors,
+      year: (w.publication_year as number) ?? null,
+      venue: loc || '',
+    };
+  });
+}
+
+/** BibTeX for an OpenAlex work id (Wxxxx): prefer its DOI, else synthesize from metadata. */
+async function fetchOpenAlex(id: string): Promise<string | null> {
+  const res = await fetch(`${OPENALEX_BASE}/works/${encodeURIComponent(id)}?mailto=papyr@localhost`);
+  if (!res.ok) throw new Error(`OpenAlex lookup failed (HTTP ${res.status})`);
+  const w = JSON.parse(await readCapped(res)) as Record<string, unknown>;
+  const doi = w.doi ? String(w.doi).replace(/^https?:\/\/doi\.org\//, '') : null;
+  if (doi) { try { const b = await fetchDoi(doi); if (b) return b; } catch { /* fall through to synthesis */ } }
+  const authorships = (w.authorships as Array<{ author?: { display_name?: string } }> | undefined) || [];
+  const authorField = authorships.map((a) => {
+    const n = a.author?.display_name || '';
+    const parts = n.split(' ');
+    const last = parts.pop();
+    return last ? `${last}, ${parts.join(' ')}` : n;
+  }).join(' and ');
+  const year = (w.publication_year as number) ?? '';
+  const title = String(w.title || w.display_name || 'Untitled');
+  const first = authorships[0]?.author?.display_name?.split(' ').pop()?.toLowerCase().replace(/[^a-z]/g, '') || 'anon';
+  const venue = (w.primary_location as { source?: { display_name?: string } } | undefined)?.source?.display_name || '';
+  return `@article{${first}${year},
+  title   = {${title}},
+  author  = {${authorField}},
+  year    = {${year}},${venue ? `\n  journaltitle = {${venue}},` : ''}
+  url     = {${w.id}},
+}`;
+}
 
 export async function fetchBibEntry(query: string): Promise<string | null> {
+  // OpenAlex work id (openalex:W… or a full openalex.org/W… URL)
+  const oa = query.match(/(?:openalex[:/]|openalex\.org\/)?(W\d{2,})/i);
+  if (/openalex/i.test(query) && oa) return fetchOpenAlex(oa[1]);
+
   // A real DOI (starts with 10.) wins even if it mentions arXiv (e.g. 10.48550/arXiv.1706.03762).
   const doiMatch = query.match(DOI_RE);
   if (doiMatch) return fetchDoi(doiMatch[0]);
 
-  // otherwise treat an explicit arXiv reference or a bare arXiv id
+  // an explicit arXiv reference or a bare arXiv id
   const arxiv = query.match(ARXIV_RE);
   if (arxiv) return fetchArxiv(arxiv[1]);
+
+  // a bare OpenAlex id
+  if (oa) return fetchOpenAlex(oa[1]);
   return null;
 }
 

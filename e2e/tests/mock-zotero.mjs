@@ -46,6 +46,24 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // --- Mock OpenAlex (search + single work) ---
+  if (url.pathname === '/works') {
+    return send(200, { meta: { count: 2 }, results: [
+      { id: 'https://openalex.org/W111', doi: 'https://doi.org/10.1145/mock.search1', title: 'A Searchable Mock Paper', publication_year: 2021,
+        authorships: [{ author: { display_name: 'Jane Roe' } }, { author: { display_name: 'John Doe' } }],
+        primary_location: { source: { display_name: 'Mock Journal' } } },
+      { id: 'https://openalex.org/W222', doi: null, title: 'A DOI-less Mock Paper', publication_year: 2019,
+        authorships: [{ author: { display_name: 'Alice Smith' } }], primary_location: { source: { display_name: 'Mock Proc.' } } },
+    ] });
+  }
+  if (url.pathname.startsWith('/works/W')) {
+    const id = url.pathname.split('/').pop();
+    if (id === 'W222') return send(200, { id: 'https://openalex.org/W222', doi: null, title: 'A DOI-less Mock Paper', publication_year: 2019,
+      authorships: [{ author: { display_name: 'Alice Smith' } }], primary_location: { source: { display_name: 'Mock Proc.' } } });
+    return send(200, { id: 'https://openalex.org/W111', doi: 'https://doi.org/10.1145/mock.search1', title: 'A Searchable Mock Paper', publication_year: 2021,
+      authorships: [{ author: { display_name: 'Jane Roe' } }], primary_location: { source: { display_name: 'Mock Journal' } } });
+  }
+
   // --- DOI content negotiation (any 10.x path) ---
   if (url.pathname.startsWith('/10.')) {
     return send(200, `@article{doe2020,\n  title = {A Mock Paper for Testing},\n  author = {Doe, Jane},\n  year = {2020},\n  doi = {${url.pathname.slice(1)}},\n}`);

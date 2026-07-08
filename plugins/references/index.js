@@ -20,9 +20,12 @@ export default {
       render(root) {
         let busy = false;
         let query = '';
+        let searchTerm = '';
+        let results = [];
+        let searching = false;
+        let searchSeq = 0;
 
-        const add = async () => {
-          const q = query.trim();
+        const addQuery = async (q, label) => {
           if (!q || busy) return;
           busy = true; draw();
           try {
@@ -38,37 +41,91 @@ export default {
               papyr.editor.insertAtCursor(`\\cite{${body.key}}`);
               papyr.toast(body.duplicate ? `Already in bibliography — inserted \\cite{${body.key}}` : `Added ${body.key} and inserted citation`, 'ok');
             }
-            query = '';
           } catch (err) {
-            papyr.toast(`Lookup failed: ${err.message}`, 'error');
+            papyr.toast(`${label || 'Lookup'} failed: ${err.message}`, 'error');
           }
           busy = false; draw();
         };
 
+        const add = () => { const q = query.trim(); if (q) { query = ''; addQuery(q, 'Lookup'); } };
+
+        let searchTimer = null;
+        const runSearch = () => {
+          const q = searchTerm.trim();
+          if (q.length < 3) { results = []; searching = false; draw(); return; }
+          const seq = ++searchSeq;
+          searching = true; draw();
+          papyr.fetch(`/api/references/search?q=${encodeURIComponent(q)}`)
+            .then((r) => r.json())
+            .then((body) => {
+              if (seq !== searchSeq) return;
+              results = Array.isArray(body) ? body : [];
+              searching = false; draw();
+            })
+            .catch(() => { if (seq === searchSeq) { searching = false; draw(); } });
+        };
+        const onSearchInput = (v) => {
+          searchTerm = v;
+          if (searchTimer) clearTimeout(searchTimer);
+          searchTimer = setTimeout(runSearch, 350);
+        };
+
+        const cite = (hit) => addQuery(hit.doi || `openalex:${hit.id}`, 'Add');
+
         function draw() {
-          root.replaceChildren(
-            h('div', { class: 'panel-list', dataset: { testid: 'references-panel' }, style: { display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 6px' } },
-              h('div', { class: 'menu__label', style: { padding: '0 2px' } }, 'Add reference'),
-              h('p', { style: { color: 'var(--text-2)', fontSize: '12px', lineHeight: '1.5', margin: 0 } },
-                'Paste a DOI, doi.org URL, or arXiv id. Papyr fetches the BibTeX, appends it to references.bib, and inserts the citation.'),
-              h('input', {
-                class: 'input',
-                placeholder: '10.1145/… or arXiv:2401.01234',
-                style: { width: '100%' },
-                dataset: { testid: 'reference-query' },
-                value: query,
-                oninput: (e) => { query = e.target.value; },
-                onkeydown: (e) => { if (e.key === 'Enter') add(); },
-              }),
-              h('button', {
-                class: 'btn btn--primary',
-                style: { width: '100%', justifyContent: 'center' },
-                dataset: { testid: 'reference-add' },
-                disabled: busy ? '' : null,
-                onclick: add,
-              }, busy ? 'Fetching…' : 'Add & cite'),
-            ),
+          const wrap = h('div', { class: 'panel-list', dataset: { testid: 'references-panel' }, style: { display: 'flex', flexDirection: 'column', gap: '10px', padding: '8px 6px' } });
+
+          // --- search 250M+ papers ---
+          wrap.append(
+            h('div', { class: 'menu__label', style: { padding: '0 2px' } }, 'Search papers'),
+            h('input', {
+              class: 'input',
+              placeholder: 'Title, author, keywords…',
+              style: { width: '100%' },
+              dataset: { testid: 'reference-search' },
+              value: searchTerm,
+              oninput: (e) => onSearchInput(e.target.value),
+            }),
           );
+          if (searching) wrap.append(h('div', { class: 'spinner', style: { margin: '6px auto' } }));
+          const list = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px' } });
+          for (const hit of results.slice(0, 12)) {
+            list.append(h('button', {
+              class: 'tree__item',
+              style: { height: 'auto', padding: '6px 8px', display: 'block' },
+              dataset: { testid: `search-hit-${hit.id}` },
+              title: `Insert \\cite for “${hit.title}”`,
+              onclick: () => cite(hit),
+            },
+              h('div', { style: { fontWeight: '600', fontSize: '12.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, hit.title),
+              h('div', { style: { color: 'var(--text-2)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+                [hit.authors, hit.year, hit.venue].filter(Boolean).join(' · ')),
+            ));
+          }
+          if (results.length) wrap.append(list);
+
+          // --- add by identifier ---
+          wrap.append(
+            h('div', { class: 'menu__label', style: { padding: '10px 2px 0' } }, 'Or add by identifier'),
+            h('input', {
+              class: 'input',
+              placeholder: '10.1145/… · arXiv:2401.01234',
+              style: { width: '100%' },
+              dataset: { testid: 'reference-query' },
+              value: query,
+              oninput: (e) => { query = e.target.value; },
+              onkeydown: (e) => { if (e.key === 'Enter') add(); },
+            }),
+            h('button', {
+              class: 'btn btn--primary',
+              style: { width: '100%', justifyContent: 'center' },
+              dataset: { testid: 'reference-add' },
+              disabled: busy ? '' : null,
+              onclick: add,
+            }, busy ? 'Fetching…' : 'Add & cite'),
+          );
+
+          root.replaceChildren(wrap);
         }
 
         draw();

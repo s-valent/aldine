@@ -9,7 +9,7 @@ import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc } from './collab.j
 import { parseBib, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
-import { fetchBibEntry } from './references.js';
+import { fetchBibEntry, searchWorks } from './references.js';
 import { unzip, guessRoot } from './unzip.js';
 import { aiConfigured, aiModel, diagnose } from './ai.js';
 import * as comments from './comments.js';
@@ -449,6 +449,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(502).send({ error: err.message });
       }
     });
+
+  // ---------- reference search (OpenAlex) ----------
+  app.get<{ Querystring: { q?: string } }>('/api/references/search', async (req, reply) => {
+    const q = (req.query.q || '').trim();
+    if (q.length < 3) return [];
+    if (!refLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'Search rate limit reached — please slow down' });
+    try {
+      return await searchWorks(q);
+    } catch (err: any) {
+      return reply.code(502).send({ error: err.message });
+    }
+  });
 
   // ---------- review comments ----------
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/comments', async (req) =>
