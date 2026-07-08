@@ -28,9 +28,15 @@ const resetsPath = path.join(config.metaRoot, 'resets.json');
 function readJson<T>(p: string, dflt: T): T {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return dflt; }
 }
+/** Atomic write (temp + rename) so a crash mid-write can't truncate the store. */
 function writeJson(p: string, v: unknown): void {
-  fs.writeFileSync(p, JSON.stringify(v, null, 2), { mode: 0o600 });
+  const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(v, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, p);
 }
+
+/** Session cookies get the Secure flag when the deployment is HTTPS. */
+const SECURE_COOKIES = (process.env.PAPYR_PUBLIC_URL || '').startsWith('https') || process.env.COOKIE_SECURE === '1';
 
 const loadUsers = () => readJson<Record<string, User>>(usersPath, {});
 const saveUsers = (u: Record<string, User>) => writeJson(usersPath, u);
@@ -91,10 +97,18 @@ export function getUser(id: string): User | null {
   return loadUsers()[id] || null;
 }
 
-/** Find an OAuth user by email or create one (no password). */
+/**
+ * Find an OAuth user by email or create one. Only merges into an existing
+ * account that was created by the SAME provider — never into a password
+ * account, which (since registration doesn't verify email) an attacker could
+ * have pre-created for the victim's address. Prevents pre-account-hijacking.
+ */
 export function findOrCreateOAuth(email: string, name: string, provider: string): PublicUser {
   const existing = findByEmail(email);
-  if (existing) return pub(existing);
+  if (existing) {
+    if (existing.provider === provider) return pub(existing);
+    throw new Error('An account with this email already exists. Sign in with your password instead.');
+  }
   return register(email, '', name, provider);
 }
 
@@ -116,7 +130,9 @@ export function requestReset(email: string): { token: string; user: PublicUser }
   if (!user) return null; // do not leak which emails exist
   const token = crypto.randomBytes(24).toString('base64url');
   const resets = loadResets();
-  resets[token] = { userId: user.id, exp: Date.now() + RESET_TTL_MS };
+  const now = Date.now();
+  for (const [t, r] of Object.entries(resets)) if (r.exp < now) delete resets[t]; // prune expired
+  resets[token] = { userId: user.id, exp: now + RESET_TTL_MS };
   saveResets(resets);
   return { token, user: pub(user) };
 }
@@ -187,10 +203,10 @@ export function parseCookies(header: string | undefined): Record<string, string>
   return out;
 }
 export function sessionCookie(sid: string): string {
-  return `${COOKIE}=${sid}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86400}`;
+  return `${COOKIE}=${sid}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DAYS * 86400}${SECURE_COOKIES ? '; Secure' : ''}`;
 }
 export function clearCookie(): string {
-  return `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
+  return `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${SECURE_COOKIES ? '; Secure' : ''}`;
 }
 export function sidFromRequest(cookieHeader: string | undefined): string | undefined {
   return parseCookies(cookieHeader)[COOKIE];

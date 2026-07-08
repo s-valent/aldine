@@ -52,6 +52,8 @@ const n = (v: string | undefined, d: number) => (v && !Number.isNaN(Number(v)) ?
 
 /** login: 10 attempts, refill 1 / 30s → slows brute force without annoying real users. */
 export const loginLimiter = new RateLimiter(n(process.env.RL_LOGIN_BURST, 10), 1 / 30);
+/** register: 5 accounts per client, refill 1 / 5min — bounds account-store spam. */
+export const registerLimiter = new RateLimiter(n(process.env.RL_REGISTER_BURST, 5), 1 / 300);
 /** AI fix: 20 burst, refill 1 / 12s (≈5/min sustained) — bounds LLM spend per client. */
 export const aiLimiter = new RateLimiter(n(process.env.RL_AI_BURST, 20), n(process.env.RL_AI_REFILL_PER_MIN, 5) / 60);
 /** reference lookups (DOI/OpenAlex): 30 burst, 1/2s. */
@@ -59,9 +61,13 @@ export const refLimiter = new RateLimiter(n(process.env.RL_REF_BURST, 30), 0.5);
 /** at most 2 concurrent compiles per client. */
 export const compileGate = new ConcurrencyGate(n(process.env.RL_COMPILE_CONCURRENCY, 2));
 
-export function clientKey(req: { headers: Record<string, unknown>; ip?: string }, userId?: string): string {
+/**
+ * Rate-limit key: the signed-in user when available, else the client IP.
+ * req.ip is resolved by Fastify — it only honors X-Forwarded-For when the
+ * server is started with trustProxy (TRUST_PROXY=1), so an untrusted client
+ * cannot spoof the header to change its key.
+ */
+export function clientKey(req: { ip?: string }, userId?: string): string {
   if (userId) return `u:${userId}`;
-  const fwd = req.headers['x-forwarded-for'];
-  const ip = (Array.isArray(fwd) ? fwd[0] : (fwd as string))?.split(',')[0]?.trim() || req.ip || 'unknown';
-  return `ip:${ip}`;
+  return `ip:${req.ip || 'unknown'}`;
 }

@@ -13,7 +13,10 @@ import { initObservability, captureError } from './observability.js';
 // Never let a stray rejection take down the collaboration server.
 process.on('unhandledRejection', (reason) => { console.error('[papyr] unhandledRejection', reason); captureError(reason); });
 
-const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 32 * 1024 * 1024 });
+// trustProxy makes req.ip honor X-Forwarded-For — enable ONLY behind a trusted
+// reverse proxy (Caddy/nginx). Off by default so clients can't spoof their IP
+// to evade rate limits or lock others out.
+const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 32 * 1024 * 1024, trustProxy: process.env.TRUST_PROXY === '1' });
 
 await initObservability(app);
 await registerRoutes(app);

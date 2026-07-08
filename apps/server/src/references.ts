@@ -77,13 +77,23 @@ export async function fetchBibEntry(query: string): Promise<string | null> {
   return null;
 }
 
-/** Read a response body but abort if it exceeds a sane cap (defends against huge redirect targets). */
+/** Stream a response body and abort as soon as it exceeds the cap (a chunked/
+ *  unknown-length upstream can't OOM us by omitting content-length). */
 async function readCapped(res: Response, cap = 2 * 1024 * 1024): Promise<string> {
   const len = Number(res.headers.get('content-length') || 0);
   if (len && len > cap) throw new Error('reference response too large');
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > cap) throw new Error('reference response too large');
-  return buf.toString('utf8');
+  if (!res.body) return (await res.text()).slice(0, cap);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > cap) { await reader.cancel(); throw new Error('reference response too large'); }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 async function fetchDoi(doi: string): Promise<string | null> {

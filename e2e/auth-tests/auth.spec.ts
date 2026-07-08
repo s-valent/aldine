@@ -140,8 +140,10 @@ test.describe('abuse controls', () => {
   test('login is rate-limited after repeated failures', async ({ request }) => {
     const email = uniq();
     let got429 = false;
+    // isolate this test's limiter bucket via a dedicated client IP (server runs with TRUST_PROXY=1)
+    const headers = { 'x-forwarded-for': '203.0.113.7' };
     for (let i = 0; i < 15; i++) {
-      const res = await request.post('/api/auth/login', { data: { email, password: 'definitely-wrong' } });
+      const res = await request.post('/api/auth/login', { headers, data: { email, password: 'definitely-wrong' } });
       if (res.status() === 429) { got429 = true; break; }
     }
     expect(got429).toBeTruthy();

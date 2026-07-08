@@ -16,7 +16,7 @@ import { aiConfigured, aiModel, diagnose } from './ai.js';
 import * as comments from './comments.js';
 import * as auth from './auth.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
-import { loginLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
+import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
 import { safeJoin, isTextFile } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
@@ -94,6 +94,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: { email: string; password: string; name?: string } }>('/api/auth/register', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (!registerLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
     try {
       const user = auth.register(req.body.email, req.body.password, req.body.name);
       reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
