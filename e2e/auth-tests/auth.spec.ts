@@ -147,3 +147,67 @@ test.describe('abuse controls', () => {
     expect(got429).toBeTruthy();
   });
 });
+
+test.describe('auth depth', () => {
+  test('logout revokes the session server-side (stale cookie is invalid)', async ({ browser }) => {
+    const ctx = await browser.newContext();
+    const email = uniq();
+    await ctx.request.post('/api/auth/register', { data: { email, password: 'password123' } });
+    // capture the session cookie, then log out
+    const cookies = await ctx.cookies();
+    const session = cookies.find((c) => c.name === 'papyr_session');
+    expect(session).toBeTruthy();
+    await ctx.request.post('/api/auth/logout');
+    // replay the stale cookie in a fresh context → must be rejected (revoked)
+    const stale = await browser.newContext();
+    await stale.addCookies([{ name: 'papyr_session', value: session!.value, url: 'http://localhost:3200' }]);
+    const me = await (await stale.request.get('/api/auth/me')).json();
+    expect(me.user).toBeNull();
+    await ctx.close(); await stale.close();
+  });
+
+  test('changing password revokes other sessions', async ({ browser }) => {
+    const email = uniq();
+    const s1 = await browser.newContext();
+    await s1.request.post('/api/auth/register', { data: { email, password: 'password123' } });
+    const s2 = await browser.newContext();
+    await s2.request.post('/api/auth/login', { data: { email, password: 'password123' } });
+    // s2 changes the password → s1's session should be revoked
+    await s2.request.post('/api/auth/password', { data: { currentPassword: 'password123', newPassword: 'newpassword456' } });
+    const s1me = await (await s1.request.get('/api/auth/me')).json();
+    expect(s1me.user).toBeNull();
+    // and the new password works
+    const relog = await s1.request.post('/api/auth/login', { data: { email, password: 'newpassword456' } });
+    expect(relog.ok()).toBeTruthy();
+    await s1.close(); await s2.close();
+  });
+
+  test('forgot-password → reset flow works from the login screen', async ({ page }) => {
+    const email = uniq();
+    // register then sign out
+    await register(page, email);
+    await page.goto('/');
+    await page.getByTestId('logout').click();
+    // forgot flow (self-host echo returns the token → reset mode)
+    await page.getByTestId('auth-forgot').click();
+    await page.getByTestId('auth-email').fill(email);
+    await page.getByTestId('auth-submit').click();
+    await expect(page.getByTestId('auth-token')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('auth-token')).not.toHaveValue('', { timeout: 10_000 });
+    await page.getByTestId('auth-password').fill('brandnewpass1');
+    await page.getByTestId('auth-submit').click();
+    // back to login; sign in with the new password
+    await expect(page.getByTestId('auth-info')).toContainText(/updated/i, { timeout: 10_000 });
+    await page.getByTestId('auth-email').fill(email);
+    await page.getByTestId('auth-password').fill('brandnewpass1');
+    await page.getByTestId('auth-submit').click();
+    await expect(page.locator('.home__brand')).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('GitHub OAuth endpoint 404s when unconfigured and button is hidden', async ({ page, request }) => {
+    expect((await request.get('/api/auth/oauth/github', { maxRedirects: 0 })).status()).toBe(404);
+    await page.goto('/');
+    await expect(page.getByTestId('auth-email')).toBeVisible();
+    await expect(page.getByTestId('oauth-github')).toHaveCount(0);
+  });
+});

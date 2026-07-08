@@ -1,6 +1,7 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import * as store from './store.js';
 import * as gitops from './gitops.js';
 import * as zotero from './zotero.js';
@@ -23,6 +24,43 @@ type Q = { branch?: string; path?: string; name?: string; force?: string };
 /** current user for a request (null when auth disabled or not signed in) */
 function reqUser(req: { headers: { cookie?: string } }): auth.PublicUser | null {
   return auth.userFromRequest(req.headers.cookie);
+}
+
+function githubConfigured(): boolean {
+  return !!(process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET);
+}
+function oauthProviders(): string[] {
+  return githubConfigured() ? ['github'] : [];
+}
+/** Public origin for OAuth redirects — PAPYR_PUBLIC_URL, else derived from the request. */
+function publicBase(req: FastifyRequest): string {
+  if (process.env.PAPYR_PUBLIC_URL) return process.env.PAPYR_PUBLIC_URL.replace(/\/$/, '');
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host;
+  return `${proto}://${host}`;
+}
+async function githubExchange(code: string, redirectUri: string): Promise<auth.PublicUser> {
+  const tokRes = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      client_id: process.env.GITHUB_OAUTH_CLIENT_ID,
+      client_secret: process.env.GITHUB_OAUTH_CLIENT_SECRET,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
+  const tok = (await tokRes.json()) as { access_token?: string; error_description?: string };
+  if (!tok.access_token) throw new Error(tok.error_description || 'no access token');
+  const headers = { authorization: `Bearer ${tok.access_token}`, accept: 'application/vnd.github+json', 'user-agent': 'papyr' };
+  const ghUser = (await (await fetch('https://api.github.com/user', { headers })).json()) as { login?: string; name?: string; email?: string };
+  let email = ghUser.email;
+  if (!email) {
+    const emails = (await (await fetch('https://api.github.com/user/emails', { headers })).json()) as Array<{ email: string; primary: boolean; verified: boolean }>;
+    email = (emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified))?.email;
+  }
+  if (!email) throw new Error('no verified email on the GitHub account');
+  return auth.findOrCreateOAuth(email, ghUser.name || ghUser.login || email.split('@')[0], 'github');
 }
 
 /** git internals and compile output are never user-addressable. */
@@ -52,13 +90,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => ({ ok: true, name: 'papyr' }));
 
   // ---------- auth (env-gated) ----------
-  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, user: reqUser(req) }));
+  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, user: reqUser(req), providers: oauthProviders() }));
 
   app.post<{ Body: { email: string; password: string; name?: string } }>('/api/auth/register', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     try {
       const user = auth.register(req.body.email, req.body.password, req.body.name);
-      reply.header('set-cookie', auth.sessionCookie(auth.mintToken(user.id)));
+      reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
       return { user };
     } catch (err: any) { return reply.code(400).send({ error: err.message }); }
   });
@@ -68,14 +106,74 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
     try {
       const user = auth.login(req.body.email, req.body.password);
-      reply.header('set-cookie', auth.sessionCookie(auth.mintToken(user.id)));
+      reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
       return { user };
     } catch (err: any) { return reply.code(401).send({ error: err.message }); }
   });
 
-  app.post('/api/auth/logout', async (_req, reply) => {
+  app.post('/api/auth/logout', async (req, reply) => {
+    auth.destroySession(auth.sidFromRequest(req.headers.cookie)); // revoke this session server-side
     reply.header('set-cookie', auth.clearCookie());
     return { ok: true };
+  });
+
+  // change password (logged in): revokes all sessions, then re-issues the current one
+  app.post<{ Body: { currentPassword: string; newPassword: string } }>('/api/auth/password', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    const user = reqUser(req);
+    if (!user) return reply.code(401).send({ error: 'Sign in required' });
+    try {
+      auth.changePassword(user.id, req.body?.currentPassword || '', req.body?.newPassword || '');
+      reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
+      return { ok: true };
+    } catch (err: any) { return reply.code(400).send({ error: err.message }); }
+  });
+
+  // forgot-password: issue a reset token. Emailed if SMTP is configured; otherwise
+  // logged server-side and (when PAPYR_RESET_ECHO=1) returned for self-host relay.
+  app.post<{ Body: { email: string } }>('/api/auth/reset-request', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
+    const r = auth.requestReset(req.body?.email || '');
+    if (r) {
+      console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (relay this to the user; expires in 1h)`);
+      // TODO: if SMTP env configured, send an email with the reset link here.
+    }
+    // never reveal whether the email exists
+    return process.env.PAPYR_RESET_ECHO === '1' && r ? { ok: true, token: r.token } : { ok: true };
+  });
+
+  app.post<{ Body: { token: string; newPassword: string } }>('/api/auth/reset', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    try {
+      auth.resetPassword(req.body?.token || '', req.body?.newPassword || '');
+      return { ok: true };
+    } catch (err: any) { return reply.code(400).send({ error: err.message }); }
+  });
+
+  // ---------- GitHub OAuth (gated on GITHUB_OAUTH_CLIENT_ID/SECRET) ----------
+  app.get('/api/auth/oauth/github', async (req, reply) => {
+    if (!auth.AUTH_ENABLED || !githubConfigured()) return reply.code(404).send({ error: 'GitHub sign-in not configured' });
+    const state = crypto.randomBytes(12).toString('hex');
+    reply.header('set-cookie', `papyr_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`);
+    const redirect = `${publicBase(req)}/api/auth/oauth/github/callback`;
+    const url = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(process.env.GITHUB_OAUTH_CLIENT_ID!)}&scope=read:user%20user:email&state=${state}&redirect_uri=${encodeURIComponent(redirect)}`;
+    return reply.redirect(url);
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string } }>('/api/auth/oauth/github/callback', async (req, reply) => {
+    if (!auth.AUTH_ENABLED || !githubConfigured()) return reply.code(404).send({ error: 'GitHub sign-in not configured' });
+    const cookies = auth.parseCookies(req.headers.cookie);
+    if (!req.query.code || !req.query.state || req.query.state !== cookies.papyr_oauth_state) {
+      return reply.code(400).send({ error: 'OAuth state mismatch — please try again' });
+    }
+    try {
+      const user = await githubExchange(req.query.code, `${publicBase(req)}/api/auth/oauth/github/callback`);
+      reply.header('set-cookie', [auth.sessionCookie(auth.createSession(user.id)), 'papyr_oauth_state=; Path=/; Max-Age=0']);
+      return reply.redirect('/');
+    } catch (err: any) {
+      return reply.code(400).send({ error: `GitHub sign-in failed: ${err.message}` });
+    }
   });
 
   // Global guard: enforce project access when auth is on. Runs after routing,
