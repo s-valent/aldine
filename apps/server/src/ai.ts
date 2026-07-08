@@ -1,14 +1,37 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 /**
- * AI error-fix helper. Bring-your-own Anthropic API key (server-side only —
- * the key never reaches the browser). Model + endpoint are env-configurable so
- * it can point at a self-hosted/compatible gateway or a test mock.
+ * AI error-fix helper. Bring-your-own key, server-side only (never reaches the
+ * browser). Two providers, auto-detected:
+ *   - OpenRouter / any OpenAI-compatible endpoint  (OPENROUTER_API_KEY, or
+ *     OPENAI_API_KEY + PAPYR_AI_BASE_URL)  — chat-completions format
+ *   - Anthropic Messages API                        (ANTHROPIC_API_KEY)
+ * Model and endpoint are env-configurable so it can point at a gateway or mock.
  */
-const MODEL = process.env.PAPYR_AI_MODEL || 'claude-opus-4-8';
+
+type Provider = 'openrouter' | 'openai' | 'anthropic' | null;
+
+function provider(): Provider {
+  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
+  return null;
+}
 
 export function aiConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return provider() !== null;
+}
+
+function model(): string {
+  if (process.env.PAPYR_AI_MODEL) return process.env.PAPYR_AI_MODEL;
+  const p = provider();
+  if (p === 'openrouter') return 'anthropic/claude-opus-4.8';
+  if (p === 'openai') return 'gpt-4o';
+  return 'claude-opus-4-8';
+}
+
+export function aiModel(): string {
+  return aiConfigured() ? model() : '';
 }
 
 export interface AiFix { file: string; find: string; replace: string; note?: string }
@@ -25,7 +48,6 @@ function numberLines(src: string): string {
   return src.split('\n').map((l, i) => `${i + 1}\t${l}`).join('\n');
 }
 
-/** Robustly pull a JSON object out of a model response (handles ```json fences). */
 function extractJson(text: string): AiResult {
   let s = text.trim();
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -62,8 +84,7 @@ Respond with ONLY a JSON object, no preamble and no markdown fences:
 }
 Rules: "find" MUST be an exact, unique substring of the current file content so it can be replaced verbatim (do not include the line-number prefixes shown in the source). Keep each fix minimal. If a needed package is missing, add the \\usepackage line via a fix that targets an existing preamble line. If you cannot determine a safe automatic fix, return an empty "fixes" array and explain what the user should check.`;
 
-export async function diagnose(input: DiagnoseInput): Promise<AiResult> {
-  const client = new Anthropic(); // reads ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL from env
+function buildUserPrompt(input: DiagnoseInput): string {
   const sources = input.files
     .map((f) => `--- ${f.path} ---\n${numberLines(f.content)}`)
     .join('\n\n')
@@ -73,18 +94,50 @@ export async function diagnose(input: DiagnoseInput): Promise<AiResult> {
     .slice(0, 20)
     .map((e) => `${e.file || input.rootFile}:${e.line ?? '?'} — ${e.message}`)
     .join('\n');
+  return `Root file: ${input.rootFile}\n\nErrors:\n${errs || '(none parsed; see log)'}\n\nCompile log (tail):\n${input.log.slice(-3000)}\n\nSource files:\n${sources}`;
+}
 
-  const user = `Root file: ${input.rootFile}\n\nErrors:\n${errs || '(none parsed; see log)'}\n\nCompile log (tail):\n${input.log.slice(-3000)}\n\nSource files:\n${sources}`;
+async function diagnoseOpenAICompatible(input: DiagnoseInput, base: string, key: string, extraHeaders: Record<string, string> = {}): Promise<AiResult> {
+  const res = await fetch(`${base.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}`, ...extraHeaders },
+    body: JSON.stringify({
+      model: model(),
+      max_tokens: 4000,
+      messages: [
+        { role: 'system', content: SYSTEM },
+        { role: 'user', content: buildUserPrompt(input) },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`AI provider error (HTTP ${res.status}): ${(await res.text()).slice(0, 300)}`);
+  const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const text = body.choices?.[0]?.message?.content || '';
+  return extractJson(text);
+}
 
+async function diagnoseAnthropic(input: DiagnoseInput): Promise<AiResult> {
+  const client = new Anthropic(); // reads ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL from env
   const resp = await client.messages.create({
-    model: MODEL,
+    model: model(),
     max_tokens: 4000,
     system: SYSTEM,
-    messages: [{ role: 'user', content: user }],
+    messages: [{ role: 'user', content: buildUserPrompt(input) }],
   });
-  const text = resp.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
+  const text = resp.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
   return extractJson(text);
+}
+
+export async function diagnose(input: DiagnoseInput): Promise<AiResult> {
+  const p = provider();
+  if (p === 'openrouter') {
+    return diagnoseOpenAICompatible(input, process.env.PAPYR_AI_BASE_URL || 'https://openrouter.ai/api/v1', process.env.OPENROUTER_API_KEY!, {
+      'HTTP-Referer': 'https://github.com/papyr',
+      'X-Title': 'Papyr',
+    });
+  }
+  if (p === 'openai') {
+    return diagnoseOpenAICompatible(input, process.env.PAPYR_AI_BASE_URL || 'https://api.openai.com/v1', process.env.OPENAI_API_KEY!);
+  }
+  return diagnoseAnthropic(input);
 }

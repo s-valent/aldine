@@ -11,7 +11,7 @@ import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
 import { fetchBibEntry } from './references.js';
 import { unzip, guessRoot } from './unzip.js';
-import { aiConfigured, diagnose } from './ai.js';
+import { aiConfigured, aiModel, diagnose } from './ai.js';
 import * as comments from './comments.js';
 import * as auth from './auth.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
@@ -477,7 +477,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- AI error fix ----------
-  app.get('/api/ai/status', async () => ({ configured: aiConfigured(), model: process.env.PAPYR_AI_MODEL || 'claude-opus-4-8' }));
+  app.get('/api/ai/status', async () => ({ configured: aiConfigured(), model: aiModel() }));
 
   app.post<{ Params: { id: string }; Body: { branch?: string; errors?: Array<{ type: string; line: number | null; message: string; file?: string }>; log?: string } }>(
     '/api/projects/:id/ai/fix', async (req, reply) => {
