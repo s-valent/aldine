@@ -14,6 +14,7 @@ import { hintFor } from '../editor/errorHints';
 import { IconChevronLeft } from '../components/Icons';
 import CommandPalette, { Command } from '../components/CommandPalette';
 import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras';
+import { useCommentSignal } from '../editor/commentSignal';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -152,6 +153,8 @@ export default function Editor() {
     try { setComments(await api.comments(id, branch)); } catch { setComments([]); }
   }, [id, branch]);
   useEffect(() => { loadComments(); }, [id, branch]);
+  // live-sync: re-fetch when any collaborator changes comments
+  const bumpComments = useCommentSignal(id, branch, loadComments);
 
   // push this file's comment ranges into the editor as highlight decorations
   useEffect(() => {
@@ -173,11 +176,12 @@ export default function Editor() {
     try {
       await api.addComment(id, { branch, file: activeFile, anchor: sel, body: body.trim(), suggestion });
       await loadComments();
+      bumpComments();
       setTab('review');
     } catch (err: any) {
       toast(`Could not add comment: ${err.message}`, 'error');
     }
-  }, [id, branch, activeFile, loadComments, toast]);
+  }, [id, branch, activeFile, loadComments, bumpComments, toast]);
 
   const revealComment = useCallback((c: Comment) => {
     if (c.file !== activeFile) setActiveFile(c.file);
@@ -201,6 +205,7 @@ export default function Editor() {
       await api.writeFile(id, branch, c.file, next);
       await api.resolveComment(id, c.id, true);
       await loadComments();
+      bumpComments();
       toast('Suggestion applied', 'ok');
     } catch (err: any) {
       toast(`Could not accept: ${err.message}`, 'error');
@@ -388,9 +393,9 @@ export default function Editor() {
                 comments={comments}
                 activeFile={activeFile}
                 onReveal={revealComment}
-                onResolve={async (c, resolved) => { await api.resolveComment(id, c.id, resolved); loadComments(); }}
-                onDelete={async (c) => { await api.deleteComment(id, c.id); loadComments(); }}
-                onReply={async (c, body) => { await api.replyComment(id, c.id, body); loadComments(); }}
+                onResolve={async (c, resolved) => { await api.resolveComment(id, c.id, resolved); await loadComments(); bumpComments(); }}
+                onDelete={async (c) => { await api.deleteComment(id, c.id); await loadComments(); bumpComments(); }}
+                onReply={async (c, body) => { await api.replyComment(id, c.id, body); await loadComments(); bumpComments(); }}
                 onAccept={acceptSuggestion}
               />
             )}

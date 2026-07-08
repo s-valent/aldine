@@ -39,11 +39,17 @@ const tombstoned = new Set<string>();
 export function tombstone(name: string): void { tombstoned.add(name); }
 export function untombstone(name: string): void { tombstoned.delete(name); }
 
+/** Ephemeral coordination docs (e.g. the comment-change signal) are never written to disk. */
+function isSignalDoc(filePath: string): boolean {
+  return filePath.startsWith('.papyr/');
+}
+
 export function writeDocToDisk(name: string, document: Y.Doc): void {
   if (tombstoned.has(name)) return;
   const parsed = parseDocName(name);
   if (!parsed) return;
   const { projectId, branch, filePath } = parsed;
+  if (isSignalDoc(filePath)) return;
   const dir = branchDir(projectId, branch);
   if (!fs.existsSync(dir)) return; // branch was deleted while doc loaded
   const abs = safeJoin(dir, filePath);
@@ -79,6 +85,7 @@ export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
     const parsed = parseDocName(documentName);
     if (!parsed) throw new Error(`invalid document name: ${documentName}`);
     const { projectId, branch, filePath } = parsed;
+    if (isSignalDoc(filePath)) return document; // ephemeral coordination channel, nothing to load
     await ensureWorktree(projectId, branch);
     const abs = safeJoin(branchDir(projectId, branch), filePath);
     let content = '';

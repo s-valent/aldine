@@ -50,3 +50,36 @@ test.describe('review mode', () => {
     }
   });
 });
+
+test.describe('real-time review', () => {
+  test('a comment added in one browser appears live in another', async ({ browser, request }) => {
+    const id = await createProject(request, 'Live Review');
+    const ctxA = await browser.newContext();
+    const ctxB = await browser.newContext();
+    try {
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: 'Shared review document here.\n' } });
+      const a = await ctxA.newPage();
+      const b = await ctxB.newPage();
+      await a.goto(`/p/${id}`); await b.goto(`/p/${id}`);
+      for (const p of [a, b]) {
+        await expect(p.locator('.cm-content')).toContainText('Shared', { timeout: 10_000 });
+      }
+      await b.getByTestId('tab-review').click();
+      await expect(b.getByTestId('review-panel')).toBeVisible();
+
+      // A selects the word "Shared" and adds a comment through the UI
+      const line = await a.locator('.cm-line').first().boundingBox();
+      await a.mouse.dblclick(line!.x + 20, line!.y + line!.height / 2);
+      let n = 0;
+      a.on('dialog', (d) => { n++; d.accept(n === 1 ? 'LIVE-COMMENT-XYZ' : ''); });
+      await a.getByTestId('add-comment').click();
+      await expect(a.getByTestId('review-panel')).toContainText('LIVE-COMMENT-XYZ', { timeout: 10_000 });
+
+      // B, without reloading, receives the signal and re-fetches → sees the comment live
+      await expect(b.getByTestId('review-panel')).toContainText('LIVE-COMMENT-XYZ', { timeout: 10_000 });
+    } finally {
+      await ctxA.close(); await ctxB.close();
+      await cleanup(request, id);
+    }
+  });
+});
