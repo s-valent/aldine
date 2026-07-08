@@ -89,6 +89,15 @@ export async function fileDiff(id: string, branch: string, base = 'main'): Promi
   return g.raw(['diff', `${base}...${branch}`, '--stat']);
 }
 
+/** Unified patch for a single commit (handles root commits, which have no parent). */
+export async function commitDiff(id: string, hash: string): Promise<{ patch: string; stat: string }> {
+  if (!/^[0-9a-f]{4,40}$/.test(hash)) throw new Error('bad commit hash');
+  const g = git(repoDir(id));
+  const patch = await g.raw(['show', hash, '--no-color', '--pretty=format:', '--']);
+  const stat = await g.raw(['show', hash, '--no-color', '--stat', '--pretty=format:', '--']);
+  return { patch: patch.replace(/^\n+/, ''), stat: stat.replace(/^\n+/, '') };
+}
+
 /** Remove stale worktree registrations on boot. */
 export async function pruneWorktrees(id: string): Promise<void> {
   try { await git(repoDir(id)).raw(['worktree', 'prune']); } catch { /* noop */ }

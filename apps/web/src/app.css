@@ -494,6 +494,26 @@
 .statusbar__file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .statusbar__spacer { flex: 1; }
 
+/* diff viewer */
+.diff {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  background: var(--bg-inset);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-m);
+  max-height: 56vh;
+  overflow: auto;
+  white-space: pre;
+}
+.diff > div { padding: 0 10px; }
+.diff__ctx { color: var(--text-2); }
+.diff__file { color: var(--text); font-weight: 600; background: var(--bg-active); }
+.diff__hunk { color: var(--accent); }
+.diff__add { color: var(--ok); background: rgba(40, 167, 69, 0.10); }
+.diff__del { color: var(--error); background: var(--error-soft); }
+
 /* log viewer */
 .modal--wide { width: 760px; }
 .logview {
@@ -689,7 +709,7 @@
 
 /* sidebar panels (history, plugins) */
 .panel-list { display: flex; flex-direction: column; }
-.history__item { padding: 7px 8px; border-radius: var(--radius-s); }
+.history__item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 8px; border-radius: var(--radius-s); cursor: pointer; color: var(--text); }
 .history__item:hover { background: var(--bg-hover); }
 .history__msg { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history__meta { font-size: 11px; color: var(--text-2); }

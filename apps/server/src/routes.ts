@@ -349,6 +349,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return gitops.log(req.params.id, req.query.branch || 'main');
   });
 
+  app.get<{ Params: { id: string; hash: string } }>('/api/projects/:id/commit/:hash/diff', async (req, reply) => {
+    try { return await gitops.commitDiff(req.params.id, req.params.hash); }
+    catch (err: any) { return reply.code(400).send({ error: err.message }); }
+  });
+
   app.post<{ Params: { id: string }; Body: { from: string; into: string; author?: string } }>(
     '/api/projects/:id/merge', async (req, reply) => {
       const { from, into, author } = req.body || {};

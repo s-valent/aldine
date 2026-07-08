@@ -2,11 +2,22 @@ import { useEffect, useState } from 'react';
 import { api, LogEntry, localUser } from '../api';
 import { useToast } from './Toast';
 import { friendlyDate } from '../util/dates';
+import DiffView from './DiffView';
 
 export default function HistoryPanel({ projectId, branch }: { projectId: string; branch: string }) {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [msg, setMsg] = useState('');
+  const [diff, setDiff] = useState<{ entry: LogEntry; patch: string } | null>(null);
   const toast = useToast();
+
+  const openDiff = async (c: LogEntry) => {
+    try {
+      const d = await api.commitDiff(projectId, c.hash);
+      setDiff({ entry: c, patch: d.patch });
+    } catch (err: any) {
+      toast(`Could not load diff: ${err.message}`, 'error');
+    }
+  };
 
   const load = () => api.log(projectId, branch).then(setLog).catch(() => setLog([]));
   useEffect(() => { load(); }, [projectId, branch]);
@@ -38,12 +49,23 @@ export default function HistoryPanel({ projectId, branch }: { projectId: string;
         <button className="btn btn--small" onClick={commit} data-testid="commit-button" style={{ height: 28 }}>Save</button>
       </div>
       {log.map((c) => (
-        <div key={c.hash} className="history__item" title={c.hash}>
+        <button key={c.hash} className="history__item" title={`${c.hash} — click to see changes`} data-testid={`commit-${c.hash.slice(0, 7)}`} onClick={() => openDiff(c)}>
           <div className="history__msg">{c.message}</div>
           <div className="history__meta">{c.author} · {friendlyDate(c.date)}</div>
-        </div>
+        </button>
       ))}
       {log.length === 0 && <p style={{ color: 'var(--text-2)', padding: 8 }}>No history yet on this branch.</p>}
+
+      {diff && (
+        <div className="modal-backdrop" onClick={() => setDiff(null)}>
+          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 2 }}>{diff.entry.message}</h2>
+            <p className="modal__sub">{diff.entry.author} · {friendlyDate(diff.entry.date)} · {diff.entry.hash.slice(0, 10)}</p>
+            <DiffView patch={diff.patch} />
+            <div className="modal__row"><button className="btn" onClick={() => setDiff(null)}>Close</button></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
