@@ -82,9 +82,19 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   need HA. LaTeX compiles are the cost driver, so meter them: set
   `PAPYR_COMPILE_QUOTA_MIN` per plan and read `/api/usage` for a plan UI. Users
   over quota get HTTP 402 with `quotaExceeded: true`.
-- **When one box isn't enough**, keep the web/collab/DB tier here and run
+- **When one box isn't enough**, keep the web/collab tier here and run
   additional **compiler workers** on cheap burstable boxes pointed at the shared
   data volume (NFS/object store) — the compiler is stateless per compile.
+- **Datastore**: the default is flat JSON files (fine for one node). To run
+  multiple app nodes, switch to Postgres — no code change, just config:
+  ```bash
+  # in .env
+  DATABASE_URL=postgres://papyr:papyr@db:5432/papyr
+  # bring up with the bundled Postgres (or point at a managed one)
+  docker compose --profile tls --profile postgres up -d
+  ```
+  Users, sessions, project metadata, comments, and usage move to Postgres;
+  git repos stay on disk. The same test suite passes on both backends.
 
 ## Caveats to close before charging money
 

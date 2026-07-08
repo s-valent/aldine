@@ -22,9 +22,13 @@ import { safeJoin, isTextFile } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
 
-/** current user for a request (null when auth disabled or not signed in) */
-function reqUser(req: { headers: { cookie?: string } }): auth.PublicUser | null {
-  return auth.userFromRequest(req.headers.cookie);
+/**
+ * Current user for a request. Resolved once per request by an onRequest hook
+ * (which awaits the async datastore) and cached on the request, so the many
+ * call sites stay synchronous.
+ */
+function reqUser(req: any): auth.PublicUser | null {
+  return req._user ?? null;
 }
 
 function githubConfigured(): boolean {
@@ -70,12 +74,12 @@ function isHiddenPath(rel: string): boolean {
   return first === '.git' || first.startsWith('.papyr');
 }
 
-function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null) {
+async function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null) {
   const { zotero: z, ownerId, ...rest } = meta;
   return {
     ...rest,
     ownerId,
-    ownerName: ownerName(meta),
+    ownerName: await ownerName(meta),
     isOwner: user !== undefined ? isOwner(meta, user) : undefined,
     zotero: z ? {
       libraryPrefix: z.libraryPrefix,
@@ -97,8 +101,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (!registerLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
     try {
-      const user = auth.register(req.body.email, req.body.password, req.body.name);
-      reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
+      const user = await auth.register(req.body.email, req.body.password, req.body.name);
+      reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
       return { user };
     } catch (err: any) { return reply.code(400).send({ error: err.message }); }
   });
@@ -107,14 +111,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
     try {
-      const user = auth.login(req.body.email, req.body.password);
-      reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
+      const user = await auth.login(req.body.email, req.body.password);
+      reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
       return { user };
     } catch (err: any) { return reply.code(401).send({ error: err.message }); }
   });
 
   app.post('/api/auth/logout', async (req, reply) => {
-    auth.destroySession(auth.sidFromRequest(req.headers.cookie)); // revoke this session server-side
+    await auth.destroySession(auth.sidFromRequest(req.headers.cookie)); // revoke this session server-side
     reply.header('set-cookie', auth.clearCookie());
     return { ok: true };
   });
@@ -125,8 +129,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const user = reqUser(req);
     if (!user) return reply.code(401).send({ error: 'Sign in required' });
     try {
-      auth.changePassword(user.id, req.body?.currentPassword || '', req.body?.newPassword || '');
-      reply.header('set-cookie', auth.sessionCookie(auth.createSession(user.id)));
+      await auth.changePassword(user.id, req.body?.currentPassword || '', req.body?.newPassword || '');
+      reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
       return { ok: true };
     } catch (err: any) { return reply.code(400).send({ error: err.message }); }
   });
@@ -136,7 +140,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string } }>('/api/auth/reset-request', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
-    const r = auth.requestReset(req.body?.email || '');
+    const r = await auth.requestReset(req.body?.email || '');
     if (r) {
       console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (relay this to the user; expires in 1h)`);
       // TODO: if SMTP env configured, send an email with the reset link here.
@@ -148,7 +152,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { token: string; newPassword: string } }>('/api/auth/reset', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     try {
-      auth.resetPassword(req.body?.token || '', req.body?.newPassword || '');
+      await auth.resetPassword(req.body?.token || '', req.body?.newPassword || '');
       return { ok: true };
     } catch (err: any) { return reply.code(400).send({ error: err.message }); }
   });
@@ -171,11 +175,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       const user = await githubExchange(req.query.code, `${publicBase(req)}/api/auth/oauth/github/callback`);
-      reply.header('set-cookie', [auth.sessionCookie(auth.createSession(user.id)), 'papyr_oauth_state=; Path=/; Max-Age=0']);
+      reply.header('set-cookie', [auth.sessionCookie(await auth.createSession(user.id)), 'papyr_oauth_state=; Path=/; Max-Age=0']);
       return reply.redirect('/');
     } catch (err: any) {
       return reply.code(400).send({ error: `GitHub sign-in failed: ${err.message}` });
     }
+  });
+
+  // Resolve the request's user once (awaiting the async datastore) and cache it,
+  // so reqUser() is a synchronous read everywhere downstream.
+  app.addHook('onRequest', async (req) => {
+    (req as any)._user = auth.AUTH_ENABLED ? await auth.userFromRequest(req.headers.cookie) : null;
   });
 
   // Global guard: enforce project access when auth is on. Runs after routing,
@@ -186,7 +196,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const id = (req.params as { id?: string } | undefined)?.id;
     if (id !== undefined) {
       let meta: store.ProjectMeta;
-      try { meta = store.readMeta(id); } catch { return reply.code(404).send({ error: 'project not found' }); }
+      try { meta = await store.readMeta(id); } catch { return reply.code(404).send({ error: 'project not found' }); }
       const user = reqUser(req);
       if (!user) return reply.code(401).send({ error: 'Sign in required' });
       if (!canAccess(meta, user)) return reply.code(403).send({ error: 'You do not have access to this project' });
@@ -202,7 +212,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- projects ----------
   app.get('/api/projects', async (req) => {
     const user = reqUser(req);
-    return store.listProjects().filter((m) => canAccess(m, user)).map((m) => publicMeta(m, user));
+    return Promise.all((await store.listProjects()).filter((m) => canAccess(m, user)).map((m) => publicMeta(m, user)));
   });
 
   app.post<{ Body: { name?: string; files?: Record<string, string>; template?: string } }>('/api/projects', async (req, reply) => {
@@ -216,20 +226,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
     }
     const meta = await store.createProject(name, seed, reqUser(req)?.id);
-    return publicMeta(meta, reqUser(req));
+    return publicMeta(meta, reqUser(req));  // Promise; Fastify awaits
   });
 
   // ---------- sharing (owner only) ----------
   app.post<{ Params: { id: string }; Body: { mode?: 'private' | 'link'; collaborators?: string[] } }>(
     '/api/projects/:id/share', async (req, reply) => {
-      const meta = store.readMeta(req.params.id);
+      const meta = await store.readMeta(req.params.id);
       if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can change sharing' });
       const mode = req.body?.mode === 'link' ? 'link' : 'private';
       const collaborators = Array.isArray(req.body?.collaborators)
         ? req.body!.collaborators.map((c) => c.trim().toLowerCase()).filter((c) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c)).slice(0, 50)
         : (meta.share?.collaborators || []);
       meta.share = { mode, collaborators };
-      store.writeMeta(meta);
+      await store.writeMeta(meta);
       return publicMeta(meta, reqUser(req));
     });
 
@@ -259,7 +269,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       for (const p of binFiles) store.writeFile(meta.id, 'main', p, entries[p]);
       if (binFiles.length) await gitops.commitAll(meta.id, 'main', 'papyr: import assets').catch(() => {});
       const root = guessRoot(entries);
-      if (root) { meta.rootFile = root; store.writeMeta(meta); }
+      if (root) { meta.rootFile = root; await store.writeMeta(meta); }
       return publicMeta(meta);
     } catch (err: any) {
       return reply.code(400).send({ error: `Could not import ZIP: ${err.message}` });
@@ -268,9 +278,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     try {
-      const meta = store.readMeta(req.params.id);
+      const meta = await store.readMeta(req.params.id);
       const branches = await gitops.listBranches(meta.id);
-      return { ...publicMeta(meta, reqUser(req)), branches };
+      return { ...(await publicMeta(meta, reqUser(req))), branches };
     } catch {
       return reply.code(404).send({ error: 'project not found' });
     }
@@ -278,19 +288,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch<{ Params: { id: string }; Body: Partial<Pick<store.ProjectMeta, 'name' | 'rootFile' | 'engine'>> }>(
     '/api/projects/:id', async (req) => {
-      const meta = store.readMeta(req.params.id);
+      const meta = await store.readMeta(req.params.id);
       const { name, rootFile, engine } = req.body || {};
       if (name) meta.name = name;
       if (rootFile) meta.rootFile = rootFile;
       if (engine) meta.engine = engine;
-      store.writeMeta(meta);
+      await store.writeMeta(meta);
       return publicMeta(meta);
     });
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
-    const meta = store.readMeta(req.params.id);
+    const meta = await store.readMeta(req.params.id);
     if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can delete this project' });
-    store.deleteProject(req.params.id);
+    await store.deleteProject(req.params.id);
     return { ok: true };
   });
 
@@ -369,7 +379,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const user = reqUser(req);
     const key = clientKey(req, user?.id);
     // plan metering: block once a signed-in user is over their monthly compile budget
-    if (user && usage.overQuota(user.id)) {
+    if (user && await usage.overQuota(user.id)) {
       return reply.code(402).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: 'Monthly typeset limit reached — upgrade your plan for more compile time.', quotaExceeded: true });
     }
     if (!compileGate.tryAcquire(key)) {
@@ -377,7 +387,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       const result = await compileProject(req.params.id, branch);
-      if (user) usage.recordCompile(user.id, result.durationMs || 0);
+      if (user) await usage.recordCompile(user.id, result.durationMs || 0);
       return result;
     } catch (err: any) {
       return reply.code(400).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: err.message });
@@ -390,7 +400,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/usage', async (req, reply) => {
     const user = reqUser(req);
     if (!user) return reply.code(401).send({ error: 'Sign in required' });
-    return { metering: usage.meteringEnabled(), ...usage.usageFor(user.id) };
+    return { metering: usage.meteringEnabled(), ...(await usage.usageFor(user.id)) };
   });
 
   app.post<{ Params: { id: string }; Body: Record<string, unknown> & { branch?: string } }>(
@@ -508,9 +518,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (!apiKey || !libraryPrefix) return reply.code(400).send({ error: 'apiKey and libraryPrefix required' });
       try {
         const info = await zotero.validateKey(apiKey);
-        const meta = store.readMeta(req.params.id);
+        const meta = await store.readMeta(req.params.id);
         meta.zotero = { apiKey, userId: info.userID, username: info.username, libraryPrefix, collectionKey, bibFile };
-        store.writeMeta(meta);
+        await store.writeMeta(meta);
         const sync = await zotero.syncProject(req.params.id, 'main', true);
         return { ok: true, ...sync };
       } catch (err: any) {
@@ -528,14 +538,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     });
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id/zotero', async (req) => {
-    const meta = store.readMeta(req.params.id);
+    const meta = await store.readMeta(req.params.id);
     delete meta.zotero;
     store.writeMeta(meta);
     return { ok: true };
   });
 
   app.get<{ Params: { id: string }; Querystring: { q?: string } }>('/api/projects/:id/zotero/search', async (req, reply) => {
-    const meta = store.readMeta(req.params.id);
+    const meta = await store.readMeta(req.params.id);
     if (!meta.zotero) return reply.code(400).send({ error: 'no Zotero link' });
     try {
       return await zotero.searchItems(meta.zotero.apiKey, meta.zotero.libraryPrefix, req.query.q || '');
@@ -583,7 +593,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // ---------- review comments ----------
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/comments', async (req) =>
-    comments.listComments(req.params.id, req.query.branch || 'main'));
+    comments.listComments(req.params.id, req.query.branch || 'main'));  // returns a Promise; Fastify awaits it
 
   app.post<{ Params: { id: string }; Body: { branch?: string; file: string; anchor: { from: number; to: number; quote: string }; body: string; suggestion?: string; author?: string } }>(
     '/api/projects/:id/comments', async (req, reply) => {
@@ -601,18 +611,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { id: string; cid: string }; Body: { body: string; author?: string } }>(
     '/api/projects/:id/comments/:cid/reply', async (req, reply) => {
-      const c = comments.replyComment(req.params.id, req.params.cid, reqUser(req)?.name || req.body?.author || 'Anonymous', req.body?.body || '');
+      const c = await comments.replyComment(req.params.id, req.params.cid, reqUser(req)?.name || req.body?.author || 'Anonymous', req.body?.body || '');
       return c || reply.code(404).send({ error: 'comment not found' });
     });
 
   app.post<{ Params: { id: string; cid: string }; Body: { resolved?: boolean } }>(
     '/api/projects/:id/comments/:cid/resolve', async (req, reply) => {
-      const c = comments.resolveComment(req.params.id, req.params.cid, req.body?.resolved !== false);
+      const c = await comments.resolveComment(req.params.id, req.params.cid, req.body?.resolved !== false);
       return c || reply.code(404).send({ error: 'comment not found' });
     });
 
   app.delete<{ Params: { id: string; cid: string } }>('/api/projects/:id/comments/:cid', async (req) => {
-    comments.deleteComment(req.params.id, req.params.cid);
+    await comments.deleteComment(req.params.id, req.params.cid);
     return { ok: true };
   });
 
@@ -624,7 +634,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (!aiConfigured()) return reply.code(400).send({ error: 'AI is not configured. Set an ANTHROPIC_API_KEY or OPENROUTER_API_KEY on the server to enable it.' });
       if (!aiLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'AI rate limit reached — please slow down' });
       const { branch = 'main', errors = [], log = '' } = req.body || {};
-      const meta = store.readMeta(req.params.id);
+      const meta = await store.readMeta(req.params.id);
       flushBranchDocs(req.params.id, branch);
       const files: Array<{ path: string; content: string }> = [];
       for (const f of store.listFiles(req.params.id, branch)) {

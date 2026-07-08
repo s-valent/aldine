@@ -19,8 +19,8 @@ export function isOwner(meta: ProjectMeta, user: PublicUser | null): boolean {
   return !!user && meta.ownerId === user.id;
 }
 
-/** Resolve a collaborator email to a display for listings (best-effort). */
-export function ownerName(meta: ProjectMeta): string | undefined {
+/** Resolve the owner's display name for listings (best-effort). */
+export async function ownerName(meta: ProjectMeta): Promise<string | undefined> {
   if (!meta.ownerId) return undefined;
-  return getUser(meta.ownerId)?.name;
+  return (await getUser(meta.ownerId))?.name;
 }

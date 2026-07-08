@@ -9,9 +9,13 @@ import { hocuspocus, flushAllDocs } from './collab.js';
 import { commitAll } from './gitops.js';
 import { listProjects } from './store.js';
 import { initObservability, captureError } from './observability.js';
+import { initDb, closeDb } from './db/index.js';
 
 // Never let a stray rejection take down the collaboration server.
 process.on('unhandledRejection', (reason) => { console.error('[papyr] unhandledRejection', reason); captureError(reason); });
+
+// Select and connect the datastore (JSON default, or Postgres via DATABASE_URL) before anything uses it.
+await initDb();
 
 // trustProxy makes req.ip honor X-Forwarded-For — enable ONLY behind a trusted
 // reverse proxy (Caddy/nginx). Off by default so clients can't spoof their IP
@@ -56,12 +60,13 @@ async function shutdown(signal: string) {
   try {
     const n = flushAllDocs();
     // best-effort commit of every project's main branch so nothing is lost
-    await Promise.allSettled(listProjects().map((p) => commitAll(p.id, 'main', 'papyr: autosave on shutdown')));
+    const projects = await listProjects();
+    await Promise.allSettled(projects.map((p) => commitAll(p.id, 'main', 'papyr: autosave on shutdown')));
     console.log(`[papyr] flushed ${n} documents; exiting`);
   } catch (err) {
     console.error('[papyr] shutdown flush error', err);
   }
-  try { await app.close(); } catch { /* noop */ }
+  try { await app.close(); await closeDb(); } catch { /* noop */ }
   process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));

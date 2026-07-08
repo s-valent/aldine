@@ -24,6 +24,9 @@ services:
       PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
       # Optional error tracking.
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Datastore: blank = flat JSON files (slim single-node default). Set to a
+      # Postgres URL for the horizontally-scalable backend (see `postgres` profile).
+      DATABASE_URL: ${DATABASE_URL:-}
     volumes:
       - papyr-data:/data
       - papyr-secrets:/secrets
@@ -77,13 +80,29 @@ services:
     networks:
       - frontend
 
+  # Optional Postgres for the scalable datastore. Enable with `--profile postgres`
+  # and set DATABASE_URL=postgres://papyr:papyr@db:5432/papyr in .env.
+  db:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-papyr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-papyr}
+      POSTGRES_DB: ${POSTGRES_DB:-papyr}
+    volumes:
+      - papyr-pg:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - backend
+
 networks:
   frontend: {}
   backend:
-    internal: true   # compiler has no route to the internet
+    internal: true   # compiler (and db) have no route to the internet
 
 volumes:
   papyr-data:
   papyr-secrets:
+  papyr-pg:
   caddy-data:
   caddy-config:

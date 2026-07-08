@@ -44,7 +44,7 @@ export function compileProject(projectId: string, branch: string): Promise<Compi
 }
 
 async function runCompile(projectId: string, branch: string): Promise<CompileResult> {
-  const meta = readMeta(projectId);
+  const meta = await readMeta(projectId);
   await ensureWorktree(projectId, branch);
   flushBranchDocs(projectId, branch);
 
@@ -77,7 +77,7 @@ async function runCompile(projectId: string, branch: string): Promise<CompileRes
 }
 
 export async function synctexLookup(projectId: string, branch: string, payload: Record<string, unknown>): Promise<unknown> {
-  const meta = readMeta(projectId);
+  const meta = await readMeta(projectId);
   const res = await fetch(`${config.compilerUrl}/synctex`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

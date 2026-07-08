@@ -67,10 +67,10 @@ const authHook = AUTH_ENABLED ? {
   async onAuthenticate({ documentName, requestHeaders }: { documentName: string; requestHeaders: Record<string, string | string[] | undefined> }) {
     const parsed = parseDocName(documentName);
     if (!parsed) throw new Error('invalid document');
-    const user = userFromRequest(requestHeaders.cookie as string | undefined);
+    const user = await userFromRequest(requestHeaders.cookie as string | undefined);
     if (!user) throw new Error('Not authenticated');
     let meta;
-    try { meta = readMeta(parsed.projectId); } catch { throw new Error('project not found'); }
+    try { meta = await readMeta(parsed.projectId); } catch { throw new Error('project not found'); }
     if (!canAccess(meta, user)) throw new Error('Access denied');
   },
 } : {};

@@ -77,7 +77,7 @@ export interface SyncResult { synced: boolean; unchanged?: boolean; bibFile?: st
 
 /** Sync the linked Zotero library into <bibFile> on the given branch. */
 export async function syncProject(projectId: string, branch = 'main', force = false): Promise<SyncResult> {
-  const meta = readMeta(projectId);
+  const meta = await readMeta(projectId);
   const z = meta.zotero;
   if (!z) throw new Error('project has no Zotero link');
   const result = await fetchBib(z.apiKey, z.libraryPrefix, z.collectionKey, force ? undefined : z.lastVersion);
@@ -86,7 +86,7 @@ export async function syncProject(projectId: string, branch = 'main', force = fa
   writeFile(projectId, branch, z.bibFile, header + result.bib);
   refreshBranchDocsFromDisk(projectId, branch);
   const updated: ProjectMeta = { ...meta, zotero: { ...z, lastVersion: result.version, lastSyncedAt: new Date().toISOString() } };
-  writeMeta(updated);
+  await writeMeta(updated);
   await commitAll(projectId, branch, `papyr: sync Zotero library into ${z.bibFile}`).catch(() => {});
   const itemCount = (result.bib.match(/^@/gm) || []).length;
   return { synced: true, bibFile: z.bibFile, itemCount };

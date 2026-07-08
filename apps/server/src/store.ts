@@ -1,31 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { simpleGit, SimpleGit } from 'simple-git';
-import { projectsDir, worktreesDir, metaDir } from './config.js';
+import { projectsDir, worktreesDir } from './config.js';
 import { newId, safeJoin, BRANCH_RE, PROJECT_ID_RE, isTextFile } from './util.js';
+import { db } from './db/index.js';
+import type { ProjectMeta } from './db/types.js';
 
-export interface ProjectMeta {
-  id: string;
-  name: string;
-  rootFile: string;
-  engine: 'pdf' | 'xelatex' | 'lualatex';
-  createdAt: string;
-  /** owner user id (auth mode only; undefined = legacy/anonymous, open access) */
-  ownerId?: string;
-  /** sharing: 'private' (owner + collaborators) or 'link' (any signed-in user) */
-  share?: { mode: 'private' | 'link'; collaborators: string[] };
-  /** secrets & integration state live here, outside the git repo */
-  zotero?: {
-    apiKey: string;
-    userId: number;
-    username?: string;
-    libraryPrefix: string; // e.g. users/123 or groups/456
-    collectionKey?: string;
-    lastVersion?: number;
-    bibFile: string; // e.g. zotero.bib
-    lastSyncedAt?: string;
-  };
-}
+export type { ProjectMeta } from './db/types.js';
 
 export function repoDir(id: string): string {
   if (!PROJECT_ID_RE.test(id)) throw new Error('bad project id');
@@ -46,25 +27,19 @@ export function git(dir: string): SimpleGit {
   return simpleGit({ baseDir: dir });
 }
 
-function metaPath(id: string): string {
-  if (!PROJECT_ID_RE.test(id)) throw new Error('bad project id');
-  return path.join(metaDir, `${id}.json`);
+/** Throws 'project not found' when absent, preserving the try/catch semantics at call sites. */
+export async function readMeta(id: string): Promise<ProjectMeta> {
+  const m = await db().readMeta(id);
+  if (!m) throw new Error('project not found');
+  return m;
 }
 
-export function readMeta(id: string): ProjectMeta {
-  return JSON.parse(fs.readFileSync(metaPath(id), 'utf8'));
+export function writeMeta(meta: ProjectMeta): Promise<void> {
+  return db().writeMeta(meta);
 }
 
-export function writeMeta(meta: ProjectMeta): void {
-  fs.writeFileSync(metaPath(meta.id), JSON.stringify(meta, null, 2));
-}
-
-export function listProjects(): ProjectMeta[] {
-  if (!fs.existsSync(metaDir)) return [];
-  return fs.readdirSync(metaDir)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => JSON.parse(fs.readFileSync(path.join(metaDir, f), 'utf8')) as ProjectMeta)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export function listProjects(): Promise<ProjectMeta[]> {
+  return db().listMeta();
 }
 
 export async function createProject(name: string, files: Record<string, string> = {}, ownerId?: string): Promise<ProjectMeta> {
@@ -93,14 +68,14 @@ export async function createProject(name: string, files: Record<string, string> 
     : Object.keys(seed).find((f) => f.endsWith('.tex')) || 'main.tex';
   const meta: ProjectMeta = { id, name, rootFile, engine: 'pdf', createdAt: new Date().toISOString() };
   if (ownerId) { meta.ownerId = ownerId; meta.share = { mode: 'private', collaborators: [] }; }
-  writeMeta(meta);
+  await writeMeta(meta);
   return meta;
 }
 
-export function deleteProject(id: string): void {
+export async function deleteProject(id: string): Promise<void> {
   fs.rmSync(repoDir(id), { recursive: true, force: true });
   fs.rmSync(path.join(worktreesDir, id), { recursive: true, force: true });
-  fs.rmSync(metaPath(id), { force: true });
+  await db().deleteMeta(id);
 }
 
 export interface TreeEntry { path: string; type: 'file' | 'dir'; size?: number; binary?: boolean }

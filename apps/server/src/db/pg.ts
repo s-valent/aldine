@@ -1,0 +1,146 @@
+import type { DataStore, User, SessionRow, ProjectMeta, Comment } from './types.js';
+
+/**
+ * Postgres DataStore — the horizontally-scalable backend. Multiple app nodes
+ * share one database, so this (unlike the JSON backend) is safe across
+ * processes and machines. Enabled by setting DATABASE_URL.
+ *
+ * `pg` is an optionalDependency loaded dynamically: the slim JSON default never
+ * needs it installed. Users/sessions/resets are typed columns (indexed,
+ * unique-constrained); project metadata and comments are JSONB (read/written
+ * wholesale); usage is an upsert with an atomic increment.
+ */
+interface PgPool {
+  query(text: string, params?: unknown[]): Promise<{ rows: any[] }>;
+  end(): Promise<void>;
+}
+
+export class PgStore implements DataStore {
+  private pool!: PgPool;
+
+  constructor(private connectionString: string) {}
+
+  async init(): Promise<void> {
+    let Pg: any;
+    try { Pg = await import('pg'); }
+    catch { throw new Error('DATABASE_URL is set but the "pg" package is not installed. Run: npm i pg'); }
+    const Pool = Pg.default?.Pool || Pg.Pool;
+    this.pool = new Pool({ connectionString: this.connectionString, max: Number(process.env.PG_POOL_MAX || 10) });
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id text PRIMARY KEY, email text UNIQUE NOT NULL, name text NOT NULL,
+        salt text NOT NULL, hash text NOT NULL, created_at text NOT NULL, provider text
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        sid text PRIMARY KEY, user_id text NOT NULL, exp bigint NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
+      CREATE TABLE IF NOT EXISTS resets (
+        token text PRIMARY KEY, user_id text NOT NULL, exp bigint NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS project_meta (
+        id text PRIMARY KEY, created_at text NOT NULL, data jsonb NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS comments (
+        project_id text PRIMARY KEY, data jsonb NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS usage (
+        user_id text NOT NULL, month text NOT NULL, seconds double precision NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, month)
+      );
+    `);
+  }
+  async close(): Promise<void> { await this.pool?.end(); }
+
+  // ---- users ----
+  private rowToUser(r: any): User {
+    return { id: r.id, email: r.email, name: r.name, salt: r.salt, hash: r.hash, createdAt: r.created_at, provider: r.provider ?? undefined };
+  }
+  async createUser(u: User) {
+    await this.pool.query(
+      `INSERT INTO users(id,email,name,salt,hash,created_at,provider) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [u.id, u.email, u.name, u.salt, u.hash, u.createdAt, u.provider ?? null],
+    );
+  }
+  async updateUser(u: User) {
+    await this.pool.query(
+      `UPDATE users SET email=$2,name=$3,salt=$4,hash=$5,created_at=$6,provider=$7 WHERE id=$1`,
+      [u.id, u.email, u.name, u.salt, u.hash, u.createdAt, u.provider ?? null],
+    );
+  }
+  async getUser(id: string) {
+    const { rows } = await this.pool.query(`SELECT * FROM users WHERE id=$1`, [id]);
+    return rows[0] ? this.rowToUser(rows[0]) : null;
+  }
+  async findUserByEmail(email: string) {
+    const { rows } = await this.pool.query(`SELECT * FROM users WHERE email=$1`, [email]);
+    return rows[0] ? this.rowToUser(rows[0]) : null;
+  }
+
+  // ---- sessions ----
+  async createSession(sid: string, userId: string, exp: number) {
+    await this.pool.query(`DELETE FROM sessions WHERE exp < $1`, [Date.now()]);
+    await this.pool.query(`INSERT INTO sessions(sid,user_id,exp) VALUES($1,$2,$3)`, [sid, userId, exp]);
+  }
+  async getSession(sid: string) {
+    const { rows } = await this.pool.query(`SELECT user_id, exp FROM sessions WHERE sid=$1`, [sid]);
+    return rows[0] ? { userId: rows[0].user_id, exp: Number(rows[0].exp) } : null;
+  }
+  async deleteSession(sid: string) { await this.pool.query(`DELETE FROM sessions WHERE sid=$1`, [sid]); }
+  async deleteSessionsForUser(userId: string) { await this.pool.query(`DELETE FROM sessions WHERE user_id=$1`, [userId]); }
+
+  // ---- resets ----
+  async createReset(token: string, userId: string, exp: number) {
+    await this.pool.query(`DELETE FROM resets WHERE exp < $1`, [Date.now()]);
+    await this.pool.query(`INSERT INTO resets(token,user_id,exp) VALUES($1,$2,$3)`, [token, userId, exp]);
+  }
+  async getReset(token: string) {
+    const { rows } = await this.pool.query(`SELECT user_id, exp FROM resets WHERE token=$1`, [token]);
+    return rows[0] ? { userId: rows[0].user_id, exp: Number(rows[0].exp) } : null;
+  }
+  async deleteReset(token: string) { await this.pool.query(`DELETE FROM resets WHERE token=$1`, [token]); }
+
+  // ---- project meta ----
+  async readMeta(id: string) {
+    const { rows } = await this.pool.query(`SELECT data FROM project_meta WHERE id=$1`, [id]);
+    return rows[0] ? (rows[0].data as ProjectMeta) : null;
+  }
+  async writeMeta(meta: ProjectMeta) {
+    await this.pool.query(
+      `INSERT INTO project_meta(id,created_at,data) VALUES($1,$2,$3)
+       ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, created_at=EXCLUDED.created_at`,
+      [meta.id, meta.createdAt, JSON.stringify(meta)],
+    );
+  }
+  async deleteMeta(id: string) { await this.pool.query(`DELETE FROM project_meta WHERE id=$1`, [id]); }
+  async listMeta() {
+    const { rows } = await this.pool.query(`SELECT data FROM project_meta ORDER BY created_at DESC`);
+    return rows.map((r) => r.data as ProjectMeta);
+  }
+
+  // ---- comments ----
+  async loadComments(projectId: string) {
+    const { rows } = await this.pool.query(`SELECT data FROM comments WHERE project_id=$1`, [projectId]);
+    return rows[0] ? (rows[0].data as Comment[]) : [];
+  }
+  async saveComments(projectId: string, list: Comment[]) {
+    await this.pool.query(
+      `INSERT INTO comments(project_id,data) VALUES($1,$2)
+       ON CONFLICT(project_id) DO UPDATE SET data=EXCLUDED.data`,
+      [projectId, JSON.stringify(list)],
+    );
+  }
+
+  // ---- usage ----
+  async getUsageSeconds(userId: string, month: string) {
+    const { rows } = await this.pool.query(`SELECT seconds FROM usage WHERE user_id=$1 AND month=$2`, [userId, month]);
+    return rows[0] ? Number(rows[0].seconds) : 0;
+  }
+  async addUsageSeconds(userId: string, month: string, seconds: number) {
+    await this.pool.query(
+      `INSERT INTO usage(user_id,month,seconds) VALUES($1,$2,$3)
+       ON CONFLICT(user_id,month) DO UPDATE SET seconds = usage.seconds + EXCLUDED.seconds`,
+      [userId, month, seconds],
+    );
+  }
+}

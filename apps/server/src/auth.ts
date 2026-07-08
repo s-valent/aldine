@@ -1,16 +1,14 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
-import { config } from './config.js';
+import { db } from './db/index.js';
+import type { User } from './db/types.js';
 
 /**
  * Optional, env-gated auth (AUTH_ENABLED=1). When off, every request is
  * anonymous with full access and none of this runs — the single-tenant default.
  *
- * Sessions are now server-side and REVOCABLE: a random opaque session id lives
- * in an HttpOnly cookie and maps to a stored record. Logout, password change,
- * and reset all delete sessions. Passwords are scrypt-hashed. No external deps.
- * Users, sessions, and reset tokens live in the secrets volume.
+ * Persistence goes through the DataStore (JSON or Postgres); this module owns
+ * only the security logic: scrypt hashing, revocable sessions, reset tokens,
+ * and cookie shaping.
  */
 
 export const AUTH_ENABLED = process.env.AUTH_ENABLED === '1' || process.env.AUTH_ENABLED === 'true';
@@ -18,36 +16,11 @@ export const COOKIE = 'papyr_session';
 const SESSION_DAYS = 30;
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-export interface User { id: string; email: string; name: string; salt: string; hash: string; createdAt: string; provider?: string }
+export type { User } from './db/types.js';
 export interface PublicUser { id: string; email: string; name: string }
-
-const usersPath = path.join(config.metaRoot, 'users.json');
-const sessionsPath = path.join(config.metaRoot, 'sessions.json');
-const resetsPath = path.join(config.metaRoot, 'resets.json');
-
-function readJson<T>(p: string, dflt: T): T {
-  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return dflt; }
-}
-/** Atomic write (temp + rename) so a crash mid-write can't truncate the store. */
-function writeJson(p: string, v: unknown): void {
-  const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(v, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, p);
-}
 
 /** Session cookies get the Secure flag when the deployment is HTTPS. */
 const SECURE_COOKIES = (process.env.PAPYR_PUBLIC_URL || '').startsWith('https') || process.env.COOKIE_SECURE === '1';
-
-const loadUsers = () => readJson<Record<string, User>>(usersPath, {});
-const saveUsers = (u: Record<string, User>) => writeJson(usersPath, u);
-
-interface Session { userId: string; exp: number }
-const loadSessions = () => readJson<Record<string, Session>>(sessionsPath, {});
-const saveSessions = (s: Record<string, Session>) => writeJson(sessionsPath, s);
-
-interface Reset { userId: string; exp: number }
-const loadResets = () => readJson<Record<string, Reset>>(resetsPath, {});
-const saveResets = (r: Record<string, Reset>) => writeJson(resetsPath, r);
 
 export function pub(u: User): PublicUser { return { id: u.id, email: u.email, name: u.name }; }
 
@@ -61,17 +34,11 @@ function verifyPassword(password: string, user: User): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function findByEmail(email: string): User | undefined {
-  email = email.trim().toLowerCase();
-  return Object.values(loadUsers()).find((u) => u.email === email);
-}
-
-export function register(email: string, password: string, name?: string, provider?: string): PublicUser {
+export async function register(email: string, password: string, name?: string, provider?: string): Promise<PublicUser> {
   email = email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address');
   if (!provider && password.length < 8) throw new Error('Password must be at least 8 characters');
-  const users = loadUsers();
-  if (Object.values(users).some((u) => u.email === email)) throw new Error('An account with that email already exists');
+  if (await db().findUserByEmail(email)) throw new Error('An account with that email already exists');
   const salt = crypto.randomBytes(16).toString('hex');
   const user: User = {
     id: crypto.randomBytes(9).toString('base64url'),
@@ -82,29 +49,28 @@ export function register(email: string, password: string, name?: string, provide
     createdAt: new Date().toISOString(),
     provider,
   };
-  users[user.id] = user;
-  saveUsers(users);
+  await db().createUser(user);
   return pub(user);
 }
 
-export function login(email: string, password: string): PublicUser {
-  const user = findByEmail(email);
+export async function login(email: string, password: string): Promise<PublicUser> {
+  const user = await db().findUserByEmail(email.trim().toLowerCase());
   if (!user || !user.hash || !verifyPassword(password, user)) throw new Error('Incorrect email or password');
   return pub(user);
 }
 
-export function getUser(id: string): User | null {
-  return loadUsers()[id] || null;
+export function getUser(id: string): Promise<User | null> {
+  return db().getUser(id);
 }
 
 /**
  * Find an OAuth user by email or create one. Only merges into an existing
- * account that was created by the SAME provider — never into a password
- * account, which (since registration doesn't verify email) an attacker could
- * have pre-created for the victim's address. Prevents pre-account-hijacking.
+ * account created by the SAME provider — never into a password account, which
+ * (registration doesn't verify email) an attacker could pre-create for the
+ * victim's address. Prevents pre-account-hijacking.
  */
-export function findOrCreateOAuth(email: string, name: string, provider: string): PublicUser {
-  const existing = findByEmail(email);
+export async function findOrCreateOAuth(email: string, name: string, provider: string): Promise<PublicUser> {
+  const existing = await db().findUserByEmail(email.trim().toLowerCase());
   if (existing) {
     if (existing.provider === provider) return pub(existing);
     throw new Error('An account with this email already exists. Sign in with your password instead.');
@@ -112,83 +78,59 @@ export function findOrCreateOAuth(email: string, name: string, provider: string)
   return register(email, '', name, provider);
 }
 
-export function changePassword(userId: string, current: string, next: string): void {
+export async function changePassword(userId: string, current: string, next: string): Promise<void> {
   if (next.length < 8) throw new Error('New password must be at least 8 characters');
-  const users = loadUsers();
-  const user = users[userId];
+  const user = await db().getUser(userId);
   if (!user) throw new Error('User not found');
   if (user.hash && !verifyPassword(current, user)) throw new Error('Current password is incorrect');
   user.salt = crypto.randomBytes(16).toString('hex');
   user.hash = hashPassword(next, user.salt);
-  saveUsers(users);
-  revokeUser(userId); // sign out everywhere; caller re-issues the current session
+  await db().updateUser(user);
+  await revokeUser(userId); // sign out everywhere; caller re-issues the current session
 }
 
 /** Create a reset token. Returns {token} for self-host relay; caller may also email it. */
-export function requestReset(email: string): { token: string; user: PublicUser } | null {
-  const user = findByEmail(email);
+export async function requestReset(email: string): Promise<{ token: string; user: PublicUser } | null> {
+  const user = await db().findUserByEmail(email.trim().toLowerCase());
   if (!user) return null; // do not leak which emails exist
   const token = crypto.randomBytes(24).toString('base64url');
-  const resets = loadResets();
-  const now = Date.now();
-  for (const [t, r] of Object.entries(resets)) if (r.exp < now) delete resets[t]; // prune expired
-  resets[token] = { userId: user.id, exp: now + RESET_TTL_MS };
-  saveResets(resets);
+  await db().createReset(token, user.id, Date.now() + RESET_TTL_MS);
   return { token, user: pub(user) };
 }
 
-export function resetPassword(token: string, next: string): void {
+export async function resetPassword(token: string, next: string): Promise<void> {
   if (next.length < 8) throw new Error('New password must be at least 8 characters');
-  const resets = loadResets();
-  const r = resets[token];
+  const r = await db().getReset(token);
   if (!r || r.exp < Date.now()) throw new Error('This reset link is invalid or has expired');
-  const users = loadUsers();
-  const user = users[r.userId];
+  const user = await db().getUser(r.userId);
   if (!user) throw new Error('User not found');
   user.salt = crypto.randomBytes(16).toString('hex');
   user.hash = hashPassword(next, user.salt);
-  saveUsers(users);
-  delete resets[token];
-  saveResets(resets);
-  revokeUser(user.id);
+  await db().updateUser(user);
+  await db().deleteReset(token);
+  await revokeUser(user.id);
 }
 
 // ---------- sessions (revocable) ----------
-export function createSession(userId: string): string {
+export async function createSession(userId: string): Promise<string> {
   const sid = crypto.randomBytes(24).toString('base64url');
-  const sessions = loadSessions();
-  pruneSessions(sessions);
-  sessions[sid] = { userId, exp: Date.now() + SESSION_DAYS * 864e5 };
-  saveSessions(sessions);
+  await db().createSession(sid, userId, Date.now() + SESSION_DAYS * 864e5);
   return sid;
 }
 
-export function destroySession(sid: string | undefined): void {
-  if (!sid) return;
-  const sessions = loadSessions();
-  if (sessions[sid]) { delete sessions[sid]; saveSessions(sessions); }
+export async function destroySession(sid: string | undefined): Promise<void> {
+  if (sid) await db().deleteSession(sid);
 }
 
-export function revokeUser(userId: string): void {
-  const sessions = loadSessions();
-  let changed = false;
-  for (const [sid, s] of Object.entries(sessions)) {
-    if (s.userId === userId) { delete sessions[sid]; changed = true; }
-  }
-  if (changed) saveSessions(sessions);
+export async function revokeUser(userId: string): Promise<void> {
+  await db().deleteSessionsForUser(userId);
 }
 
-function pruneSessions(sessions: Record<string, Session>): void {
-  const now = Date.now();
-  for (const [sid, s] of Object.entries(sessions)) if (s.exp < now) delete sessions[sid];
-}
-
-export function verifyToken(sid: string | undefined): PublicUser | null {
+export async function verifyToken(sid: string | undefined): Promise<PublicUser | null> {
   if (!sid) return null;
-  const sessions = loadSessions();
-  const s = sessions[sid];
+  const s = await db().getSession(sid);
   if (!s || s.exp < Date.now()) return null;
-  const user = getUser(s.userId);
+  const user = await db().getUser(s.userId);
   return user ? pub(user) : null;
 }
 
@@ -211,7 +153,7 @@ export function clearCookie(): string {
 export function sidFromRequest(cookieHeader: string | undefined): string | undefined {
   return parseCookies(cookieHeader)[COOKIE];
 }
-export function userFromRequest(cookieHeader: string | undefined): PublicUser | null {
-  if (!AUTH_ENABLED) return null;
+export function userFromRequest(cookieHeader: string | undefined): Promise<PublicUser | null> {
+  if (!AUTH_ENABLED) return Promise.resolve(null);
   return verifyToken(sidFromRequest(cookieHeader));
 }

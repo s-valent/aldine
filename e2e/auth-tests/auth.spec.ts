@@ -11,7 +11,9 @@ async function register(page: import('@playwright/test').Page, email: string, pa
   await page.getByTestId('auth-email').fill(email);
   await page.getByTestId('auth-password').fill(password);
   await page.getByTestId('auth-submit').click();
-  await expect(page.locator('.home__brand')).toBeVisible({ timeout: 15_000 });
+  // wait for a signed-in-only control — NOT .home__brand, which also renders on
+  // the login screen (so it wouldn't confirm the session actually established).
+  await expect(page.getByTestId('new-project')).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe('auth', () => {
