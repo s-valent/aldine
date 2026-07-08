@@ -15,6 +15,7 @@ import { aiConfigured, aiModel, diagnose } from './ai.js';
 import * as comments from './comments.js';
 import * as auth from './auth.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
+import { loginLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
 import { safeJoin, isTextFile } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
@@ -64,6 +65,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: { email: string; password: string } }>('/api/auth/login', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
     try {
       const user = auth.login(req.body.email, req.body.password);
       reply.header('set-cookie', auth.sessionCookie(auth.mintToken(user.id)));
@@ -264,10 +266,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- compile ----------
   app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/compile', async (req, reply) => {
     const branch = req.body?.branch || 'main';
+    const key = clientKey(req, reqUser(req)?.id);
+    if (!compileGate.tryAcquire(key)) {
+      return reply.code(429).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: 'Too many typesets in flight — let the current ones finish' });
+    }
     try {
       return await compileProject(req.params.id, branch);
     } catch (err: any) {
       return reply.code(400).send({ ok: false, pdf: null, pdfUrl: null, log: '', errors: [], durationMs: 0, error: err.message });
+    } finally {
+      compileGate.release(key);
     }
   });
 
@@ -422,6 +430,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/references/add', async (req, reply) => {
       const { query, branch = 'main', bibFile = 'references.bib' } = req.body || {};
       if (!query) return reply.code(400).send({ error: 'query required' });
+      if (!refLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'Rate limit reached — please slow down' });
       try {
         const entry = await fetchBibEntry(query.trim());
         if (!entry) return reply.code(404).send({ error: 'No reference found for that DOI/arXiv id' });
@@ -481,7 +490,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { id: string }; Body: { branch?: string; errors?: Array<{ type: string; line: number | null; message: string; file?: string }>; log?: string } }>(
     '/api/projects/:id/ai/fix', async (req, reply) => {
-      if (!aiConfigured()) return reply.code(400).send({ error: 'AI is not configured. Set ANTHROPIC_API_KEY on the server to enable it.' });
+      if (!aiConfigured()) return reply.code(400).send({ error: 'AI is not configured. Set an ANTHROPIC_API_KEY or OPENROUTER_API_KEY on the server to enable it.' });
+      if (!aiLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'AI rate limit reached — please slow down' });
       const { branch = 'main', errors = [], log = '' } = req.body || {};
       const meta = store.readMeta(req.params.id);
       flushBranchDocs(req.params.id, branch);

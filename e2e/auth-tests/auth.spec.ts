@@ -135,3 +135,15 @@ test.describe('auth', () => {
     await alice.close();
   });
 });
+
+test.describe('abuse controls', () => {
+  test('login is rate-limited after repeated failures', async ({ request }) => {
+    const email = uniq();
+    let got429 = false;
+    for (let i = 0; i < 15; i++) {
+      const res = await request.post('/api/auth/login', { data: { email, password: 'definitely-wrong' } });
+      if (res.status() === 429) { got429 = true; break; }
+    }
+    expect(got429).toBeTruthy();
+  });
+});
