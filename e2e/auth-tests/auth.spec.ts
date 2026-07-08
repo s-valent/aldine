@@ -87,4 +87,51 @@ test.describe('auth', () => {
     await alice.close();
     await bob.close();
   });
+
+  test('percent-encoded project id cannot bypass the access guard (C1)', async ({ browser }) => {
+    const alice = await browser.newContext();
+    await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    const proj = await (await alice.request.post('/api/projects', { data: { name: 'Alice C1' } })).json();
+
+    const bob = await browser.newContext();
+    await bob.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    // encode the first character of the id — the old raw-URL regex would skip the guard
+    const enc = '%' + proj.id.charCodeAt(0).toString(16) + proj.id.slice(1);
+    const res = await bob.request.get(`/api/projects/${enc}`);
+    expect(res.status()).toBe(403);
+    await alice.close();
+    await bob.close();
+  });
+
+  test('imported projects are owned (not world-accessible) (H1)', async ({ browser }) => {
+    const alice = await browser.newContext();
+    await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    // minimal zip built inline
+    const { execSync } = await import('node:child_process');
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-imp-'));
+    fs.writeFileSync(path.join(tmp, 'main.tex'), '\\documentclass{article}\\begin{document}x\\end{document}');
+    execSync(`cd ${tmp} && zip -q -r p.zip main.tex`);
+    const b64 = fs.readFileSync(path.join(tmp, 'p.zip')).toString('base64');
+    const proj = await (await alice.request.post('/api/projects/import', { data: { name: 'Imported', zipBase64: b64 } })).json();
+    fs.rmSync(tmp, { recursive: true, force: true });
+
+    const bob = await browser.newContext();
+    await bob.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    expect((await bob.request.get(`/api/projects/${proj.id}`)).status()).toBe(403);
+    expect((await bob.request.delete(`/api/projects/${proj.id}`)).status()).toBe(403);
+    await alice.close();
+    await bob.close();
+  });
+
+  test('project id path traversal is rejected in comments (H2)', async ({ browser }) => {
+    const alice = await browser.newContext();
+    await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    // traversal id targeting the users store — must not read/write outside the comments dir
+    const res = await alice.request.get('/api/projects/..%2f..%2fusers/comments');
+    expect([400, 403, 404].includes(res.status())).toBeTruthy();
+    await alice.close();
+  });
 });

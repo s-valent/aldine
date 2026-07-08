@@ -192,8 +192,10 @@ export default function Editor() {
       // prefer the anchored range if it still holds the quoted text; else find the quote
       if (content.slice(c.anchor.from, c.anchor.to) === c.anchor.quote) {
         next = content.slice(0, c.anchor.from) + c.suggestion + content.slice(c.anchor.to);
-      } else if (c.anchor.quote && content.includes(c.anchor.quote)) {
-        next = content.replace(c.anchor.quote, c.suggestion);
+      } else if (c.anchor.quote && content.split(c.anchor.quote).length === 2) {
+        // exactly one occurrence → unambiguous; function replacer keeps it literal
+        const suggestion = c.suggestion;
+        next = content.replace(c.anchor.quote, () => suggestion);
       }
       if (next === null) { toast('The commented text has changed — apply manually.', 'error'); return; }
       await api.writeFile(id, branch, c.file, next);

@@ -47,6 +47,7 @@ export function git(dir: string): SimpleGit {
 }
 
 function metaPath(id: string): string {
+  if (!PROJECT_ID_RE.test(id)) throw new Error('bad project id');
   return path.join(metaDir, `${id}.json`);
 }
 

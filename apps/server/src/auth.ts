@@ -96,7 +96,8 @@ export function verifyToken(token: string | undefined): PublicUser | null {
   const parts = token.split('.');
   if (parts.length !== 3) return null;
   const [userId, exp, mac] = parts;
-  if (sign(`${userId}.${exp}`) !== mac) return null;
+  const expected = sign(`${userId}.${exp}`);
+  if (mac.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return null;
   if (Number(exp) < Date.now()) return null;
   const user = getUser(userId);
   return user ? pub(user) : null;

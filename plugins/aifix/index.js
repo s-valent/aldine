@@ -61,7 +61,7 @@ export default {
             if (!res.ok) throw new Error(`could not read ${fix.file}`);
             const content = await res.text();
             if (!content.includes(fix.find)) throw new Error('the target text has changed — re-run diagnosis');
-            const updated = content.replace(fix.find, fix.replace);
+            const updated = content.replace(fix.find, () => fix.replace); // literal replace (LaTeX $$/$& are not patterns)
             const put = await papyr.fetch(`/api/projects/${papyr.project.id}/file`, {
               method: 'PUT',
               headers: { 'content-type': 'application/json' },

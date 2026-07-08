@@ -76,21 +76,25 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  // Global guard: decorate user + enforce project access when auth is on.
+  // Global guard: enforce project access when auth is on. Runs after routing,
+  // so it uses the DECODED :id param — never a regex over the raw (still
+  // percent-encoded) URL, which a `%61bc…` id would slip past.
   app.addHook('preHandler', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return;
-    const url = req.url.split('?')[0];
-    // require sign-in to list/create/import projects
-    if (/^\/api\/projects(\/import)?$/.test(url) && !reqUser(req)) {
+    const id = (req.params as { id?: string } | undefined)?.id;
+    if (id !== undefined) {
+      let meta: store.ProjectMeta;
+      try { meta = store.readMeta(id); } catch { return reply.code(404).send({ error: 'project not found' }); }
+      const user = reqUser(req);
+      if (!user) return reply.code(401).send({ error: 'Sign in required' });
+      if (!canAccess(meta, user)) return reply.code(403).send({ error: 'You do not have access to this project' });
+      return;
+    }
+    // non-id routes: require sign-in for the project list / create / import
+    const path = req.url.split('?')[0];
+    if (/^\/api\/projects(\/import)?$/.test(path) && !reqUser(req)) {
       return reply.code(401).send({ error: 'Sign in required' });
     }
-    const m = url.match(/^\/api\/projects\/([a-z0-9]{4,20})(?:\/|$)/);
-    if (!m) return;
-    let meta: store.ProjectMeta;
-    try { meta = store.readMeta(m[1]); } catch { return reply.code(404).send({ error: 'project not found' }); }
-    const user = reqUser(req);
-    if (!user) return reply.code(401).send({ error: 'Sign in required' });
-    if (!canAccess(meta, user)) return reply.code(403).send({ error: 'You do not have access to this project' });
   });
 
   // ---------- projects ----------
@@ -149,7 +153,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         if (isTextFile(p) && !looksBinary) textFiles[p] = data.toString('utf8');
         else binFiles.push(p);
       }
-      const meta = await store.createProject(name || 'Imported project', textFiles);
+      const meta = await store.createProject(name || 'Imported project', textFiles, reqUser(req)?.id);
       for (const p of binFiles) store.writeFile(meta.id, 'main', p, entries[p]);
       if (binFiles.length) await gitops.commitAll(meta.id, 'main', 'papyr: import assets').catch(() => {});
       const root = guessRoot(entries);
