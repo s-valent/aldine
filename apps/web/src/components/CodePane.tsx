@@ -11,7 +11,7 @@ import * as Y from 'yjs';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { localUser } from '../api';
-import { citeCompletionSource, refCompletionSource } from '../editor/latexExtras';
+import { citeCompletionSource, refCompletionSource, citeHoverTooltip, warmBib } from '../editor/latexExtras';
 import type { PresenceUser } from './Presence';
 
 export interface CodePaneHandle {
@@ -106,6 +106,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
   useEffect(() => {
     if (!hostRef.current) return;
     let statsTimer: ReturnType<typeof setTimeout> | null = null;
+    warmBib(projectId, branch); // so \cite hover tooltips have data immediately
     const docName = `${projectId}::${branch}::${filePath}`;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ydoc = new Y.Doc();
@@ -154,9 +155,11 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           // enableAutocomplete:false skips the package's autocompletion({override}) which
           // would disable ALL languageData sources (incl. our cite/ref completions);
           // its builtin command completions still register via languageData.
-          latex({ autoCloseTags: true, enableLinting: false, enableAutocomplete: false }),
+          // enableTooltips:false so our richer \cite hover (reference preview) is the only hover
+          latex({ autoCloseTags: true, enableLinting: false, enableAutocomplete: false, enableTooltips: false }),
           citeCompletionSource(projectId, branch),
           refCompletionSource(projectId, branch, () => filePath),
+          citeHoverTooltip(projectId, branch),
           keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,

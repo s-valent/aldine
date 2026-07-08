@@ -91,3 +91,40 @@ test.describe('project-wide \\ref indexing', () => {
     }
   });
 });
+
+test.describe('deepened features', () => {
+  test('hovering a \\cite shows the reference', async ({ page, request }) => {
+    const id = await createProject(request, 'Cite Hover');
+    try {
+      // seed a bib entry and a document whose only body line is the cite
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'references.bib', content: '@article{smith2020,\n  author = {Smith, Jane},\n  title = {A Notable Paper},\n  year = {2020},\n}\n' } });
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'cite.tex', content: '\\cite{smith2020}\n' } });
+      await openProject(page, id);
+      await page.getByTestId('file-cite.tex').click();
+      await expect(page.locator('.cm-content')).toContainText('smith2020', { timeout: 10_000 });
+      await page.waitForTimeout(600); // let warmBib load
+      // hover over the key (roughly char 6+ on the line: "\cite{smith2020}")
+      const box = await page.locator('.cm-line').first().boundingBox();
+      await page.mouse.move(box!.x + 85, box!.y + box!.height / 2);
+      await page.waitForTimeout(400);
+      await page.mouse.move(box!.x + 86, box!.y + box!.height / 2);
+      await expect(page.locator('.cm-tooltip')).toContainText('A Notable Paper', { timeout: 10_000 });
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('palette can rename the active file', async ({ page, request }) => {
+    const id = await createProject(request, 'Palette Rename');
+    try {
+      await openProject(page, id);
+      page.on('dialog', (d) => d.accept('renamed.tex'));
+      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k');
+      await page.getByTestId('palette-input').fill('rename');
+      await page.getByTestId('palette-item-rename-file').click();
+      await expect(page.getByTestId('file-renamed.tex')).toBeVisible({ timeout: 10_000 });
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+});

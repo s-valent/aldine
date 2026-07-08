@@ -1,5 +1,6 @@
 import { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
 import { Extension, EditorState } from '@codemirror/state';
+import { hoverTooltip } from '@codemirror/view';
 import { api, BibEntry } from '../api';
 
 /**
@@ -26,6 +27,11 @@ async function loadBib(projectId: string, branch: string): Promise<BibEntry[]> {
 
 export function invalidateBibCache(): void {
   bibCache = null;
+}
+
+/** Pre-load the bib index so hover tooltips work before the first \cite completion. */
+export function warmBib(projectId: string, branch: string): void {
+  void loadBib(projectId, branch);
 }
 
 function firstAuthor(author?: string): string {
@@ -86,6 +92,57 @@ async function loadLabels(projectId: string, branch: string): Promise<Array<{ la
 
 export function invalidateLabelCache(): void {
   labelCache = null;
+}
+
+/** Hover a \cite{key} to see the reference it points to. */
+export function citeHoverTooltip(projectId: string, branch: string): Extension {
+  return hoverTooltip((view, pos) => {
+    const line = view.state.doc.lineAt(pos);
+    const text = line.text;
+    const rel = pos - line.from;
+    // find a \cite{...} (or variants) spanning the hovered position
+    const re = /\\(?:no)?[cC]ite[a-zA-Z]*\*?(?:\[[^\]]*\])*\{([^}]*)\}/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const braceStart = m.index + m[0].indexOf('{') + 1;
+      const braceEnd = m.index + m[0].length - 1;
+      if (rel < braceStart || rel > braceEnd) continue;
+      // which key is under the cursor (comma-separated)?
+      const keys = m[1].split(',');
+      let acc = braceStart;
+      let key = keys[0];
+      for (const k of keys) {
+        if (rel >= acc && rel <= acc + k.length) { key = k; break; }
+        acc += k.length + 1;
+      }
+      key = key.trim();
+      const entry = (bibCache?.entries || []).find((e) => e.key === key);
+      const from = line.from + braceStart;
+      return {
+        pos: from,
+        end: line.from + braceEnd,
+        above: true,
+        create() {
+          const dom = document.createElement('div');
+          dom.style.cssText = 'padding:8px 10px;max-width:320px;font-family:var(--font-ui);font-size:12px;line-height:1.5';
+          if (entry) {
+            const title = document.createElement('div');
+            title.style.cssText = 'font-weight:600;margin-bottom:2px';
+            title.textContent = entry.title || key;
+            const meta = document.createElement('div');
+            meta.style.cssText = 'color:var(--text-2)';
+            meta.textContent = [entry.author, entry.year, entry.journal].filter(Boolean).join(' · ');
+            dom.append(title, meta);
+          } else {
+            dom.style.color = 'var(--error)';
+            dom.textContent = `No bibliography entry for “${key}”`;
+          }
+          return { dom };
+        },
+      };
+    }
+    return null;
+  }, { hoverTime: 300 });
 }
 
 export function refCompletionSource(projectId: string, branch: string, currentFile: () => string): Extension {

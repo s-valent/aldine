@@ -191,6 +191,27 @@ export default function Editor() {
       { id: 'commit', group: 'Git', title: 'Save a checkpoint…', run: () => { setTab('history'); } },
       { id: 'newbranch', group: 'Git', title: 'New branch…', run: () => { setTab('files'); document.querySelector<HTMLElement>('[data-testid="branch-menu"]')?.click(); } },
     ];
+    if (activeFile) {
+      cmds.push({
+        id: 'rename-file', group: 'File', title: `Rename ${activeFile}…`, run: async () => {
+          const to = window.prompt('Rename file to', activeFile);
+          if (to && to !== activeFile) {
+            await api.renameFile(id, branch, activeFile, to);
+            await loadFiles();
+            setActiveFile(to);
+          }
+        },
+      });
+      cmds.push({
+        id: 'delete-file', group: 'File', title: `Delete ${activeFile}…`, run: async () => {
+          if (window.confirm(`Delete ${activeFile}?`)) {
+            await api.deleteFile(id, branch, activeFile);
+            await loadFiles();
+            setActiveFile(null);
+          }
+        },
+      });
+    }
     for (const s of [
       { id: 'fig', title: 'Insert figure', text: '\\begin{figure}[htbp]\n  \\centering\n  \\includegraphics[width=0.8\\linewidth]{}\n  \\caption{}\n  \\label{fig:}\n\\end{figure}\n' },
       { id: 'tab', title: 'Insert table', text: '\\begin{table}[htbp]\n  \\centering\n  \\begin{tabular}{ll}\n    \\hline\n    A & B \\\\\n    \\hline\n  \\end{tabular}\n  \\caption{}\n  \\label{tab:}\n\\end{table}\n' },
@@ -202,7 +223,7 @@ export default function Editor() {
       cmds.push({ id: `open-${f.path}`, group: 'Open', title: f.path, run: () => setActiveFile(f.path) });
     }
     return cmds;
-  }, [files, auto, spellcheck, doCompile, toggleAuto, jumpToPdf, insertAtCursor]);
+  }, [files, activeFile, id, branch, auto, spellcheck, doCompile, toggleAuto, jumpToPdf, insertAtCursor, loadFiles]);
 
   const errors = compile.result?.errors.filter((e) => e.type !== 'typesetting') || [];
   const errCount = errors.filter((e) => e.type === 'error').length;
