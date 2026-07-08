@@ -12,6 +12,7 @@ import { listTemplates, templateFiles } from './templates.js';
 import { fetchBibEntry } from './references.js';
 import { unzip, guessRoot } from './unzip.js';
 import { aiConfigured, diagnose } from './ai.js';
+import * as comments from './comments.js';
 import * as auth from './auth.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
 import { safeJoin, isTextFile } from './util.js';
@@ -435,6 +436,41 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(502).send({ error: err.message });
       }
     });
+
+  // ---------- review comments ----------
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/comments', async (req) =>
+    comments.listComments(req.params.id, req.query.branch || 'main'));
+
+  app.post<{ Params: { id: string }; Body: { branch?: string; file: string; anchor: { from: number; to: number; quote: string }; body: string; suggestion?: string; author?: string } }>(
+    '/api/projects/:id/comments', async (req, reply) => {
+      const b = req.body || ({} as any);
+      if (!b.file || !b.anchor) return reply.code(400).send({ error: 'file and anchor required' });
+      return comments.addComment(req.params.id, {
+        branch: b.branch || 'main',
+        file: b.file,
+        anchor: b.anchor,
+        author: reqUser(req)?.name || b.author || 'Anonymous',
+        body: b.body || '',
+        suggestion: b.suggestion,
+      });
+    });
+
+  app.post<{ Params: { id: string; cid: string }; Body: { body: string; author?: string } }>(
+    '/api/projects/:id/comments/:cid/reply', async (req, reply) => {
+      const c = comments.replyComment(req.params.id, req.params.cid, reqUser(req)?.name || req.body?.author || 'Anonymous', req.body?.body || '');
+      return c || reply.code(404).send({ error: 'comment not found' });
+    });
+
+  app.post<{ Params: { id: string; cid: string }; Body: { resolved?: boolean } }>(
+    '/api/projects/:id/comments/:cid/resolve', async (req, reply) => {
+      const c = comments.resolveComment(req.params.id, req.params.cid, req.body?.resolved !== false);
+      return c || reply.code(404).send({ error: 'comment not found' });
+    });
+
+  app.delete<{ Params: { id: string; cid: string } }>('/api/projects/:id/comments/:cid', async (req) => {
+    comments.deleteComment(req.params.id, req.params.cid);
+    return { ok: true };
+  });
 
   // ---------- AI error fix ----------
   app.get('/api/ai/status', async () => ({ configured: aiConfigured(), model: process.env.PAPYR_AI_MODEL || 'claude-opus-4-8' }));

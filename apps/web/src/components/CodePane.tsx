@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars, Decoration, DecorationSet } from '@codemirror/view';
+import { EditorState, StateField, StateEffect } from '@codemirror/state';
 import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
@@ -18,7 +18,35 @@ export interface CodePaneHandle {
   gotoLine(line: number): void;
   insertAtCursor(text: string): void;
   currentLine(): number | null;
+  getSelection(): { from: number; to: number; quote: string } | null;
+  setCommentRanges(ranges: Array<{ id: string; from: number; to: number; resolved: boolean }>): void;
+  revealPos(pos: number): void;
 }
+
+/** Comment highlight decorations, updatable via an effect and tracking edits. */
+const setComments = StateEffect.define<Array<{ from: number; to: number; resolved: boolean }>>();
+const commentMark = Decoration.mark({ class: 'cm-comment-range' });
+const commentResolvedMark = Decoration.mark({ class: 'cm-comment-range cm-comment-resolved' });
+const commentField = StateField.define<DecorationSet>({
+  create() { return Decoration.none; },
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setComments)) {
+        const docLen = tr.state.doc.length;
+        deco = Decoration.set(
+          e.value
+            .filter((r) => r.from < r.to && r.to <= docLen)
+            .sort((a, b) => a.from - b.from)
+            .map((r) => (r.resolved ? commentResolvedMark : commentMark).range(r.from, r.to)),
+          true,
+        );
+      }
+    }
+    return deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 interface Props {
   projectId: string;
@@ -100,6 +128,25 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       const view = viewRef.current;
       if (!view) return null;
       return view.state.doc.lineAt(view.state.selection.main.head).number;
+    },
+    getSelection() {
+      const view = viewRef.current;
+      if (!view) return null;
+      const sel = view.state.selection.main;
+      if (sel.empty) return null;
+      return { from: sel.from, to: sel.to, quote: view.state.sliceDoc(sel.from, sel.to) };
+    },
+    setCommentRanges(ranges) {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: setComments.of(ranges.map((r) => ({ from: r.from, to: r.to, resolved: r.resolved }))) });
+    },
+    revealPos(pos) {
+      const view = viewRef.current;
+      if (!view) return;
+      const p = Math.min(Math.max(0, pos), view.state.doc.length);
+      view.dispatch({ selection: { anchor: p }, effects: EditorView.scrollIntoView(p, { y: 'center' }) });
+      view.focus();
     },
   }), []);
 
@@ -185,6 +232,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
               }, 350);
             }
           }),
+          commentField,
           papyrTheme,
           EditorView.lineWrapping,
           // browser-native spellcheck on prose (only meaningful for .tex/.md)

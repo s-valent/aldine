@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, CompileResult, ProjectDetail, TreeEntry } from '../api';
+import { api, CompileResult, ProjectDetail, TreeEntry, Comment } from '../api';
 import { useToast } from '../components/Toast';
 import FileTree from '../components/FileTree';
 import CodePane, { CodePaneHandle } from '../components/CodePane';
 import PdfPane, { PdfPaneHandle } from '../components/PdfPane';
 import BranchMenu from '../components/BranchMenu';
 import HistoryPanel from '../components/HistoryPanel';
+import ReviewPanel from '../components/ReviewPanel';
 import Presence, { PresenceUser } from '../components/Presence';
 import { PluginHost, PluginPanel } from '../plugins/host';
 import { hintFor } from '../editor/errorHints';
@@ -37,6 +38,7 @@ export default function Editor() {
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('papyr.spellcheck') === '1');
+  const [comments, setComments] = useState<Comment[]>([]);
   const codeRef = useRef<CodePaneHandle>(null);
   const pdfRef = useRef<PdfPaneHandle>(null);
   const compilingRef = useRef(false);
@@ -144,6 +146,64 @@ export default function Editor() {
   };
 
   const insertAtCursor = useCallback((text: string) => codeRef.current?.insertAtCursor(text), []);
+
+  // ---- review comments ----
+  const loadComments = useCallback(async () => {
+    try { setComments(await api.comments(id, branch)); } catch { setComments([]); }
+  }, [id, branch]);
+  useEffect(() => { loadComments(); }, [id, branch]);
+
+  // push this file's comment ranges into the editor as highlight decorations
+  useEffect(() => {
+    if (!activeFile) return;
+    const ranges = comments
+      .filter((c) => c.file === activeFile)
+      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved }));
+    requestAnimationFrame(() => codeRef.current?.setCommentRanges(ranges));
+  }, [comments, activeFile]);
+
+  const addComment = useCallback(async () => {
+    if (!activeFile) return;
+    const sel = codeRef.current?.getSelection();
+    if (!sel) { toast('Select some text to comment on first.', 'info'); return; }
+    const body = window.prompt('Comment');
+    if (body == null) return;
+    const suggestionRaw = window.prompt('Optional: suggest replacement text for the selection (leave blank to skip)', '');
+    const suggestion = suggestionRaw === null || suggestionRaw === '' ? undefined : suggestionRaw;
+    try {
+      await api.addComment(id, { branch, file: activeFile, anchor: sel, body: body.trim(), suggestion });
+      await loadComments();
+      setTab('review');
+    } catch (err: any) {
+      toast(`Could not add comment: ${err.message}`, 'error');
+    }
+  }, [id, branch, activeFile, loadComments, toast]);
+
+  const revealComment = useCallback((c: Comment) => {
+    if (c.file !== activeFile) setActiveFile(c.file);
+    requestAnimationFrame(() => setTimeout(() => codeRef.current?.revealPos(c.anchor.from), 80));
+  }, [activeFile]);
+
+  const acceptSuggestion = useCallback(async (c: Comment) => {
+    if (c.suggestion === undefined) return;
+    try {
+      const content = await api.readFile(id, branch, c.file);
+      let next: string | null = null;
+      // prefer the anchored range if it still holds the quoted text; else find the quote
+      if (content.slice(c.anchor.from, c.anchor.to) === c.anchor.quote) {
+        next = content.slice(0, c.anchor.from) + c.suggestion + content.slice(c.anchor.to);
+      } else if (c.anchor.quote && content.includes(c.anchor.quote)) {
+        next = content.replace(c.anchor.quote, c.suggestion);
+      }
+      if (next === null) { toast('The commented text has changed — apply manually.', 'error'); return; }
+      await api.writeFile(id, branch, c.file, next);
+      await api.resolveComment(id, c.id, true);
+      await loadComments();
+      toast('Suggestion applied', 'ok');
+    } catch (err: any) {
+      toast(`Could not accept: ${err.message}`, 'error');
+    }
+  }, [id, branch, loadComments, toast]);
 
   // Inverse SyncTeX: double-click in the PDF → open the source file at that line.
   const onPdfInverse = useCallback(async (page: number, x: number, y: number) => {
@@ -259,6 +319,7 @@ export default function Editor() {
           onChanged={() => { loadProject(); loadFiles(); }}
         />
         <div className="toolbar__spacer" />
+        <button className="btn" onClick={addComment} data-testid="add-comment" title="Comment on the selected text">Comment</button>
         <Presence users={users} />
         <div className="toolbar__group">
           <button
@@ -279,6 +340,9 @@ export default function Editor() {
           <div className="sidebar__tabs" role="tablist">
             <button className={`sidebar__tab ${tab === 'files' ? 'sidebar__tab--active' : ''}`} onClick={() => setTab('files')} role="tab">Files</button>
             <button className={`sidebar__tab ${tab === 'history' ? 'sidebar__tab--active' : ''}`} onClick={() => setTab('history')} role="tab">History</button>
+            <button className={`sidebar__tab ${tab === 'review' ? 'sidebar__tab--active' : ''}`} onClick={() => setTab('review')} role="tab" data-testid="tab-review">
+              Review{comments.some((c) => !c.resolved) ? ` (${comments.filter((c) => !c.resolved).length})` : ''}
+            </button>
             {pluginPanels.map((p) => (
               <button key={p.id} className={`sidebar__tab ${tab === p.id ? 'sidebar__tab--active' : ''}`} onClick={() => setTab(p.id)} role="tab" data-testid={`tab-${p.id}`}>
                 {p.title}
@@ -317,6 +381,17 @@ export default function Editor() {
               />
             )}
             {tab === 'history' && <HistoryPanel projectId={id} branch={branch} />}
+            {tab === 'review' && (
+              <ReviewPanel
+                comments={comments}
+                activeFile={activeFile}
+                onReveal={revealComment}
+                onResolve={async (c, resolved) => { await api.resolveComment(id, c.id, resolved); loadComments(); }}
+                onDelete={async (c) => { await api.deleteComment(id, c.id); loadComments(); }}
+                onReply={async (c, body) => { await api.replyComment(id, c.id, body); loadComments(); }}
+                onAccept={acceptSuggestion}
+              />
+            )}
             {pluginPanels.map((p) => (
               <div key={p.id} style={{ display: tab === p.id ? 'block' : 'none' }} ref={(el) => { if (el && !el.hasChildNodes()) p.mount(el); }} />
             ))}

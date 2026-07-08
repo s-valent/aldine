@@ -29,6 +29,19 @@ export interface CompileResult {
 export interface BibEntry { key: string; type: string; author?: string; title?: string; year?: string; journal?: string; file: string }
 export interface LogEntry { hash: string; date: string; message: string; author: string }
 export interface PluginManifest { id: string; name: string; description?: string; version: string; entry: string; icon?: string; enabled?: boolean }
+export interface CommentReply { author: string; body: string; createdAt: string }
+export interface Comment {
+  id: string;
+  branch: string;
+  file: string;
+  anchor: { from: number; to: number; quote: string };
+  author: string;
+  body: string;
+  suggestion?: string;
+  resolved: boolean;
+  createdAt: string;
+  replies: CommentReply[];
+}
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -99,6 +112,16 @@ export const api = {
   zoteroUnlink: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/zotero`, { method: 'DELETE' }),
 
   plugins: () => req<PluginManifest[]>('/api/plugins'),
+
+  comments: (id: string, branch: string) => req<Comment[]>(`/api/projects/${id}/comments?branch=${encodeURIComponent(branch)}`),
+  addComment: (id: string, body: { branch: string; file: string; anchor: { from: number; to: number; quote: string }; body: string; suggestion?: string; author?: string }) =>
+    req<Comment>(`/api/projects/${id}/comments`, { method: 'POST', body: JSON.stringify(body) }),
+  replyComment: (id: string, cid: string, body: string, author?: string) =>
+    req<Comment>(`/api/projects/${id}/comments/${cid}/reply`, { method: 'POST', body: JSON.stringify({ body, author }) }),
+  resolveComment: (id: string, cid: string, resolved: boolean) =>
+    req<Comment>(`/api/projects/${id}/comments/${cid}/resolve`, { method: 'POST', body: JSON.stringify({ resolved }) }),
+  deleteComment: (id: string, cid: string) =>
+    req<{ ok: boolean }>(`/api/projects/${id}/comments/${cid}`, { method: 'DELETE' }),
 
   me: () => req<{ authEnabled: boolean; user: AuthUser | null }>('/api/auth/me'),
   login: (email: string, password: string) =>

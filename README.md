@@ -22,6 +22,9 @@ no Redis, no 13-microservice sprawl.
   collection* (Overleaf can't), keep a `.bib` in sync with cheap
   version-aware refresh, insert citations from a search panel or via
   `\cite{` autocomplete.
+- **Review mode** — select text and leave an anchored, threaded comment;
+  optionally attach a suggested replacement the author accepts with one click.
+  Comments highlight in the editor, resolve/reopen, and track edits.
 - **AI error fix** (optional, BYO key) — on a failed typeset, get a
   plain-English diagnosis and one-click fixes. Set `ANTHROPIC_API_KEY` on the
   server to enable; the key stays server-side and never reaches the browser.
