@@ -22,5 +22,8 @@
     "@types/node": "^22.15.21",
     "@types/ws": "^8.18.1",
     "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "@sentry/node": "^8.55.0"
   }
 }

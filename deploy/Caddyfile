@@ -1,0 +1,8 @@
+# Papyr reverse proxy. Set PAPYR_DOMAIN to your hostname; Caddy provisions
+# and renews HTTPS automatically. Falls back to localhost (internal cert) for
+# local testing. WebSocket upgrades (the /collab collaboration socket) pass
+# through transparently.
+{$PAPYR_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

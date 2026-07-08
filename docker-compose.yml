@@ -11,11 +11,17 @@ services:
       DATA_DIR: /data
       META_DIR: /secrets
       COMPILER_URL: http://compiler:4020
-      # Optional AI error-fix (bring your own key). Leave unset to disable.
+      # Optional AI error-fix (bring your own key: Anthropic or OpenRouter). Unset = disabled.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      PAPYR_AI_MODEL: ${PAPYR_AI_MODEL:-claude-opus-4-8}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      PAPYR_AI_MODEL: ${PAPYR_AI_MODEL:-}
       # Optional multi-user auth. AUTH_ENABLED=1 turns on login + per-project access.
       AUTH_ENABLED: ${AUTH_ENABLED:-}
+      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
+      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
+      PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
+      # Optional error tracking.
+      SENTRY_DSN: ${SENTRY_DSN:-}
     volumes:
       - papyr-data:/data
       - papyr-secrets:/secrets
@@ -23,6 +29,9 @@ services:
       - compiler
     restart: unless-stopped
     stop_grace_period: 30s
+    networks:
+      - frontend
+      - backend
 
   compiler:
     build:
@@ -32,12 +41,47 @@ services:
       COMPILE_TIMEOUT_MS: "120000"
     volumes:
       - papyr-data:/data
+    # Hardening: no external egress (internal network), drop all Linux caps,
+    # no privilege escalation, bounded CPU/memory/PIDs. Packages are baked into
+    # the image at build time, so the compiler never needs the network.
+    networks:
+      - backend
+    cpus: 2.0
     mem_limit: 2g
     pids_limit: 256
+    cap_drop:
+      - ALL
     security_opt:
       - no-new-privileges
     restart: unless-stopped
 
+  # TLS reverse proxy — opt in with `--profile tls` and set PAPYR_DOMAIN.
+  # Caddy auto-provisions HTTPS certificates for the domain.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PAPYR_DOMAIN: ${PAPYR_DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - frontend
+
+networks:
+  frontend: {}
+  backend:
+    internal: true   # compiler has no route to the internet
+
 volumes:
   papyr-data:
   papyr-secrets:
+  caddy-data:
+  caddy-config:

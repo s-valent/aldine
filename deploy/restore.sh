@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Restore Papyr's data + secrets volumes from a backup tarball.
+# Usage: deploy/restore.sh papyr-backup-YYYYmmdd-HHMMSS.tar.gz
+# WARNING: overwrites the current volume contents. Stop the stack first:
+#   docker compose down
+set -euo pipefail
+
+PROJECT="${PAPYR_PROJECT:-papyr}"
+IN="${1:?usage: restore.sh <backup.tar.gz>}"
+IN_DIR="$(cd "$(dirname "$IN")" && pwd)"
+IN_FILE="$(basename "$IN")"
+
+DATA_VOL="${PROJECT}_papyr-data"
+SECRETS_VOL="${PROJECT}_papyr-secrets"
+
+read -r -p "This overwrites ${DATA_VOL} and ${SECRETS_VOL}. Continue? [y/N] " ok
+[ "$ok" = "y" ] || { echo "aborted"; exit 1; }
+
+# create volumes if missing
+docker volume create "$DATA_VOL" >/dev/null
+docker volume create "$SECRETS_VOL" >/dev/null
+
+docker run --rm \
+  -v "${DATA_VOL}":/data \
+  -v "${SECRETS_VOL}":/secrets \
+  -v "${IN_DIR}":/backup:ro \
+  alpine sh -c "rm -rf /data/* /secrets/* && tar xzf /backup/${IN_FILE} -C /"
+
+echo "Restored from ${IN_FILE}. Start the stack: docker compose up -d"

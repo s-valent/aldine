@@ -73,6 +73,29 @@ npm run test:e2e                          # self-starting stack on :3100
 PAPYR_URL=http://localhost:8080 npm run test:e2e   # against docker compose
 ```
 
+## Production deploy
+
+```bash
+# 1. HTTPS via Caddy (auto-provisions certificates for your domain)
+PAPYR_DOMAIN=papyr.example.com docker compose --profile tls up -d
+
+# 2. Turn on the optional features you want (all env-gated, off by default)
+AUTH_ENABLED=1 \
+OPENROUTER_API_KEY=sk-or-... \
+GITHUB_OAUTH_CLIENT_ID=... GITHUB_OAUTH_CLIENT_SECRET=... PAPYR_PUBLIC_URL=https://papyr.example.com \
+SENTRY_DSN=https://... \
+docker compose --profile tls up -d
+
+# 3. Back up (data + secrets volumes) / restore
+deploy/backup.sh papyr-backup.tar.gz
+deploy/restore.sh papyr-backup.tar.gz   # stop the stack first: docker compose down
+```
+
+**Isolation & limits.** The compiler runs on an internal-only Docker network (no
+internet egress), drops all Linux capabilities, and is bounded on CPU / memory /
+PIDs; LaTeX compiles with `-no-shell-escape` and `openin_any=p`. Per-client rate
+limits guard login, AI, and reference lookups; compiles are concurrency-capped.
+
 ## Architecture
 
 ```

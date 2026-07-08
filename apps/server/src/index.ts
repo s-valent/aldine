@@ -8,12 +8,14 @@ import { registerRoutes } from './routes.js';
 import { hocuspocus, flushAllDocs } from './collab.js';
 import { commitAll } from './gitops.js';
 import { listProjects } from './store.js';
+import { initObservability, captureError } from './observability.js';
 
 // Never let a stray rejection take down the collaboration server.
-process.on('unhandledRejection', (reason) => console.error('[papyr] unhandledRejection', reason));
+process.on('unhandledRejection', (reason) => { console.error('[papyr] unhandledRejection', reason); captureError(reason); });
 
 const app = Fastify({ logger: { level: 'warn' }, bodyLimit: 32 * 1024 * 1024 });
 
+await initObservability(app);
 await registerRoutes(app);
 
 // Serve the built frontend (production). In dev, Vite serves it and proxies to us.
