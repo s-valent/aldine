@@ -22,6 +22,9 @@ no Redis, no 13-microservice sprawl.
   collection* (Overleaf can't), keep a `.bib` in sync with cheap
   version-aware refresh, insert citations from a search panel or via
   `\cite{` autocomplete.
+- **AI error fix** (optional, BYO key) — on a failed typeset, get a
+  plain-English diagnosis and one-click fixes. Set `ANTHROPIC_API_KEY` on the
+  server to enable; the key stays server-side and never reaches the browser.
 - **Cite by DOI / arXiv** — paste an identifier, get BibTeX appended and the
   `\cite` inserted (no account, free public APIs).
 - **SyncTeX both ways** — double-click the PDF to jump to source; ⌘J to jump

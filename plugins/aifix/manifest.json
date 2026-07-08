@@ -1,0 +1,9 @@
+{
+  "id": "aifix",
+  "name": "Fix",
+  "description": "AI diagnosis and one-click fixes for LaTeX compile errors (bring your own API key).",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "icon": "✦",
+  "slots": ["sidebarPanel"]
+}

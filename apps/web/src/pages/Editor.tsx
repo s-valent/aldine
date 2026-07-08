@@ -174,12 +174,13 @@ export default function Editor() {
     projectId: id,
     branch,
     getActiveFile: () => activeFile,
+    getCompileResult: () => (compile.result ? { ok: compile.result.ok, errors: compile.result.errors, log: compile.result.log } : null),
     insertAtCursor,
     refreshFiles: loadFiles,
     refreshProject: loadProject,
     compile: doCompile,
     toast,
-  }), [id, branch, activeFile, insertAtCursor, loadFiles, loadProject, doCompile, toast]);
+  }), [id, branch, activeFile, compile.result, insertAtCursor, loadFiles, loadProject, doCompile, toast]);
 
   const commands: Command[] = useMemo(() => {
     const cmds: Command[] = [

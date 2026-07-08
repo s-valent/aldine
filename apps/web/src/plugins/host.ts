@@ -17,6 +17,7 @@ export interface PluginCtx {
   projectId: string;
   branch: string;
   getActiveFile(): string | null;
+  getCompileResult(): { ok: boolean; errors: Array<{ type: string; line: number | null; message: string; file?: string }>; log: string } | null;
   insertAtCursor(text: string): void;
   refreshFiles(): Promise<unknown>;
   refreshProject(): Promise<unknown>;
@@ -30,6 +31,7 @@ export interface PapyrAPI {
     readonly id: string;
     readonly branch: string;
     activeFile(): string | null;
+    lastCompile(): { ok: boolean; errors: Array<{ type: string; line: number | null; message: string; file?: string }>; log: string } | null;
     refreshFiles(): Promise<unknown>;
     refresh(): Promise<unknown>;
   };
@@ -59,6 +61,7 @@ export function PluginHost({ ctx, onPanels }: Props) {
         get id() { return ctxRef.current.projectId; },
         get branch() { return ctxRef.current.branch; },
         activeFile: () => ctxRef.current.getActiveFile(),
+        lastCompile: () => ctxRef.current.getCompileResult(),
         refreshFiles: () => ctxRef.current.refreshFiles(),
         refresh: () => ctxRef.current.refreshProject(),
       },

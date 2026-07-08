@@ -11,6 +11,9 @@ services:
       DATA_DIR: /data
       META_DIR: /secrets
       COMPILER_URL: http://compiler:4020
+      # Optional AI error-fix (bring your own key). Leave unset to disable.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PAPYR_AI_MODEL: ${PAPYR_AI_MODEL:-claude-opus-4-8}
     volumes:
       - papyr-data:/data
       - papyr-secrets:/secrets

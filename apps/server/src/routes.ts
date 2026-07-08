@@ -11,6 +11,7 @@ import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
 import { fetchBibEntry } from './references.js';
 import { unzip, guessRoot } from './unzip.js';
+import { aiConfigured, diagnose } from './ai.js';
 import { safeJoin, isTextFile } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
@@ -360,6 +361,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return { ok: true, key, bibFile };
       } catch (err: any) {
         return reply.code(502).send({ error: err.message });
+      }
+    });
+
+  // ---------- AI error fix ----------
+  app.get('/api/ai/status', async () => ({ configured: aiConfigured(), model: process.env.PAPYR_AI_MODEL || 'claude-opus-4-8' }));
+
+  app.post<{ Params: { id: string }; Body: { branch?: string; errors?: Array<{ type: string; line: number | null; message: string; file?: string }>; log?: string } }>(
+    '/api/projects/:id/ai/fix', async (req, reply) => {
+      if (!aiConfigured()) return reply.code(400).send({ error: 'AI is not configured. Set ANTHROPIC_API_KEY on the server to enable it.' });
+      const { branch = 'main', errors = [], log = '' } = req.body || {};
+      const meta = store.readMeta(req.params.id);
+      flushBranchDocs(req.params.id, branch);
+      const files: Array<{ path: string; content: string }> = [];
+      for (const f of store.listFiles(req.params.id, branch)) {
+        if (f.type === 'file' && f.path.endsWith('.tex')) {
+          try { files.push({ path: f.path, content: store.readFile(req.params.id, branch, f.path).toString('utf8') }); } catch { /* skip */ }
+        }
+      }
+      try {
+        const result = await diagnose({ rootFile: meta.rootFile, files, errors, log });
+        return { ok: true, ...result };
+      } catch (err: any) {
+        return reply.code(502).send({ error: `AI request failed: ${err.message}` });
       }
     });
 
