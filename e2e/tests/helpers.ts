@@ -10,10 +10,22 @@ export async function createProject(request: APIRequestContext, name: string): P
   return (await res.json()).id as string;
 }
 
-/** Create a project seeded with the real IAC example paper. */
+/** Every LaTeX source file under the paper dir (recursive: chapters/, figs/, …). */
+function paperSourceFiles(dir = PAPER_DIR, rel = ''): string[] {
+  const out: string[] = [];
+  for (const e of fs.readdirSync(path.join(dir, rel), { withFileTypes: true })) {
+    if (e.name.startsWith('.')) continue; // skip build/artifact dotfiles
+    const r = rel ? `${rel}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...paperSourceFiles(dir, r));
+    else if (/\.(tex|bib|cls|bbx|cbx|sty)$/.test(e.name)) out.push(r);
+  }
+  return out;
+}
+
+/** Create a project seeded with the real IAC example paper (all source files). */
 export async function createPaperProject(request: APIRequestContext, name = 'GSaaS Paper'): Promise<string> {
   const id = await createProject(request, name);
-  for (const f of ['main.tex', 'references.bib', 'iac.cls', 'iac.bbx', 'iac.cbx']) {
+  for (const f of paperSourceFiles()) {
     const content = fs.readFileSync(path.join(PAPER_DIR, f), 'utf8');
     const res = await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: f, content } });
     expect(res.ok()).toBeTruthy();
