@@ -26,6 +26,16 @@ export class PgStore implements DataStore {
     catch { throw new Error('DATABASE_URL is set but the "pg" package is not installed. Run: npm i pg'); }
     const Pool = Pg.default?.Pool || Pg.Pool;
     this.pool = new Pool({ connectionString: this.connectionString, max: Number(process.env.PG_POOL_MAX || 10) });
+    // Postgres may still be starting when we come up (compose starts both at once).
+    // Retry the first connection with backoff instead of crash-looping.
+    for (let attempt = 1; ; attempt++) {
+      try { await this.pool.query('SELECT 1'); break; }
+      catch (err) {
+        if (attempt >= 30) throw err;
+        console.log(`[papyr] waiting for postgres (attempt ${attempt})…`);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS users (
         id text PRIMARY KEY, email text UNIQUE NOT NULL, name text NOT NULL,

@@ -180,6 +180,10 @@
 .login__switch { width: 100%; justify-content: center; margin-top: 8px; color: var(--text-2); }
 .login__error { color: var(--error); font-size: 12.5px; margin: 2px 0 8px; }
 .login__info { color: var(--ok); font-size: 12.5px; margin: 2px 0 8px; }
+.settings__row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 13.5px; }
+.settings__label { color: var(--text-2); }
+.user-chip__name { background: transparent; border: 0; padding: 0; cursor: pointer; color: var(--text); font: inherit; font-weight: 600; }
+.user-chip__name:hover { color: var(--accent); text-decoration: underline; }
 .login__oauth { width: 100%; justify-content: center; gap: 8px; height: 34px; margin-bottom: 10px; }
 .login__or { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 11px; margin: 6px 0 12px; }
 .login__or::before, .login__or::after { content: ''; flex: 1; height: 1px; background: var(--hairline); }

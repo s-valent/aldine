@@ -17,12 +17,12 @@ const SESSION_DAYS = 30;
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export type { User } from './db/types.js';
-export interface PublicUser { id: string; email: string; name: string }
+export interface PublicUser { id: string; email: string; name: string; provider?: string }
 
 /** Session cookies get the Secure flag when the deployment is HTTPS. */
 const SECURE_COOKIES = (process.env.PAPYR_PUBLIC_URL || '').startsWith('https') || process.env.COOKIE_SECURE === '1';
 
-export function pub(u: User): PublicUser { return { id: u.id, email: u.email, name: u.name }; }
+export function pub(u: User): PublicUser { return { id: u.id, email: u.email, name: u.name, provider: u.provider }; }
 
 function hashPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 64).toString('hex');
@@ -73,7 +73,8 @@ export async function findOrCreateOAuth(email: string, name: string, provider: s
   const existing = await db().findUserByEmail(email.trim().toLowerCase());
   if (existing) {
     if (existing.provider === provider) return pub(existing);
-    throw new Error('An account with this email already exists. Sign in with your password instead.');
+    const how = existing.provider ? `sign in with ${existing.provider}` : 'sign in with your password';
+    throw new Error(`An account with this email already exists — ${how} instead.`);
   }
   return register(email, '', name, provider);
 }

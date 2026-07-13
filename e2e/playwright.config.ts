@@ -30,7 +30,9 @@ export default defineConfig({
       timeout: 10_000,
     },
     {
-      command: 'npm run build -w apps/web && PORT=3100 DATA_DIR=$(pwd)/.data-e2e ZOTERO_API_BASE=http://localhost:4919 DOI_API_BASE=http://localhost:4919 ARXIV_API_BASE=http://localhost:4919 OPENALEX_API_BASE=http://localhost:4919 ANTHROPIC_API_KEY=test-ai-key ANTHROPIC_BASE_URL=http://localhost:4919 npx tsx apps/server/src/index.ts',
+      // OPENROUTER_API_KEY/OPENAI_API_KEY are emptied so an ambient key can't
+      // override the mock Anthropic endpoint the AI-fix test relies on.
+      command: 'npm run build -w apps/web && PORT=3100 DATA_DIR=$(pwd)/.data-e2e OPENROUTER_API_KEY= OPENAI_API_KEY= ZOTERO_API_BASE=http://localhost:4919 DOI_API_BASE=http://localhost:4919 ARXIV_API_BASE=http://localhost:4919 OPENALEX_API_BASE=http://localhost:4919 ANTHROPIC_API_KEY=test-ai-key ANTHROPIC_BASE_URL=http://localhost:4919 npx tsx apps/server/src/index.ts',
       cwd: '..',
       port: 3100,
       reuseExistingServer: true,

@@ -4,6 +4,7 @@ import { api, ProjectSummary, TemplateInfo } from '../api';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../components/Auth';
 import { IconDoc, IconLink, IconX } from '../components/Icons';
+import AccountSettings from '../components/AccountSettings';
 import { friendlyDate } from '../util/dates';
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [template, setTemplate] = useState('article');
   const [sharing, setSharing] = useState<ProjectSummary | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
   const { authEnabled, user, setUser } = useAuth();
@@ -77,7 +79,7 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {authEnabled && user && (
               <span className="user-chip">
-                <span className="user-chip__name" data-testid="user-name">{user.name}</span>
+                <button className="user-chip__name" data-testid="user-name" onClick={() => setShowAccount(true)} title="Account settings">{user.name}</button>
                 <button className="btn btn--small" data-testid="logout" onClick={async () => { await api.logout(); setUser(null); }}>Sign out</button>
               </span>
             )}
@@ -131,6 +133,9 @@ export default function Home() {
 
       {sharing && (
         <ShareModal project={sharing} onClose={() => setSharing(null)} onSaved={() => { setSharing(null); load(); }} toast={toast} />
+      )}
+      {showAccount && user && (
+        <AccountSettings user={user} onClose={() => setShowAccount(false)} />
       )}
 
       {creating && (

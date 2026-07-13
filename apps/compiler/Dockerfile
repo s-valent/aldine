@@ -6,10 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -r
 # Packages beyond scheme-medium that real papers commonly need
 # (newtx fonts, cleveref, etc. — keeps the image ~1GB instead of full's ~3GB)
 RUN tlmgr install newtx txfonts fontaxes lastpage titlesec xstring fancyhdr cleveref \
-    enumitem wrapfig threeparttable placeins multirow doclicense algorithmicx \
+    enumitem wrapfig threeparttable placeins multirow doclicense algorithmicx xurl \
     || tlmgr update --self && tlmgr install newtx txfonts fontaxes lastpage titlesec \
     xstring fancyhdr cleveref enumitem wrapfig threeparttable placeins multirow \
-    doclicense algorithmicx
+    doclicense algorithmicx xurl
 
 WORKDIR /srv
 COPY server.js .

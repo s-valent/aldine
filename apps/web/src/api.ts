@@ -1,4 +1,5 @@
-export interface AuthUser { id: string; email: string; name: string }
+export interface AuthUser { id: string; email: string; name: string; provider?: string }
+export interface OAuthProviderInfo { id: string; label: string }
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -124,7 +125,7 @@ export const api = {
   deleteComment: (id: string, cid: string) =>
     req<{ ok: boolean }>(`/api/projects/${id}/comments/${cid}`, { method: 'DELETE' }),
 
-  me: () => req<{ authEnabled: boolean; user: AuthUser | null; providers: string[] }>('/api/auth/me'),
+  me: () => req<{ authEnabled: boolean; user: AuthUser | null; providers: OAuthProviderInfo[] }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     req<{ ok: boolean }>('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   resetRequest: (email: string) =>

@@ -208,11 +208,35 @@ test.describe('auth depth', () => {
     await expect(page.locator('.home__brand')).toBeVisible({ timeout: 15_000 });
   });
 
-  test('GitHub OAuth endpoint 404s when unconfigured and button is hidden', async ({ page, request }) => {
-    expect((await request.get('/api/auth/oauth/github', { maxRedirects: 0 })).status()).toBe(404);
+  test('SSO endpoints 404 when unconfigured and no buttons show', async ({ page, request }) => {
+    for (const p of ['github', 'google']) {
+      expect((await request.get(`/api/auth/oauth/${p}`, { maxRedirects: 0 })).status()).toBe(404);
+    }
     await page.goto('/');
     await expect(page.getByTestId('auth-email')).toBeVisible();
     await expect(page.getByTestId('oauth-github')).toHaveCount(0);
+    await expect(page.getByTestId('oauth-google')).toHaveCount(0);
+  });
+
+  test('change password from account settings revokes other sessions', async ({ page, browser, request }) => {
+    const email = uniq();
+    await register(page, email);
+    // a second session for the same account (should be revoked by the change)
+    const other = await browser.newContext();
+    await other.request.post('/api/auth/login', { data: { email, password: 'password123' } });
+
+    // open account settings and change the password
+    await page.getByTestId('user-name').click();
+    await expect(page.getByTestId('account-settings')).toBeVisible();
+    await page.getByTestId('current-password').fill('password123');
+    await page.getByTestId('new-password').fill('changed-pw-99');
+    await page.getByTestId('save-password').click();
+
+    // the other session is now revoked
+    await expect.poll(async () => (await (await other.request.get('/api/auth/me')).json()).user).toBeNull();
+    // and the new password works
+    expect((await request.post('/api/auth/login', { data: { email, password: 'changed-pw-99' } })).ok()).toBeTruthy();
+    await other.close();
   });
 });
 

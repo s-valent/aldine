@@ -28,8 +28,14 @@ PAPYR_APP_BIND=127.0.0.1          # app on loopback only; Caddy fronts it
 
 # multi-user mode
 AUTH_ENABLED=1
-GITHUB_OAUTH_CLIENT_ID=...        # optional
-GITHUB_OAUTH_CLIENT_SECRET=...    # optional
+# Single sign-on (optional; each provider is independent). Set the callback/redirect
+# URI in the provider console to  <PAPYR_PUBLIC_URL>/api/auth/oauth/<provider>/callback
+# Google:  https://console.cloud.google.com/apis/credentials  (OAuth client, type "Web")
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+# GitHub:  https://github.com/settings/developers
+GITHUB_OAUTH_CLIENT_ID=...
+GITHUB_OAUTH_CLIENT_SECRET=...
 
 # AI error-fix (bring your own key)
 OPENROUTER_API_KEY=sk-or-...      # or ANTHROPIC_API_KEY
