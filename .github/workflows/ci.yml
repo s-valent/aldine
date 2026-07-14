@@ -16,6 +16,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Configure git identity (for the integration test's git ops)
+        run: |
+          git config --global user.email ci@papyr.local
+          git config --global user.name papyr-ci
+          git config --global init.defaultBranch main
       - name: Typecheck (server)
         run: npm run typecheck -w apps/server
       - name: Typecheck (web)

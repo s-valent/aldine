@@ -18,9 +18,9 @@ const mock = http.createServer((req,res)=>{ res.setHeader('content-type','applic
 });
 await new Promise(r=>mock.listen(0,r)); process.env.GITHUB_API_BASE=`http://localhost:${mock.address().port}`;
 
-const { initDb } = await import('/Users/rahloff/projects/Papyr/apps/server/src/db/index.ts'); await initDb();
+const { initDb } = await import('../src/db/index.ts'); await initDb();
 const Fastify = (await import('fastify')).default;
-const { registerRoutes } = await import('/Users/rahloff/projects/Papyr/apps/server/src/routes.ts');
+const { registerRoutes } = await import('../src/routes.ts');
 const app = Fastify(); await registerRoutes(app);
 const J = (r)=>{ try{return JSON.parse(r.body)}catch{return r.body} };
 
