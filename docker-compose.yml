@@ -32,6 +32,8 @@ services:
       PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
       # Optional error tracking.
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Optional: share rate limits across app nodes (see the `redis` profile).
+      REDIS_URL: ${REDIS_URL:-}
       # Datastore: blank = flat JSON files (slim single-node default). Set to a
       # Postgres URL for the horizontally-scalable backend (see `postgres` profile).
       DATABASE_URL: ${DATABASE_URL:-}
@@ -87,6 +89,16 @@ services:
     restart: unless-stopped
     networks:
       - frontend
+
+  # Optional Redis for cross-node rate limiting. Enable with `--profile redis`
+  # and set REDIS_URL=redis://redis:6379 in .env.
+  redis:
+    image: redis:7-alpine
+    profiles: ["redis"]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+    networks:
+      - backend
 
   # Optional Postgres for the scalable datastore. Enable with `--profile postgres`
   # and set DATABASE_URL=postgres://papyr:papyr@db:5432/papyr in .env.

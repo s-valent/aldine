@@ -1,20 +1,61 @@
 /**
- * Tiny in-memory rate limiter (token bucket per key). No external deps, no
- * Redis — fine for a single-node self-host. Keys are usually `${route}:${ip}`
- * or `${route}:${userId}`.
+ * Rate limiting. In-memory token buckets by default (perfect for a single node);
+ * set REDIS_URL to share limits across multiple app nodes. The Redis path uses
+ * an atomic Lua token-bucket so concurrent requests can't over-consume.
+ * Keys are usually `${route}:${ip}` or `${route}:${userId}`.
  */
 
 interface Bucket { tokens: number; last: number }
 
+let redis: { eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown> } | null = null;
+
+/** Connect Redis if REDIS_URL is set (optional dependency). Call once at startup. */
+export async function initRateLimit(): Promise<void> {
+  const url = process.env.REDIS_URL;
+  if (!url) return;
+  try {
+    const mod = await import('ioredis');
+    const IORedis = ((mod as any).default ?? (mod as any).Redis) as new (url: string, opts?: object) => any;
+    const client = new IORedis(url, { maxRetriesPerRequest: 2 });
+    client.on('error', (e: Error) => console.error('[papyr] redis error:', e.message));
+    redis = client as unknown as typeof redis;
+    console.log('[papyr] rate limiting: redis (shared across nodes)');
+  } catch {
+    console.warn('[papyr] REDIS_URL is set but ioredis is not installed — using in-memory rate limiting');
+  }
+}
+
+// Atomic refill+consume. KEYS[1]=bucket, ARGV=capacity, refillPerSec, now(ms).
+const BUCKET_LUA = `
+local d = redis.call('HMGET', KEYS[1], 't', 'l')
+local tokens = tonumber(d[1]); local last = tonumber(d[2])
+local cap = tonumber(ARGV[1]); local rate = tonumber(ARGV[2]); local now = tonumber(ARGV[3])
+if tokens == nil then tokens = cap; last = now end
+tokens = math.min(cap, tokens + ((now - last) / 1000) * rate)
+local ok = 0
+if tokens >= 1 then tokens = tokens - 1; ok = 1 end
+redis.call('HMSET', KEYS[1], 't', tokens, 'l', now)
+redis.call('PEXPIRE', KEYS[1], 3600000)
+return ok`;
+
 export class RateLimiter {
   private buckets = new Map<string, Bucket>();
-  constructor(private capacity: number, private refillPerSec: number) {
-    // opportunistic cleanup so the map can't grow unbounded
+  constructor(private name: string, private capacity: number, private refillPerSec: number) {
     setInterval(() => this.sweep(), 300_000).unref?.();
   }
 
   /** Returns true if allowed (and consumes a token), false if rate-limited. */
-  take(key: string, now = Date.now()): boolean {
+  async take(key: string, now = Date.now()): Promise<boolean> {
+    if (redis) {
+      try {
+        const ok = await redis.eval(BUCKET_LUA, 1, `rl:${this.name}:${key}`, this.capacity, this.refillPerSec, now);
+        return ok === 1;
+      } catch { /* redis hiccup → fall back to this node's in-memory bucket */ }
+    }
+    return this.takeLocal(key, now);
+  }
+
+  private takeLocal(key: string, now: number): boolean {
     let b = this.buckets.get(key);
     if (!b) { b = { tokens: this.capacity, last: now }; this.buckets.set(key, b); }
     b.tokens = Math.min(this.capacity, b.tokens + ((now - b.last) / 1000) * this.refillPerSec);
@@ -31,7 +72,11 @@ export class RateLimiter {
   }
 }
 
-/** A gate that allows at most `max` concurrent operations per key. */
+/**
+ * At most `max` concurrent operations per key. Deliberately per-node: it protects
+ * a single node's compiler from overload; the shared cost ceiling is the metered
+ * compile quota (usage.ts) and the AI rate limiter.
+ */
 export class ConcurrencyGate {
   private active = new Map<string, number>();
   constructor(private max: number) {}
@@ -51,14 +96,14 @@ export class ConcurrencyGate {
 const n = (v: string | undefined, d: number) => (v && !Number.isNaN(Number(v)) ? Number(v) : d);
 
 /** login: 10 attempts, refill 1 / 30s → slows brute force without annoying real users. */
-export const loginLimiter = new RateLimiter(n(process.env.RL_LOGIN_BURST, 10), 1 / 30);
+export const loginLimiter = new RateLimiter('login', n(process.env.RL_LOGIN_BURST, 10), 1 / 30);
 /** register: 5 accounts per client, refill 1 / 5min — bounds account-store spam. */
-export const registerLimiter = new RateLimiter(n(process.env.RL_REGISTER_BURST, 5), 1 / 300);
+export const registerLimiter = new RateLimiter('register', n(process.env.RL_REGISTER_BURST, 5), 1 / 300);
 /** AI fix: 20 burst, refill 1 / 12s (≈5/min sustained) — bounds LLM spend per client. */
-export const aiLimiter = new RateLimiter(n(process.env.RL_AI_BURST, 20), n(process.env.RL_AI_REFILL_PER_MIN, 5) / 60);
+export const aiLimiter = new RateLimiter('ai', n(process.env.RL_AI_BURST, 20), n(process.env.RL_AI_REFILL_PER_MIN, 5) / 60);
 /** reference lookups (DOI/OpenAlex): 30 burst, 1/2s. */
-export const refLimiter = new RateLimiter(n(process.env.RL_REF_BURST, 30), 0.5);
-/** at most 2 concurrent compiles per client. */
+export const refLimiter = new RateLimiter('ref', n(process.env.RL_REF_BURST, 30), 0.5);
+/** at most 2 concurrent compiles per client (per node). */
 export const compileGate = new ConcurrencyGate(n(process.env.RL_COMPILE_CONCURRENCY, 2));
 
 /**

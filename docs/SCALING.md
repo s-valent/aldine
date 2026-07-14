@@ -37,9 +37,12 @@ unaffected.
 
 1. **Flat-JSON stores + in-memory rate/quota state** — per-process, so two app
    nodes can't share them. *Blocks running more than one app node.*
-   → **Done:** Postgres backend for the datastore (`DATABASE_URL`). Still TODO:
-   move rate-limit/quota/session counters to Redis so limits coordinate across
-   nodes.
+   → **Done:** Postgres backend for the datastore (`DATABASE_URL`) covers users,
+   sessions, project metadata, comments, and usage/quotas; Redis (`REDIS_URL`)
+   shares the rate limiters across nodes. The compile concurrency gate stays
+   per-node by design (it protects each node's compiler; the shared ceiling is
+   the metered compile quota). This wall is cleared — the app tier is now
+   horizontally scalable.
 2. **Single-process Hocuspocus** — each Yjs document's CRDT state lives in one
    process's memory; you can't just add replicas. → split collab into its own
    service with a Redis pub/sub sync backend + sticky routing, and persist docs

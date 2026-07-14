@@ -10,12 +10,15 @@ import { commitAll } from './gitops.js';
 import { listProjects } from './store.js';
 import { initObservability, captureError } from './observability.js';
 import { initDb, closeDb } from './db/index.js';
+import { initRateLimit } from './ratelimit.js';
 
 // Never let a stray rejection take down the collaboration server.
 process.on('unhandledRejection', (reason) => { console.error('[papyr] unhandledRejection', reason); captureError(reason); });
 
 // Select and connect the datastore (JSON default, or Postgres via DATABASE_URL) before anything uses it.
 await initDb();
+// Connect Redis for cross-node rate limiting if REDIS_URL is set (else in-memory).
+await initRateLimit();
 
 // trustProxy makes req.ip honor X-Forwarded-For — enable ONLY behind a trusted
 // reverse proxy (Caddy/nginx). Off by default so clients can't spoof their IP

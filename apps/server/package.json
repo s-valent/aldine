@@ -26,6 +26,7 @@
   },
   "optionalDependencies": {
     "@sentry/node": "^8.55.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "ioredis": "^5.4.1"
   }
 }

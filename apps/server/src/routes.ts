@@ -79,7 +79,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string; password: string; name?: string } }>('/api/auth/register', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
-    if (!registerLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
+    if (!(await registerLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
     try {
       const user = await auth.register(req.body.email, req.body.password, req.body.name);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
@@ -90,7 +90,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string; password: string } }>('/api/auth/login', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
-    if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
+    if (!(await loginLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
     try {
       const user = await auth.login(req.body.email, req.body.password);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
@@ -122,7 +122,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { email: string } }>('/api/auth/reset-request', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
-    if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
+    if (!(await loginLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
     const r = await auth.requestReset(req.body?.email || '');
     if (r) {
       console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (relay this to the user; expires in 1h)`);
@@ -547,7 +547,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/references/add', async (req, reply) => {
       const { query, branch = 'main', bibFile = 'references.bib' } = req.body || {};
       if (!query) return reply.code(400).send({ error: 'query required' });
-      if (!refLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'Rate limit reached — please slow down' });
+      if (!(await refLimiter.take(clientKey(req, reqUser(req)?.id)))) return reply.code(429).send({ error: 'Rate limit reached — please slow down' });
       try {
         const entry = await fetchBibEntry(query.trim());
         if (!entry) return reply.code(404).send({ error: 'No reference found for that DOI/arXiv id' });
@@ -571,7 +571,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { q?: string } }>('/api/references/search', async (req, reply) => {
     const q = (req.query.q || '').trim();
     if (q.length < 3) return [];
-    if (!refLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'Search rate limit reached — please slow down' });
+    if (!(await refLimiter.take(clientKey(req, reqUser(req)?.id)))) return reply.code(429).send({ error: 'Search rate limit reached — please slow down' });
     try {
       return await searchWorks(q);
     } catch (err: any) {
@@ -773,7 +773,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string }; Body: { branch?: string; errors?: Array<{ type: string; line: number | null; message: string; file?: string }>; log?: string } }>(
     '/api/projects/:id/ai/fix', async (req, reply) => {
       if (!aiConfigured()) return reply.code(400).send({ error: 'AI is not configured. Set an ANTHROPIC_API_KEY or OPENROUTER_API_KEY on the server to enable it.' });
-      if (!aiLimiter.take(clientKey(req, reqUser(req)?.id))) return reply.code(429).send({ error: 'AI rate limit reached — please slow down' });
+      if (!(await aiLimiter.take(clientKey(req, reqUser(req)?.id)))) return reply.code(429).send({ error: 'AI rate limit reached — please slow down' });
       const { branch = 'main', errors = [], log = '' } = req.body || {};
       const meta = await store.readMeta(req.params.id);
       flushBranchDocs(req.params.id, branch);

@@ -53,6 +53,9 @@ PAPYR_COMPILE_QUOTA_MIN=30
 # error tracking (optional)
 SENTRY_DSN=
 
+# multi-node only: share rate limits across app instances (see the `redis` profile)
+REDIS_URL=redis://redis:6379
+
 # password-reset relay while no SMTP is wired (see caveats)
 PAPYR_RESET_ECHO=
 ```
