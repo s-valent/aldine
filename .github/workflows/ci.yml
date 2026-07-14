@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Typecheck, build & integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (server)
+        run: npm run typecheck -w apps/server
+      - name: Typecheck (web)
+        run: npx tsc --noEmit
+        working-directory: apps/web
+      - name: Build web
+        run: npm run build -w apps/web
+      - name: GitHub-sync integration test
+        run: npm run test:github -w apps/server
+
+  compose:
+    name: docker compose config is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate base + prod + profiles
+        run: |
+          docker compose config >/dev/null
+          PAPYR_DOMAIN=x DATABASE_URL=x docker compose --profile tls --profile postgres config >/dev/null
+          PAPYR_APP_BIND=127.0.0.1 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml config >/dev/null

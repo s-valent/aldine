@@ -110,8 +110,14 @@ export default function Home() {
           <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>
         ) : projects.length === 0 ? (
           <div className="empty">
-            <p style={{ margin: '0 0 12px' }}>No projects yet. Create your first paper to get started.</p>
-            <button className="btn btn--primary" onClick={() => setCreating(true)}>New project</button>
+            <p style={{ margin: '0 0 16px' }}>No projects yet — start a paper however you like.</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button className="btn btn--primary" onClick={() => setCreating(true)}>New project</button>
+              <button className="btn" onClick={() => setShowGithub(true)}>Import from GitHub</button>
+              <label className="btn">Import a ZIP
+                <input type="file" accept=".zip" hidden onChange={async (e) => { if (e.target.files?.[0]) await importZip(e.target.files[0]); e.target.value = ''; }} />
+              </label>
+            </div>
           </div>
         ) : (
           <div className="projects" data-testid="project-grid">
