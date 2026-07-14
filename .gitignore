@@ -14,3 +14,6 @@ e2e/playwright-report/
 e2e/.auth/
 apps/web/dist/
 apps/server/dist/
+
+# local runtime config / secrets
+.env
