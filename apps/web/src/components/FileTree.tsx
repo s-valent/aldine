@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { TreeEntry, api } from '../api';
 import { fileIcon } from './Icons';
 
@@ -18,12 +18,52 @@ interface Props {
 
 const MAX_UPLOAD = 10 * 1024 * 1024;
 
+interface Node { name: string; path: string; type: 'file' | 'dir'; binary?: boolean; children: Node[] }
+
+/** Build a nested tree from the flat path list (handles files in subdirectories). */
+function buildTree(files: TreeEntry[]): Node[] {
+  const root: Node = { name: '', path: '', type: 'dir', children: [] };
+  for (const f of files) {
+    const parts = f.path.split('/');
+    let cur = root;
+    parts.forEach((seg, i) => {
+      const isLeaf = i === parts.length - 1;
+      const p = parts.slice(0, i + 1).join('/');
+      let child = cur.children.find((c) => c.name === seg);
+      if (!child) {
+        child = { name: seg, path: p, type: isLeaf && f.type === 'file' ? 'file' : 'dir', binary: isLeaf ? f.binary : undefined, children: [] };
+        cur.children.push(child);
+      }
+      cur = child;
+    });
+  }
+  const sort = (n: Node) => {
+    n.children.sort((a, b) => (a.type !== b.type ? (a.type === 'dir' ? -1 : 1) : a.name.localeCompare(b.name)));
+    n.children.forEach(sort);
+  };
+  sort(root);
+  return root.children;
+}
+
+const FolderIcon = ({ open }: { open: boolean }) => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.75 }}>
+    {open
+      ? <path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5H5.7a1.5 1.5 0 0 0-1.43 1.05L2.2 12.5A1 1 0 0 1 1.5 11.8z" />
+      : <path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5v7A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12z" />}
+  </svg>
+);
+
 export default function FileTree({ files, active, rootFile, projectId, branch, onOpen, onCreate, onUploaded, onDelete, onRename, onSetRoot }: Props) {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // dot-directories (.git is already excluded server-side; .github, .devcontainer, …) start collapsed
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(files.filter((f) => f.type === 'dir' && f.path.split('/').pop()!.startsWith('.')).map((f) => f.path)));
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const tree = useMemo(() => buildTree(files), [files]);
+  const toggle = (p: string) => setCollapsed((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
 
   const submit = () => {
     const n = name.trim();
@@ -35,21 +75,48 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
   const uploadFiles = async (list: FileList | File[]) => {
     const done: string[] = [];
     for (const f of Array.from(list)) {
-      if (f.size > MAX_UPLOAD) {
-        alert(`${f.name} is larger than 10 MB`);
-        continue;
-      }
+      if (f.size > MAX_UPLOAD) { alert(`${f.name} is larger than 10 MB`); continue; }
       const buf = await f.arrayBuffer();
       let binary = '';
       const bytes = new Uint8Array(buf);
       const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-      }
+      for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
       await api.writeFile(projectId, branch, f.name, btoa(binary), 'base64');
       done.push(f.name);
     }
     if (done.length) onUploaded(done);
+  };
+
+  const renderNode = (node: Node, depth: number): JSX.Element => {
+    const pad = 8 + depth * 13;
+    if (node.type === 'dir') {
+      const isOpen = !collapsed.has(node.path);
+      return (
+        <div key={node.path}>
+          <button className="tree__item tree__dir" style={{ paddingLeft: pad }} onClick={() => toggle(node.path)} data-testid={`dir-${node.path}`} title={node.path}>
+            <span className={`tree__chevron ${isOpen ? 'tree__chevron--open' : ''}`}>▸</span>
+            <span className="tree__icon"><FolderIcon open={isOpen} /></span>
+            {node.name}
+          </button>
+          {isOpen && node.children.map((c) => renderNode(c, depth + 1))}
+        </div>
+      );
+    }
+    return (
+      <button
+        key={node.path}
+        className={`tree__item ${active === node.path ? 'tree__item--active' : ''}`}
+        style={{ paddingLeft: pad }}
+        data-testid={`file-${node.path}`}
+        onClick={() => !node.binary && onOpen(node.path)}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ path: node.path, x: e.clientX, y: e.clientY }); }}
+        title={node.path}
+      >
+        <span className="tree__icon">{fileIcon(node.path, node.path === rootFile, node.binary)}</span>
+        {node.name}
+        {node.path === rootFile && <span className="tree__root-tag">root</span>}
+      </button>
+    );
   };
 
   return (
@@ -59,53 +126,22 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
       onClick={() => setMenu(null)}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
-      onDrop={async (e) => {
-        e.preventDefault();
-        setDragOver(false);
-        if (e.dataTransfer.files.length) await uploadFiles(e.dataTransfer.files);
-      }}
+      onDrop={async (e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files.length) await uploadFiles(e.dataTransfer.files); }}
     >
-      {files.filter((f) => f.type === 'file').map((f) => (
-        <button
-          key={f.path}
-          className={`tree__item ${active === f.path ? 'tree__item--active' : ''}`}
-          data-testid={`file-${f.path}`}
-          onClick={() => !f.binary && onOpen(f.path)}
-          onContextMenu={(e) => { e.preventDefault(); setMenu({ path: f.path, x: e.clientX, y: e.clientY }); }}
-          title={f.path}
-        >
-          <span className="tree__icon">{fileIcon(f.path, f.path === rootFile, f.binary)}</span>
-          {f.path}
-        </button>
-      ))}
+      {tree.map((n) => renderNode(n, 0))}
 
       {adding ? (
         <input
-          autoFocus
-          className="input"
-          style={{ margin: '4px 0' }}
-          placeholder="chapter.tex"
-          value={name}
-          data-testid="new-file-name"
-          onChange={(e) => setName(e.target.value)}
-          onBlur={submit}
+          autoFocus className="input" style={{ margin: '4px 0' }} placeholder="chapter.tex" value={name} data-testid="new-file-name"
+          onChange={(e) => setName(e.target.value)} onBlur={submit}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
         />
       ) : (
         <div className="tree__actions">
           <button className="btn btn--ghost btn--small" onClick={() => setAdding(true)} data-testid="new-file">+ New file</button>
           <button className="btn btn--ghost btn--small" onClick={() => fileInput.current?.click()} data-testid="upload-file">↑ Upload</button>
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            hidden
-            data-testid="upload-input"
-            onChange={async (e) => {
-              if (e.target.files?.length) await uploadFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
+          <input ref={fileInput} type="file" multiple hidden data-testid="upload-input"
+            onChange={async (e) => { if (e.target.files?.length) await uploadFiles(e.target.files); e.target.value = ''; }} />
         </div>
       )}
       <p className="filetree__hint">Drop files here to upload</p>
@@ -119,10 +155,7 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
             setMenu(null);
           }}>Rename…</button>
           <div className="menu__sep" />
-          <button className="menu__item" onClick={() => {
-            if (window.confirm(`Delete ${menu.path}?`)) onDelete(menu.path);
-            setMenu(null);
-          }}>Delete</button>
+          <button className="menu__item" onClick={() => { if (window.confirm(`Delete ${menu.path}?`)) onDelete(menu.path); setMenu(null); }}>Delete</button>
         </div>
       )}
     </div>

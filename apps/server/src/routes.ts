@@ -349,7 +349,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   /** Serve compile artifacts (PDF, synctex) from the branch's .papyr-out. */
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/output', async (req, reply) => {
     const { branch = 'main', path: rel } = req.query;
-    if (!rel || !rel.startsWith('.papyr-out/')) return reply.code(400).send({ error: 'bad output path' });
+    // artifacts live in a .papyr-out dir (at the project root or beside a subdir'd root file)
+    if (!rel || rel.includes('..') || !/(^|\/)\.papyr-out\/[^/]+$/.test(rel)) return reply.code(400).send({ error: 'bad output path' });
     try {
       const abs = safeJoin(store.branchDir(req.params.id, branch), rel);
       const buf = fs.readFileSync(abs);
@@ -687,7 +688,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     try {
       const { remoteBranch } = await gitops.cloneRepo(id, github.tokenUrl(info.cloneUrl, conn.token));
       const files = store.listFiles(id, 'main').filter((f) => f.type === 'file').map((f) => f.path);
-      const rootFile = files.find((f) => f === 'main.tex') || files.find((f) => f.endsWith('.tex')) || 'main.tex';
+      const rootFile = detectRootFile(id, files);
       const meta: store.ProjectMeta = {
         id, name: info.name, rootFile, engine: 'pdf', createdAt: new Date().toISOString(),
         github: { fullName: info.fullName, owner: info.owner, repo: info.name, remoteBranch, cloneUrl: info.cloneUrl, connectedBy: ghUserId(req) },
@@ -701,6 +702,24 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: `Import failed: ${err.message}` });
     }
   });
+
+  // Pick the typeset root: the .tex that actually has \documentclass (a repo's
+  // real main file may live in a subdir like paper/main.tex), preferring main.tex
+  // and shallower paths. Falls back gracefully when nothing declares a class.
+  function detectRootFile(id: string, files: string[]): string {
+    const tex = files.filter((f) => f.endsWith('.tex'));
+    const rank = (arr: string[]) => arr.slice().sort((a, b) => {
+      const am = /(^|\/)main\.tex$/.test(a), bm = /(^|\/)main\.tex$/.test(b);
+      if (am !== bm) return am ? -1 : 1;
+      const ad = a.split('/').length, bd = b.split('/').length;
+      return ad !== bd ? ad - bd : a.localeCompare(b);
+    })[0];
+    const withClass = tex.filter((f) => {
+      try { return /\\documentclass/.test(store.readFile(id, 'main', f).subarray(0, 4096).toString('utf8')); }
+      catch { return false; }
+    });
+    return rank(withClass) || rank(tex) || 'main.tex';
+  }
 
   // Sync a linked project with its GitHub remote (uses the acting user's token).
   const linkedRemote = async (req: any, reply: any) => {

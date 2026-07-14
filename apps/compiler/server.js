@@ -121,7 +121,12 @@ async function compileInner(body) {
   if (!absDir.startsWith(path.resolve(DATA_DIR))) throw new Error('projectDir escapes DATA_DIR');
   if (!fs.existsSync(path.join(absDir, rootFile))) throw new Error(`root file not found: ${rootFile}`);
 
-  fs.mkdirSync(path.join(absDir, OUT_SUBDIR), { recursive: true });
+  // Root file may live in a subdirectory (e.g. paper/main.tex). -cd makes latexmk
+  // chdir into that dir first, so \input{chapters/…}, \includegraphics, and bib
+  // resolve relative to the main file — exactly like a local/Overleaf build. The
+  // output dir is then relative to that subdir too.
+  const rootDir = path.dirname(rootFile); // '.' when the root is top-level
+  fs.mkdirSync(path.join(absDir, rootDir, OUT_SUBDIR), { recursive: true });
 
   const engineFlag = engine === 'xelatex' ? '-pdfxe' : engine === 'lualatex' ? '-pdflua' : '-pdf';
   const args = [
@@ -132,6 +137,7 @@ async function compileInner(body) {
     '-file-line-error',
     '-no-shell-escape',
     '-synctex=1',
+    '-cd', // chdir to the root file's directory before compiling
     `-outdir=${OUT_SUBDIR}`,
     rootFile,
   ];
@@ -140,9 +146,9 @@ async function compileInner(body) {
   const durationMs = Date.now() - t0;
 
   const base = path.basename(rootFile).replace(/\.tex$/, '');
-  const rel = (f) => path.join(OUT_SUBDIR, f);
-  const pdfPath = path.join(absDir, OUT_SUBDIR, `${base}.pdf`);
-  const logPath = path.join(absDir, OUT_SUBDIR, `${base}.log`);
+  const rel = (f) => path.join(rootDir, OUT_SUBDIR, f); // path relative to the project dir
+  const pdfPath = path.join(absDir, rootDir, OUT_SUBDIR, `${base}.pdf`);
+  const logPath = path.join(absDir, rootDir, OUT_SUBDIR, `${base}.log`);
   let log = '';
   try { log = fs.readFileSync(logPath, 'utf8'); } catch { log = out; }
   const errors = parseLog(log);
@@ -153,7 +159,7 @@ async function compileInner(body) {
     exitCode: code,
     // paths relative to the project dir; the app server serves them
     pdf: fs.existsSync(pdfPath) ? rel(`${base}.pdf`) : null,
-    synctex: fs.existsSync(path.join(absDir, OUT_SUBDIR, `${base}.synctex.gz`)) ? rel(`${base}.synctex.gz`) : null,
+    synctex: fs.existsSync(path.join(absDir, rootDir, OUT_SUBDIR, `${base}.synctex.gz`)) ? rel(`${base}.synctex.gz`) : null,
     log: log.length > 200_000 ? log.slice(-200_000) : log,
     latexmkOutput: out.length > 20_000 ? out.slice(-20_000) : out,
     errors,
@@ -167,8 +173,9 @@ async function synctex(body) {
   if (!projectDir || projectDir.includes('..')) throw new Error('invalid projectDir');
   const absDir = path.resolve(DATA_DIR, projectDir);
   if (!absDir.startsWith(path.resolve(DATA_DIR))) throw new Error('projectDir escapes DATA_DIR');
+  const rootDir = path.dirname(rootFile);
   const base = path.basename(rootFile).replace(/\.tex$/, '');
-  const pdf = path.join(OUT_SUBDIR, `${base}.pdf`);
+  const pdf = path.join(rootDir, OUT_SUBDIR, `${base}.pdf`);
   let args;
   if (direction === 'forward') {
     args = ['view', '-i', `${line}:${column}:${body.file || rootFile}`, '-o', pdf];
