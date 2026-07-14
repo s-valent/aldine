@@ -16,6 +16,7 @@ import CommandPalette, { Command } from '../components/CommandPalette';
 import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras';
 import { useCommentSignal } from '../editor/commentSignal';
 import GithubSync from '../components/GithubSync';
+import CommentComposer from '../components/CommentComposer';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -41,6 +42,7 @@ export default function Editor() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('papyr.spellcheck') === '1');
   const [comments, setComments] = useState<Comment[]>([]);
+  const [composing, setComposing] = useState<{ from: number; to: number; quote: string } | null>(null);
   const codeRef = useRef<CodePaneHandle>(null);
   const pdfRef = useRef<PdfPaneHandle>(null);
   const compilingRef = useRef(false);
@@ -166,23 +168,25 @@ export default function Editor() {
     requestAnimationFrame(() => codeRef.current?.setCommentRanges(ranges));
   }, [comments, activeFile]);
 
-  const addComment = useCallback(async () => {
+  const startComment = useCallback(() => {
     if (!activeFile) return;
     const sel = codeRef.current?.getSelection();
     if (!sel) { toast('Select some text to comment on first.', 'info'); return; }
-    const body = window.prompt('Comment');
-    if (body == null) return;
-    const suggestionRaw = window.prompt('Optional: suggest replacement text for the selection (leave blank to skip)', '');
-    const suggestion = suggestionRaw === null || suggestionRaw === '' ? undefined : suggestionRaw;
+    setComposing(sel);
+  }, [activeFile, toast]);
+
+  const submitComment = useCallback(async (body: string, suggestion?: string) => {
+    if (!composing || !activeFile) return;
     try {
-      await api.addComment(id, { branch, file: activeFile, anchor: sel, body: body.trim(), suggestion });
+      await api.addComment(id, { branch, file: activeFile, anchor: composing, body, suggestion });
       await loadComments();
       bumpComments();
       setTab('review');
     } catch (err: any) {
       toast(`Could not add comment: ${err.message}`, 'error');
     }
-  }, [id, branch, activeFile, loadComments, bumpComments, toast]);
+    setComposing(null);
+  }, [composing, id, branch, activeFile, loadComments, bumpComments, toast]);
 
   const revealComment = useCallback((c: Comment) => {
     if (c.file !== activeFile) setActiveFile(c.file);
@@ -330,7 +334,7 @@ export default function Editor() {
         {project.github && (
           <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
         )}
-        <button className="btn" onClick={addComment} data-testid="add-comment" title="Comment on the selected text">Comment</button>
+        <button className="btn" onClick={startComment} data-testid="add-comment" title="Comment on the selected text">Comment</button>
         <Presence users={users} />
         <div className="toolbar__group">
           <button
@@ -507,6 +511,10 @@ export default function Editor() {
       </div>
 
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+
+      {composing && (
+        <CommentComposer quote={composing.quote} onSubmit={submitComment} onClose={() => setComposing(null)} />
+      )}
 
       {showLog && compile.result && (
         <div className="modal-backdrop" onClick={() => setShowLog(false)}>

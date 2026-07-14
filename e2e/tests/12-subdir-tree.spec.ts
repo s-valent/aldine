@@ -34,3 +34,19 @@ test.describe('nested repos', () => {
     } finally { await cleanup(request, id); }
   });
 });
+
+test.describe('editor layout', () => {
+  test('a long document does not push the page past the viewport', async ({ page, request }) => {
+    const id = await createProject(request, 'Long Doc');
+    try {
+      const long = Array.from({ length: 300 }, (_, i) => `Line ${i + 1} of a very long document.`).join('\n');
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: long } });
+      await openProject(page, id);
+      await expect(page.locator('.cm-content')).toContainText('Line 1', { timeout: 10_000 });
+      // the page itself must not scroll — the editor scrolls internally
+      const overflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+      expect(overflow).toBeLessThanOrEqual(2);
+      await expect(page.getByTestId('typeset-button')).toBeVisible();
+    } finally { await cleanup(request, id); }
+  });
+});

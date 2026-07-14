@@ -14,10 +14,13 @@ test.describe('review mode', () => {
       await page.mouse.dblclick(line!.x + 30, line!.y + line!.height / 2);
       await expect.poll(async () => await page.evaluate(() => window.getSelection()?.toString())).toBe('PLACEHOLDER');
 
-      // add a comment + suggestion via the two prompts
-      let promptCount = 0;
-      page.on('dialog', (d) => { promptCount++; d.accept(promptCount === 1 ? 'Rename this' : 'REPLACED'); });
+      // add a comment + suggestion via the integrated composer (no browser dialog)
       await page.getByTestId('add-comment').click();
+      await expect(page.getByTestId('comment-composer')).toBeVisible();
+      await page.getByTestId('comment-body').fill('Rename this');
+      await page.getByTestId('comment-suggest-toggle').click();
+      await page.getByTestId('comment-suggestion').fill('REPLACED');
+      await page.getByTestId('comment-submit').click();
 
       // it lands in the Review tab
       await expect(page.getByTestId('review-panel')).toBeVisible({ timeout: 10_000 });
@@ -67,12 +70,12 @@ test.describe('real-time review', () => {
       await b.getByTestId('tab-review').click();
       await expect(b.getByTestId('review-panel')).toBeVisible();
 
-      // A selects the word "Shared" and adds a comment through the UI
+      // A selects the word "Shared" and adds a comment through the composer
       const line = await a.locator('.cm-line').first().boundingBox();
       await a.mouse.dblclick(line!.x + 20, line!.y + line!.height / 2);
-      let n = 0;
-      a.on('dialog', (d) => { n++; d.accept(n === 1 ? 'LIVE-COMMENT-XYZ' : ''); });
       await a.getByTestId('add-comment').click();
+      await a.getByTestId('comment-body').fill('LIVE-COMMENT-XYZ');
+      await a.getByTestId('comment-submit').click();
       await expect(a.getByTestId('review-panel')).toContainText('LIVE-COMMENT-XYZ', { timeout: 10_000 });
 
       // B, without reloading, receives the signal and re-fetches → sees the comment live

@@ -180,6 +180,12 @@
 .login__switch { width: 100%; justify-content: center; margin-top: 8px; color: var(--text-2); }
 .login__error { color: var(--error); font-size: 12.5px; margin: 2px 0 8px; }
 .login__info { color: var(--ok); font-size: 12.5px; margin: 2px 0 8px; }
+/* comment composer */
+.composer__quote { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--bg-inset); border-radius: 0 var(--radius-s) var(--radius-s) 0; color: var(--text-2); font-size: 12.5px; max-height: 84px; overflow-y: auto; white-space: pre-wrap; }
+.composer__body { width: 100%; min-height: 72px; resize: vertical; font-family: inherit; line-height: 1.5; margin-bottom: 8px; }
+.composer__suggest { padding-left: 0; color: var(--accent); }
+.composer__hint { font-size: 10px; opacity: 0.6; margin-left: 4px; }
+
 /* file tree directories */
 .tree__dir { color: var(--text); font-weight: 500; }
 .tree__chevron { display: inline-block; width: 12px; font-size: 9px; color: var(--text-3); transition: transform 0.12s ease; transform: rotate(0deg); }
@@ -407,7 +413,7 @@
 .tree__actions { display: flex; gap: 4px; padding: 6px 4px; border-top: 1px solid var(--hairline); }
 
 /* editor pane */
-.code-pane { flex: 1; position: relative; }
+.code-pane { flex: 1; min-height: 0; overflow: hidden; position: relative; }
 .code-pane .cm-editor { height: 100%; font-size: 13.5px; }
 .code-pane .cm-editor.cm-focused { outline: none; }
 .code-pane .cm-scroller { font-family: var(--font-mono); line-height: 1.55; }
