@@ -42,7 +42,8 @@ export default {
 
         const diagnose = async () => {
           const compile = papyr.project.lastCompile();
-          if (!compile || compile.ok) { papyr.toast('Typeset first — there are no errors to fix.', 'info'); return; }
+          if (!compile) { papyr.toast('Typeset the document first to check for errors.', 'info'); return; }
+          if (compile.ok) { papyr.toast('Your document compiles cleanly — no errors to fix.', 'ok'); return; }
           busy = true; error = ''; result = null; draw();
           try {
             result = await jfetch(`/api/projects/${papyr.project.id}/ai/fix`, {
@@ -94,10 +95,12 @@ export default {
 
           const compile = papyr.project.lastCompile();
           const hasErrors = compile && !compile.ok;
+          const hint = hasErrors ? 'Diagnose the current compile errors and apply fixes.'
+            : compile && compile.ok ? 'Your document compiles cleanly — nothing to fix right now. This tool fixes compile errors, not warnings.'
+            : 'Typeset the document; if it fails, come back here to diagnose and fix.';
 
           wrap.append(
-            h('p', { style: { color: 'var(--text-2)', fontSize: '12px', lineHeight: '1.5', margin: 0 } },
-              hasErrors ? 'Diagnose the current compile errors and apply fixes.' : 'Typeset the document; if it fails, come back here to diagnose and fix.'),
+            h('p', { style: { color: 'var(--text-2)', fontSize: '12px', lineHeight: '1.5', margin: 0 } }, hint),
             h('button', {
               class: 'btn btn--primary',
               style: { width: '100%', justifyContent: 'center' },
