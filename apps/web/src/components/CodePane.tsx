@@ -161,6 +161,12 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       url: `${proto}//${location.host}/collab`,
       name: docName,
       document: ydoc,
+      // When auth is enabled the server defines onAuthenticate, which makes
+      // Hocuspocus require a token before it loads the doc. The real credential
+      // is the HttpOnly session cookie (sent with the WS handshake and validated
+      // server-side); this token is just the non-empty trigger. Harmless when
+      // auth is off (no hook → ignored).
+      token: 'papyr-session',
     });
     const ytext = ydoc.getText('content');
     const user = localUser();

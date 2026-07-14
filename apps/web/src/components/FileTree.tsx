@@ -45,11 +45,9 @@ function buildTree(files: TreeEntry[]): Node[] {
   return root.children;
 }
 
-const FolderIcon = ({ open }: { open: boolean }) => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.75 }}>
-    {open
-      ? <path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5H5.7a1.5 1.5 0 0 0-1.43 1.05L2.2 12.5A1 1 0 0 1 1.5 11.8z" />
-      : <path d="M1.5 3.5A1.5 1.5 0 0 1 3 2h3l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5v7A1.5 1.5 0 0 1 13 13.5H3A1.5 1.5 0 0 1 1.5 12z" />}
+const FolderIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.65 }}>
+    <path d="M1.75 4c0-.97.78-1.75 1.75-1.75h2.19c.46 0 .9.18 1.24.51l.79.79h4.53c.97 0 1.75.78 1.75 1.75v6.19c0 .97-.78 1.75-1.75 1.75h-8.75c-.97 0-1.75-.78-1.75-1.75V4z" />
   </svg>
 );
 
@@ -95,7 +93,7 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
         <div key={node.path}>
           <button className="tree__item tree__dir" style={{ paddingLeft: pad }} onClick={() => toggle(node.path)} data-testid={`dir-${node.path}`} title={node.path}>
             <span className={`tree__chevron ${isOpen ? 'tree__chevron--open' : ''}`}>▸</span>
-            <span className="tree__icon"><FolderIcon open={isOpen} /></span>
+            <span className="tree__icon"><FolderIcon /></span>
             {node.name}
           </button>
           {isOpen && node.children.map((c) => renderNode(c, depth + 1))}

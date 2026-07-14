@@ -254,3 +254,17 @@ test.describe('plan metering', () => {
     await anon.close(); await ctx.close();
   });
 });
+
+test.describe('collab under auth', () => {
+  test('opening a file loads its content (collab socket authenticates)', async ({ page, request }) => {
+    const email = uniq();
+    await register(page, email);
+    const proj = await (await page.request.post('/api/projects', { data: { name: 'Collab Auth' } })).json();
+    await page.request.put(`/api/projects/${proj.id}/file`, { data: { branch: 'main', path: 'paper/chapters/five.tex', content: 'LOADED-UNDER-AUTH-42\n' } });
+    await page.goto(`/p/${proj.id}`);
+    await expect(page.locator('.cm-content')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('file-paper/chapters/five.tex').click();
+    // before the token fix this stayed blank (collab never authenticated)
+    await expect(page.locator('.cm-content')).toContainText('LOADED-UNDER-AUTH-42', { timeout: 15_000 });
+  });
+});
