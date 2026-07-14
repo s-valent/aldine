@@ -180,6 +180,20 @@
 .login__switch { width: 100%; justify-content: center; margin-top: 8px; color: var(--text-2); }
 .login__error { color: var(--error); font-size: 12.5px; margin: 2px 0 8px; }
 .login__info { color: var(--ok); font-size: 12.5px; margin: 2px 0 8px; }
+/* GitHub sync toolbar control */
+.gh-sync { display: flex; align-items: center; gap: 6px; }
+.gh-sync__counts { display: flex; gap: 6px; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* GitHub import repo list */
+.gh-repos { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.gh-repo { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; background: transparent; color: var(--text); padding: 9px 10px; border-radius: var(--radius-s); cursor: pointer; }
+.gh-repo:hover:not(:disabled) { background: var(--bg-hover); }
+.gh-repo:disabled { opacity: 0.5; cursor: default; }
+.gh-repo__main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.gh-repo__name { font-size: 13.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gh-repo__badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-3); border: 1px solid var(--hairline); border-radius: 999px; padding: 1px 7px; flex-shrink: 0; }
+.gh-repo__meta { font-size: 11.5px; color: var(--text-3); flex-shrink: 0; }
+
 .settings__row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 13.5px; }
 .settings__label { color: var(--text-2); }
 .user-chip__name { background: transparent; border: 0; padding: 0; cursor: pointer; color: var(--text); font: inherit; font-weight: 600; }

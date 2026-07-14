@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../components/Auth';
 import { IconDoc, IconLink, IconX } from '../components/Icons';
 import AccountSettings from '../components/AccountSettings';
+import GithubImport from '../components/GithubImport';
 import { friendlyDate } from '../util/dates';
 
 export default function Home() {
@@ -15,12 +16,20 @@ export default function Home() {
   const [template, setTemplate] = useState('article');
   const [sharing, setSharing] = useState<ProjectSummary | null>(null);
   const [showAccount, setShowAccount] = useState(false);
+  const [showGithub, setShowGithub] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
   const { authEnabled, user, setUser } = useAuth();
 
   const load = () => api.listProjects().then(setProjects).catch(() => setProjects([]));
   useEffect(() => { load(); }, []);
+  // returning from GitHub OAuth connect → reopen the import flow (now connected)
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('github') === 'connected') {
+      setShowGithub(true);
+      window.history.replaceState({}, '', location.pathname);
+    }
+  }, []);
   useEffect(() => { api.templates().then(setTemplates).catch(() => setTemplates([])); }, []);
 
   const create = async () => {
@@ -88,6 +97,9 @@ export default function Home() {
               <input type="file" accept=".zip" hidden data-testid="import-input"
                 onChange={async (e) => { if (e.target.files?.[0]) await importZip(e.target.files[0]); e.target.value = ''; }} />
             </label>
+            <button className="btn" onClick={() => setShowGithub(true)} data-testid="new-from-github">
+              From GitHub
+            </button>
             <button className="btn btn--primary" onClick={() => setCreating(true)} data-testid="new-project">
               New project
             </button>
@@ -136,6 +148,9 @@ export default function Home() {
       )}
       {showAccount && user && (
         <AccountSettings user={user} onClose={() => setShowAccount(false)} />
+      )}
+      {showGithub && (
+        <GithubImport onClose={() => setShowGithub(false)} onImported={(id) => navigate(`/p/${id}`)} />
       )}
 
       {creating && (

@@ -22,10 +22,10 @@ export interface OAuthProvider {
 const github: OAuthProvider = {
   id: 'github',
   label: 'GitHub',
-  configured: () => !!(process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET),
+  configured: () => !!(process.env.GITHUB_LOGIN_CLIENT_ID && process.env.GITHUB_LOGIN_CLIENT_SECRET),
   authorizeUrl(state, redirectUri) {
     const p = new URLSearchParams({
-      client_id: process.env.GITHUB_OAUTH_CLIENT_ID!,
+      client_id: process.env.GITHUB_LOGIN_CLIENT_ID!,
       scope: 'read:user user:email',
       state,
       redirect_uri: redirectUri,
@@ -37,8 +37,8 @@ const github: OAuthProvider = {
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       body: JSON.stringify({
-        client_id: process.env.GITHUB_OAUTH_CLIENT_ID,
-        client_secret: process.env.GITHUB_OAUTH_CLIENT_SECRET,
+        client_id: process.env.GITHUB_LOGIN_CLIENT_ID,
+        client_secret: process.env.GITHUB_LOGIN_CLIENT_SECRET,
         code,
         redirect_uri: redirectUri,
       }),

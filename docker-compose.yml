@@ -21,10 +21,14 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-}
       # PAPYR_SSO_ONLY=1 disables password sign-in entirely (SSO only; no SMTP needed).
       PAPYR_SSO_ONLY: ${PAPYR_SSO_ONLY:-}
-      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
-      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      # GitHub login (SSO) — separate from GitHub sync below.
+      GITHUB_LOGIN_CLIENT_ID: ${GITHUB_LOGIN_CLIENT_ID:-}
+      GITHUB_LOGIN_CLIENT_SECRET: ${GITHUB_LOGIN_CLIENT_SECRET:-}
+      # GitHub sync (repo import/push/pull) — OAuth app with repo scope.
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
       # Optional error tracking.
       SENTRY_DSN: ${SENTRY_DSN:-}

@@ -15,6 +15,7 @@ import { IconChevronLeft } from '../components/Icons';
 import CommandPalette, { Command } from '../components/CommandPalette';
 import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras';
 import { useCommentSignal } from '../editor/commentSignal';
+import GithubSync from '../components/GithubSync';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -326,6 +327,9 @@ export default function Editor() {
           onChanged={() => { loadProject(); loadFiles(); }}
         />
         <div className="toolbar__spacer" />
+        {project.github && (
+          <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
+        )}
         <button className="btn" onClick={addComment} data-testid="add-comment" title="Comment on the selected text">Comment</button>
         <Presence users={users} />
         <div className="toolbar__group">

@@ -640,6 +640,32 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
+  // OAuth "Connect with GitHub" (repo scope) — links the signed-in user's account.
+  app.get('/api/github/oauth', async (req, reply) => {
+    if (!github.oauthEnabled()) return reply.code(404).send({ error: 'GitHub OAuth is not configured' });
+    if (auth.AUTH_ENABLED && !reqUser(req)) return reply.code(401).send({ error: 'Sign in required' });
+    const state = crypto.randomBytes(12).toString('hex');
+    reply.header('set-cookie', `papyr_gh_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`);
+    return reply.redirect(github.connectUrl(state, `${publicBase(req)}/api/github/oauth/callback`));
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string } }>('/api/github/oauth/callback', async (req, reply) => {
+    if (!github.oauthEnabled()) return reply.code(404).send({ error: 'GitHub OAuth is not configured' });
+    const cookies = auth.parseCookies(req.headers.cookie);
+    if (!req.query.code || !req.query.state || req.query.state !== cookies.papyr_gh_state) {
+      return reply.code(400).send({ error: 'OAuth state mismatch — please try again' });
+    }
+    try {
+      const token = await github.exchangeCode(req.query.code, `${publicBase(req)}/api/github/oauth/callback`);
+      const me = await github.whoami(token);
+      await github.setConnection(ghUserId(req), { token, login: me.login, name: me.name });
+      reply.header('set-cookie', 'papyr_gh_state=; Path=/; Max-Age=0');
+      return reply.redirect('/?github=connected');
+    } catch (err: any) {
+      return reply.code(400).send({ error: `GitHub connect failed: ${err.message}` });
+    }
+  });
+
   app.get('/api/github/repos', async (req, reply) => {
     const conn = await github.getConnection(ghUserId(req));
     if (!conn) return reply.code(400).send({ error: 'GitHub is not connected' });

@@ -13,7 +13,7 @@ export interface Repo { fullName: string; name: string; owner: string; private: 
 
 /** Whether "Connect with GitHub" (OAuth, repo scope) is configured. PAT connect always works. */
 export function oauthEnabled(): boolean {
-  return !!(process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET);
+  return !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
 }
 
 export async function getConnection(userId: string): Promise<GithubConnection | null> {
@@ -44,6 +44,29 @@ async function api(token: string, path: string, init: RequestInit = {}): Promise
     throw new Error(`GitHub API ${res.status}: ${body.slice(0, 200)}`);
   }
   return res.status === 204 ? null : res.json();
+}
+
+/** Exchange an OAuth authorization code (repo scope) for an access token. */
+export async function exchangeCode(code: string, redirectUri: string): Promise<string> {
+  const res = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      client_id: process.env.GITHUB_CLIENT_ID,
+      client_secret: process.env.GITHUB_CLIENT_SECRET,
+      code,
+      redirect_uri: redirectUri,
+    }),
+  });
+  const tok = (await res.json()) as { access_token?: string; error_description?: string };
+  if (!tok.access_token) throw new Error(tok.error_description || 'no access token');
+  return tok.access_token;
+}
+
+/** Authorize URL for connecting a GitHub account with repo scope. */
+export function connectUrl(state: string, redirectUri: string): string {
+  const p = new URLSearchParams({ client_id: process.env.GITHUB_CLIENT_ID!, scope: 'repo', state, redirect_uri: redirectUri });
+  return `https://github.com/login/oauth/authorize?${p}`;
 }
 
 /** Validate a token and return the authenticated user. */
