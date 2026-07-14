@@ -56,12 +56,29 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
   const [name, setName] = useState('');
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  // dot-directories (.git is already excluded server-side; .github, .devcontainer, …) start collapsed
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(files.filter((f) => f.type === 'dir' && f.path.split('/').pop()!.startsWith('.')).map((f) => f.path)));
+  const [sourceOnly, setSourceOnly] = useState(false);
+  // User expand/collapse overrides. Default: dot-directories (.github, .devcontainer, …)
+  // start collapsed; everything else expanded. This overlay avoids depending on
+  // `files` at mount (which is empty on first render).
+  const [override, setOverride] = useState<Map<string, boolean>>(new Map());
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const tree = useMemo(() => buildTree(files), [files]);
-  const toggle = (p: string) => setCollapsed((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  const isDot = (p: string) => p.split('/').pop()!.startsWith('.');
+  const isOpen = (p: string) => (override.has(p) ? override.get(p)! : !isDot(p));
+  const toggle = (p: string) => setOverride((m) => new Map(m).set(p, !isOpen(p)));
+
+  const tree = useMemo(() => {
+    const full = buildTree(files);
+    if (!sourceOnly) return full;
+    // keep source files + any directory that (recursively) contains one
+    const SOURCE = /\.(tex|bib|cls|bbx|cbx|sty|bst|png|jpe?g|pdf|eps|svg|tikz)$/i;
+    const prune = (nodes: Node[]): Node[] => nodes.map((n) => {
+      if (n.type === 'file') return SOURCE.test(n.name) ? n : null;
+      const kids = prune(n.children);
+      return kids.length ? { ...n, children: kids } : null;
+    }).filter(Boolean) as Node[];
+    return prune(full);
+  }, [files, sourceOnly]);
 
   const submit = () => {
     const n = name.trim();
@@ -88,15 +105,15 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
   const renderNode = (node: Node, depth: number): JSX.Element => {
     const pad = 8 + depth * 13;
     if (node.type === 'dir') {
-      const isOpen = !collapsed.has(node.path);
+      const open = isOpen(node.path);
       return (
         <div key={node.path}>
           <button className="tree__item tree__dir" style={{ paddingLeft: pad }} onClick={() => toggle(node.path)} data-testid={`dir-${node.path}`} title={node.path}>
-            <span className={`tree__chevron ${isOpen ? 'tree__chevron--open' : ''}`}>▸</span>
+            <span className={`tree__chevron ${open ? 'tree__chevron--open' : ''}`}>▸</span>
             <span className="tree__icon"><FolderIcon /></span>
             {node.name}
           </button>
-          {isOpen && node.children.map((c) => renderNode(c, depth + 1))}
+          {open && node.children.map((c) => renderNode(c, depth + 1))}
         </div>
       );
     }
@@ -138,6 +155,7 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
         <div className="tree__actions">
           <button className="btn btn--ghost btn--small" onClick={() => setAdding(true)} data-testid="new-file">+ New file</button>
           <button className="btn btn--ghost btn--small" onClick={() => fileInput.current?.click()} data-testid="upload-file">↑ Upload</button>
+          <button className="btn btn--ghost btn--small" onClick={() => setSourceOnly((v) => !v)} data-testid="source-only" title="Show only LaTeX source & images">{sourceOnly ? '☰ All' : '⌇ Source'}</button>
           <input ref={fileInput} type="file" multiple hidden data-testid="upload-input"
             onChange={async (e) => { if (e.target.files?.length) await uploadFiles(e.target.files); e.target.value = ''; }} />
         </div>

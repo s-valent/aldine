@@ -50,3 +50,22 @@ test.describe('editor layout', () => {
     } finally { await cleanup(request, id); }
   });
 });
+
+test.describe('file tree clutter', () => {
+  test('dot-dirs collapse by default and source-only hides non-source', async ({ page, request }) => {
+    const id = await createProject(request, 'Clutter');
+    try {
+      for (const p of ['paper/main.tex', '.github/workflows/ci.yml', 'Makefile', 'README.md'])
+        await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: p, content: 'x\n' } });
+      await openProject(page, id);
+      await expect(page.getByTestId('dir-.github')).toBeVisible();
+      // collapsed by default → the nested file is not shown
+      await expect(page.getByTestId('file-.github/workflows/ci.yml')).toHaveCount(0);
+      // source-only hides Makefile/README
+      await expect(page.getByTestId('file-Makefile')).toBeVisible();
+      await page.getByTestId('source-only').click();
+      await expect(page.getByTestId('file-Makefile')).toHaveCount(0);
+      await expect(page.getByTestId('file-paper/main.tex')).toBeVisible();
+    } finally { await cleanup(request, id); }
+  });
+});

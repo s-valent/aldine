@@ -11,6 +11,12 @@ RUN tlmgr install newtx txfonts fontaxes lastpage titlesec xstring fancyhdr clev
     xstring fancyhdr cleveref enumitem wrapfig threeparttable placeins multirow \
     doclicense algorithmicx xurl sttools acro translations
 
+# Restricted (partial) shell-escape: allow only the vetted whitelist (epstopdf,
+# kpsewhich, bibtex, …) so EPS auto-conversion works and the epstopdf warning
+# goes away — but arbitrary \write18 commands stay blocked. Same posture as
+# Overleaf/TeX Live default; safe alongside the no-egress + dropped-caps sandbox.
+RUN tlmgr conf texmf shell_escape p
+
 WORKDIR /srv
 COPY server.js .
 

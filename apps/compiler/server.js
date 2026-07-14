@@ -9,8 +9,8 @@
  *
  * The compiler shares the projects volume (read) and an output cache volume
  * (write) with the app server, so no file transfer is needed.
- * Security: -no-shell-escape, nonstopmode, wall-clock timeout, output confined
- * to OUT_DIR/<hash>.
+ * Security: restricted shell-escape (whitelist only), nonstopmode, wall-clock
+ * timeout, output confined to OUT_DIR/<hash>.
  */
 const http = require('http');
 const { spawn } = require('child_process');
@@ -135,7 +135,8 @@ async function compileInner(body) {
     '-interaction=nonstopmode',
     '-halt-on-error',
     '-file-line-error',
-    '-no-shell-escape',
+    // no -no-shell-escape: the image sets texmf shell_escape=p (restricted),
+    // so only whitelisted programs (epstopdf, kpsewhich, bibtex, …) run.
     '-synctex=1',
     '-cd', // chdir to the root file's directory before compiling
     `-outdir=${OUT_SUBDIR}`,
