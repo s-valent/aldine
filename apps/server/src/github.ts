@@ -1,0 +1,90 @@
+import { db } from './db/index.js';
+
+/**
+ * GitHub integration: per-user access token (stored in the secrets DataStore,
+ * never in the compiler-visible projects dir) + a thin REST client. The token
+ * comes from either an OAuth "connect" with repo scope or a pasted PAT.
+ */
+
+const API = process.env.GITHUB_API_BASE || 'https://api.github.com';
+
+export interface GithubConnection { token: string; login: string; name?: string }
+export interface Repo { fullName: string; name: string; owner: string; private: boolean; defaultBranch: string; cloneUrl: string; updatedAt: string }
+
+/** Whether "Connect with GitHub" (OAuth, repo scope) is configured. PAT connect always works. */
+export function oauthEnabled(): boolean {
+  return !!(process.env.GITHUB_OAUTH_CLIENT_ID && process.env.GITHUB_OAUTH_CLIENT_SECRET);
+}
+
+export async function getConnection(userId: string): Promise<GithubConnection | null> {
+  const c = await db().getConnection(userId, 'github');
+  return c && typeof c.token === 'string' ? (c as unknown as GithubConnection) : null;
+}
+export function setConnection(userId: string, conn: GithubConnection): Promise<void> {
+  return db().setConnection(userId, 'github', conn as unknown as Record<string, unknown>);
+}
+export function disconnect(userId: string): Promise<void> {
+  return db().deleteConnection(userId, 'github');
+}
+
+async function api(token: string, path: string, init: RequestInit = {}): Promise<any> {
+  const res = await fetch(`${API}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: 'application/vnd.github+json',
+      'user-agent': 'papyr',
+      'x-github-api-version': '2022-11-28',
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`GitHub API ${res.status}: ${body.slice(0, 200)}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+/** Validate a token and return the authenticated user. */
+export async function whoami(token: string): Promise<{ login: string; name?: string }> {
+  const u = await api(token, '/user');
+  return { login: u.login, name: u.name || u.login };
+}
+
+function mapRepo(r: any): Repo {
+  return {
+    fullName: r.full_name,
+    name: r.name,
+    owner: r.owner?.login || r.full_name?.split('/')[0],
+    private: !!r.private,
+    defaultBranch: r.default_branch || 'main',
+    cloneUrl: r.clone_url,
+    updatedAt: r.updated_at || r.pushed_at || '',
+  };
+}
+
+/** Repos the user can push to, most-recently-updated first. */
+export async function listRepos(token: string): Promise<Repo[]> {
+  const list = (await api(token, '/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member')) as any[];
+  return (list || []).map(mapRepo);
+}
+
+export async function getRepo(token: string, owner: string, repo: string): Promise<Repo> {
+  return mapRepo(await api(token, `/repos/${owner}/${repo}`));
+}
+
+/** Create a new repo under the authenticated user. */
+export async function createRepo(token: string, name: string, isPrivate = true): Promise<Repo> {
+  return mapRepo(await api(token, '/user/repos', { method: 'POST', body: JSON.stringify({ name, private: isPrivate, auto_init: false }) }));
+}
+
+/**
+ * Inject the token into an https clone URL for a git network op. Non-http URLs
+ * (e.g. a local path in tests) are returned unchanged. The result is used
+ * inline and never written to .git/config.
+ */
+export function tokenUrl(cloneUrl: string, token: string): string {
+  if (!/^https?:\/\//i.test(cloneUrl)) return cloneUrl;
+  return cloneUrl.replace(/^(https?:\/\/)/i, `$1x-access-token:${token}@`);
+}

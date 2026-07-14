@@ -7,6 +7,7 @@ import * as gitops from './gitops.js';
 import * as zotero from './zotero.js';
 import { compileProject, synctexLookup } from './compile.js';
 import * as usage from './usage.js';
+import * as github from './github.js';
 import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc } from './collab.js';
 import { parseBib, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
@@ -19,7 +20,7 @@ import * as auth from './auth.js';
 import * as oauth from './oauth.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
 import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
-import { safeJoin, isTextFile } from './util.js';
+import { safeJoin, isTextFile, newId } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
 
@@ -610,6 +611,100 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string; cid: string } }>('/api/projects/:id/comments/:cid', async (req) => {
     await comments.deleteComment(req.params.id, req.params.cid);
     return { ok: true };
+  });
+
+  // ---------- GitHub integration (per-user connection) ----------
+  // In no-auth (single-tenant) mode there's no user, so connections hang off a
+  // fixed 'local' id. github.enabled reports whether OAuth connect is available.
+  const ghUserId = (req: any) => reqUser(req)?.id || 'local';
+
+  app.get('/api/github/status', async (req) => {
+    const conn = await github.getConnection(ghUserId(req));
+    return { connected: !!conn, login: conn?.login, oauth: github.oauthEnabled() };
+  });
+
+  app.post<{ Body: { token?: string } }>('/api/github/connect', async (req, reply) => {
+    const token = (req.body?.token || '').trim();
+    if (!token) return reply.code(400).send({ error: 'A GitHub token is required' });
+    try {
+      const me = await github.whoami(token);
+      await github.setConnection(ghUserId(req), { token, login: me.login, name: me.name });
+      return { connected: true, login: me.login };
+    } catch {
+      return reply.code(400).send({ error: 'That token was rejected by GitHub. Check it has repo scope.' });
+    }
+  });
+
+  app.post('/api/github/disconnect', async (req) => {
+    await github.disconnect(ghUserId(req));
+    return { ok: true };
+  });
+
+  app.get('/api/github/repos', async (req, reply) => {
+    const conn = await github.getConnection(ghUserId(req));
+    if (!conn) return reply.code(400).send({ error: 'GitHub is not connected' });
+    try { return await github.listRepos(conn.token); }
+    catch (err: any) { return reply.code(502).send({ error: err.message }); }
+  });
+
+  // Import a GitHub repo as a new project (the primary create-project flow).
+  app.post<{ Body: { fullName?: string } }>('/api/github/import', async (req, reply) => {
+    if (auth.AUTH_ENABLED && !reqUser(req)) return reply.code(401).send({ error: 'Sign in required' });
+    const conn = await github.getConnection(ghUserId(req));
+    if (!conn) return reply.code(400).send({ error: 'Connect GitHub first' });
+    const [owner, repo] = (req.body?.fullName || '').trim().split('/');
+    if (!owner || !repo) return reply.code(400).send({ error: 'Expected "owner/repo"' });
+    let info: github.Repo;
+    try { info = await github.getRepo(conn.token, owner, repo); }
+    catch (err: any) { return reply.code(400).send({ error: `Repo not found or no access: ${err.message}` }); }
+    const id = newId();
+    try {
+      const { remoteBranch } = await gitops.cloneRepo(id, github.tokenUrl(info.cloneUrl, conn.token));
+      const files = store.listFiles(id, 'main').filter((f) => f.type === 'file').map((f) => f.path);
+      const rootFile = files.find((f) => f === 'main.tex') || files.find((f) => f.endsWith('.tex')) || 'main.tex';
+      const meta: store.ProjectMeta = {
+        id, name: info.name, rootFile, engine: 'pdf', createdAt: new Date().toISOString(),
+        github: { fullName: info.fullName, owner: info.owner, repo: info.name, remoteBranch, cloneUrl: info.cloneUrl, connectedBy: ghUserId(req) },
+      };
+      const ownerId = reqUser(req)?.id;
+      if (ownerId) { meta.ownerId = ownerId; meta.share = { mode: 'private', collaborators: [] }; }
+      await store.writeMeta(meta);
+      return publicMeta(meta, reqUser(req));
+    } catch (err: any) {
+      fs.rmSync(store.repoDir(id), { recursive: true, force: true });
+      return reply.code(400).send({ error: `Import failed: ${err.message}` });
+    }
+  });
+
+  // Sync a linked project with its GitHub remote (uses the acting user's token).
+  const linkedRemote = async (req: any, reply: any) => {
+    const meta = await store.readMeta(req.params.id);
+    if (!meta.github) { reply.code(400).send({ error: 'This project is not linked to GitHub' }); return null; }
+    const conn = await github.getConnection(ghUserId(req));
+    if (!conn) { reply.code(400).send({ error: 'Connect GitHub to sync' }); return null; }
+    return { meta, url: github.tokenUrl(meta.github.cloneUrl, conn.token), remoteBranch: meta.github.remoteBranch };
+  };
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/github/status', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    try { return { linked: true, ...link.meta.github, ...(await gitops.remoteStatus(req.params.id, link.remoteBranch, link.url)) }; }
+    catch (err: any) { return reply.code(502).send({ error: err.message }); }
+  });
+
+  app.post<{ Params: { id: string } }>('/api/projects/:id/github/push', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    await gitops.commitAll(req.params.id, 'main', 'papyr: sync to GitHub', reqUser(req)?.name).catch(() => {});
+    try { await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url); return { ok: true }; }
+    catch (err: any) { return reply.code(400).send({ error: `Push failed: ${err.message}` }); }
+  });
+
+  app.post<{ Params: { id: string } }>('/api/projects/:id/github/pull', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    await gitops.commitAll(req.params.id, 'main', 'papyr: local changes before pull', reqUser(req)?.name).catch(() => {});
+    try {
+      const result = await gitops.pullFromRemote(req.params.id, link.remoteBranch, link.url);
+      return result.ok ? { ok: true } : reply.code(409).send({ error: 'Merge conflict — resolve locally', conflicts: result.conflicts });
+    } catch (err: any) { return reply.code(400).send({ error: `Pull failed: ${err.message}` }); }
   });
 
   // ---------- AI error fix ----------

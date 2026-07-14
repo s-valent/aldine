@@ -58,6 +58,10 @@ export class PgStore implements DataStore {
         user_id text NOT NULL, month text NOT NULL, seconds double precision NOT NULL DEFAULT 0,
         PRIMARY KEY (user_id, month)
       );
+      CREATE TABLE IF NOT EXISTS connections (
+        user_id text NOT NULL, provider text NOT NULL, data jsonb NOT NULL,
+        PRIMARY KEY (user_id, provider)
+      );
     `);
   }
   async close(): Promise<void> { await this.pool?.end(); }
@@ -152,5 +156,21 @@ export class PgStore implements DataStore {
        ON CONFLICT(user_id,month) DO UPDATE SET seconds = usage.seconds + EXCLUDED.seconds`,
       [userId, month, seconds],
     );
+  }
+
+  // ---- connections ----
+  async getConnection(userId: string, provider: string) {
+    const { rows } = await this.pool.query(`SELECT data FROM connections WHERE user_id=$1 AND provider=$2`, [userId, provider]);
+    return rows[0] ? (rows[0].data as Record<string, unknown>) : null;
+  }
+  async setConnection(userId: string, provider: string, data: Record<string, unknown>) {
+    await this.pool.query(
+      `INSERT INTO connections(user_id,provider,data) VALUES($1,$2,$3)
+       ON CONFLICT(user_id,provider) DO UPDATE SET data=EXCLUDED.data`,
+      [userId, provider, JSON.stringify(data)],
+    );
+  }
+  async deleteConnection(userId: string, provider: string) {
+    await this.pool.query(`DELETE FROM connections WHERE user_id=$1 AND provider=$2`, [userId, provider]);
   }
 }

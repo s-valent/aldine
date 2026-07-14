@@ -19,6 +19,7 @@ export class JsonStore implements DataStore {
   private sessionsPath: string;
   private resetsPath: string;
   private usagePath: string;
+  private connectionsPath: string;
   private metaDir: string;
   private commentsDir: string;
 
@@ -27,6 +28,7 @@ export class JsonStore implements DataStore {
     this.sessionsPath = path.join(metaRoot, 'sessions.json');
     this.resetsPath = path.join(metaRoot, 'resets.json');
     this.usagePath = path.join(metaRoot, 'usage.json');
+    this.connectionsPath = path.join(metaRoot, 'connections.json');
     this.metaDir = path.join(metaRoot, 'meta');
     this.commentsDir = path.join(metaRoot, 'comments');
   }
@@ -98,6 +100,19 @@ export class JsonStore implements DataStore {
   private commentPath(id: string) { if (!PROJECT_ID_RE.test(id)) throw new Error('bad project id'); return path.join(this.commentsDir, `${id}.json`); }
   async loadComments(projectId: string) { try { return JSON.parse(fs.readFileSync(this.commentPath(projectId), 'utf8')) as Comment[]; } catch { return []; } }
   async saveComments(projectId: string, list: Comment[]) { this.write(this.commentPath(projectId), list); }
+
+  // ---- connections ----
+  private connections() { return this.read<Record<string, Record<string, Record<string, unknown>>>>(this.connectionsPath, {}); }
+  async getConnection(userId: string, provider: string) { return this.connections()[userId]?.[provider] || null; }
+  async setConnection(userId: string, provider: string, data: Record<string, unknown>) {
+    const c = this.connections();
+    (c[userId] ||= {})[provider] = data;
+    this.write(this.connectionsPath, c);
+  }
+  async deleteConnection(userId: string, provider: string) {
+    const c = this.connections();
+    if (c[userId]?.[provider]) { delete c[userId][provider]; this.write(this.connectionsPath, c); }
+  }
 
   // ---- usage ----
   private usage() { return this.read<Record<string, { month: string; seconds: number }>>(this.usagePath, {}); }

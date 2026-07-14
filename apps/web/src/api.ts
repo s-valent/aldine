@@ -11,7 +11,11 @@ export interface ProjectSummary {
   isOwner?: boolean;
   share?: { mode: 'private' | 'link'; collaborators: string[] } | null;
   zotero: { libraryPrefix: string; collectionKey?: string; bibFile: string; lastSyncedAt?: string; username?: string } | null;
+  github?: { fullName: string; owner: string; repo: string; remoteBranch: string; cloneUrl: string } | null;
 }
+
+export interface GithubRepo { fullName: string; name: string; owner: string; private: boolean; defaultBranch: string; cloneUrl: string; updatedAt: string }
+export interface GithubStatus { connected: boolean; login?: string; oauth: boolean }
 
 export interface BranchInfo { name: string; head: string; message: string; date: string }
 export interface ProjectDetail extends ProjectSummary { branches: BranchInfo[] }
@@ -100,6 +104,16 @@ export const api = {
     req<{ committed: boolean; hash?: string }>(`/api/projects/${id}/commit`, { method: 'POST', body: JSON.stringify({ branch, message, author }) }),
   log: (id: string, branch: string) => req<LogEntry[]>(`/api/projects/${id}/log?branch=${encodeURIComponent(branch)}`),
   commitDiff: (id: string, hash: string) => req<{ patch: string; stat: string }>(`/api/projects/${id}/commit/${hash}/diff`),
+
+  // GitHub sync
+  githubStatus: () => req<GithubStatus>('/api/github/status'),
+  githubConnect: (token: string) => req<{ connected: boolean; login: string }>('/api/github/connect', { method: 'POST', body: JSON.stringify({ token }) }),
+  githubDisconnect: () => req<{ ok: boolean }>('/api/github/disconnect', { method: 'POST' }),
+  githubRepos: () => req<GithubRepo[]>('/api/github/repos'),
+  githubImport: (fullName: string) => req<ProjectSummary>('/api/github/import', { method: 'POST', body: JSON.stringify({ fullName }) }),
+  projectGithubStatus: (id: string) => req<{ linked: boolean; ahead: number; behind: number; fullName: string }>(`/api/projects/${id}/github/status`),
+  githubPush: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/push`, { method: 'POST' }),
+  githubPull: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/pull`, { method: 'POST' }),
   merge: (id: string, from: string, into: string, author?: string) =>
     req<{ ok: boolean; conflicts?: string[]; message?: string }>(`/api/projects/${id}/merge`, { method: 'POST', body: JSON.stringify({ from, into, author }) }),
 

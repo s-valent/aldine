@@ -108,8 +108,12 @@ export function stripCreds(url: string): string {
   return url.replace(/(https?:\/\/)[^@/]+@/i, '$1');
 }
 
-/** Clone a remote into a (new) project's repo dir, then scrub the token from origin. */
-export async function cloneRepo(id: string, tokenUrl: string): Promise<{ defaultBranch: string }> {
+/**
+ * Clone a remote into a (new) project's repo dir. Papyr is main-centric, so the
+ * checked-out default branch is renamed to `main` locally; the original name is
+ * returned as `remoteBranch` for push/pull mapping. The token is scrubbed from origin.
+ */
+export async function cloneRepo(id: string, tokenUrl: string): Promise<{ remoteBranch: string }> {
   const dir = repoDir(id);
   if (fs.existsSync(dir)) throw new Error('project already exists');
   fs.mkdirSync(projectsDir, { recursive: true });
@@ -118,32 +122,32 @@ export async function cloneRepo(id: string, tokenUrl: string): Promise<{ default
   await g.remote(['set-url', 'origin', stripCreds(tokenUrl)]); // never persist the token
   await g.addConfig('user.name', 'Papyr');
   await g.addConfig('user.email', 'papyr@localhost');
-  const defaultBranch = (await g.raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'main';
-  return { defaultBranch };
+  const remoteBranch = (await g.raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'main';
+  if (remoteBranch !== 'main') await g.raw(['branch', '-m', 'main']);
+  return { remoteBranch };
 }
 
-/** Push a branch to the remote (same name). Assumes commits already made. */
-export async function pushBranch(id: string, branch: string, tokenUrl: string): Promise<void> {
-  if (!BRANCH_RE.test(branch)) throw new Error('bad branch name');
-  await git(repoDir(id)).raw(['push', tokenUrl, `refs/heads/${branch}:refs/heads/${branch}`]);
+/** Push local `main` to the remote branch. Assumes commits already made. */
+export async function pushToRemote(id: string, remoteBranch: string, tokenUrl: string): Promise<void> {
+  if (!BRANCH_RE.test(remoteBranch)) throw new Error('bad branch name');
+  await git(repoDir(id)).raw(['push', tokenUrl, `refs/heads/main:refs/heads/${remoteBranch}`]);
 }
 
-/** How many commits the local branch is ahead/behind the remote (fetches first). */
-export async function syncStatus(id: string, branch: string, tokenUrl: string): Promise<{ ahead: number; behind: number }> {
-  if (!BRANCH_RE.test(branch)) throw new Error('bad branch name');
+/** How many commits local `main` is ahead/behind the remote branch (fetches first). */
+export async function remoteStatus(id: string, remoteBranch: string, tokenUrl: string): Promise<{ ahead: number; behind: number }> {
+  if (!BRANCH_RE.test(remoteBranch)) throw new Error('bad branch name');
   const g = git(repoDir(id));
-  await g.raw(['fetch', tokenUrl, branch]);
-  const ahead = Number((await g.raw(['rev-list', '--count', `FETCH_HEAD..refs/heads/${branch}`])).trim()) || 0;
-  const behind = Number((await g.raw(['rev-list', '--count', `refs/heads/${branch}..FETCH_HEAD`])).trim()) || 0;
+  await g.raw(['fetch', tokenUrl, remoteBranch]);
+  const ahead = Number((await g.raw(['rev-list', '--count', 'FETCH_HEAD..refs/heads/main'])).trim()) || 0;
+  const behind = Number((await g.raw(['rev-list', '--count', 'refs/heads/main..FETCH_HEAD'])).trim()) || 0;
   return { ahead, behind };
 }
 
-/** Pull (fetch + merge) the remote branch into the local branch's worktree. Reports conflicts. */
-export async function pullBranch(id: string, branch: string, tokenUrl: string): Promise<MergeResult> {
-  if (!BRANCH_RE.test(branch)) throw new Error('bad branch name');
-  const dir = await ensureWorktree(id, branch);
-  const g = git(dir);
-  await g.raw(['fetch', tokenUrl, branch]);
+/** Pull (fetch + merge) the remote branch into local `main`. Reports conflicts. */
+export async function pullFromRemote(id: string, remoteBranch: string, tokenUrl: string): Promise<MergeResult> {
+  if (!BRANCH_RE.test(remoteBranch)) throw new Error('bad branch name');
+  const g = git(repoDir(id));
+  await g.raw(['fetch', tokenUrl, remoteBranch]);
   try {
     await g.raw(['merge', '--no-edit', 'FETCH_HEAD']);
     return { ok: true };

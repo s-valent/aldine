@@ -49,6 +49,15 @@ export interface ProjectMeta {
     bibFile: string;
     lastSyncedAt?: string;
   };
+  /** GitHub remote link (present when the project was imported from / pushed to GitHub). */
+  github?: {
+    fullName: string;   // owner/repo
+    owner: string;
+    repo: string;
+    remoteBranch: string; // the GitHub branch that local `main` maps to
+    cloneUrl: string;     // credential-free https URL
+    connectedBy?: string; // user id whose token created the link (for reference)
+  };
 }
 
 export interface SessionRow { userId: string; exp: number }
@@ -93,4 +102,10 @@ export interface DataStore {
   // compile-time usage metering: seconds consumed per (user, month YYYY-MM)
   getUsageSeconds(userId: string, month: string): Promise<number>;
   addUsageSeconds(userId: string, month: string, seconds: number): Promise<void>;
+
+  // per-user external connections (e.g. a GitHub access token). Secrets — kept
+  // in the secrets store, never in the compiler-visible projects dir.
+  getConnection(userId: string, provider: string): Promise<Record<string, unknown> | null>;
+  setConnection(userId: string, provider: string, data: Record<string, unknown>): Promise<void>;
+  deleteConnection(userId: string, provider: string): Promise<void>;
 }
