@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { worktreesDir } from './config.js';
+import { worktreesDir, projectsDir } from './config.js';
 import { repoDir, branchDir, git } from './store.js';
 import { BRANCH_RE } from './util.js';
 
@@ -96,6 +96,62 @@ export async function commitDiff(id: string, hash: string): Promise<{ patch: str
   const patch = await g.raw(['show', hash, '--no-color', '--pretty=format:', '--']);
   const stat = await g.raw(['show', hash, '--no-color', '--stat', '--pretty=format:', '--']);
   return { patch: patch.replace(/^\n+/, ''), stat: stat.replace(/^\n+/, '') };
+}
+
+// ---------- remote sync (GitHub) ----------
+// SECURITY: the projects dir is shared with the compiler, so the auth token must
+// never land in .git/config. We pass a tokenized URL inline per network op and
+// keep only a credential-free URL as `origin`.
+
+/** Strip any `user:token@` credentials from an http(s) URL. */
+export function stripCreds(url: string): string {
+  return url.replace(/(https?:\/\/)[^@/]+@/i, '$1');
+}
+
+/** Clone a remote into a (new) project's repo dir, then scrub the token from origin. */
+export async function cloneRepo(id: string, tokenUrl: string): Promise<{ defaultBranch: string }> {
+  const dir = repoDir(id);
+  if (fs.existsSync(dir)) throw new Error('project already exists');
+  fs.mkdirSync(projectsDir, { recursive: true });
+  await git(projectsDir).clone(tokenUrl, dir, ['--no-single-branch']);
+  const g = git(dir);
+  await g.remote(['set-url', 'origin', stripCreds(tokenUrl)]); // never persist the token
+  await g.addConfig('user.name', 'Papyr');
+  await g.addConfig('user.email', 'papyr@localhost');
+  const defaultBranch = (await g.raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'main';
+  return { defaultBranch };
+}
+
+/** Push a branch to the remote (same name). Assumes commits already made. */
+export async function pushBranch(id: string, branch: string, tokenUrl: string): Promise<void> {
+  if (!BRANCH_RE.test(branch)) throw new Error('bad branch name');
+  await git(repoDir(id)).raw(['push', tokenUrl, `refs/heads/${branch}:refs/heads/${branch}`]);
+}
+
+/** How many commits the local branch is ahead/behind the remote (fetches first). */
+export async function syncStatus(id: string, branch: string, tokenUrl: string): Promise<{ ahead: number; behind: number }> {
+  if (!BRANCH_RE.test(branch)) throw new Error('bad branch name');
+  const g = git(repoDir(id));
+  await g.raw(['fetch', tokenUrl, branch]);
+  const ahead = Number((await g.raw(['rev-list', '--count', `FETCH_HEAD..refs/heads/${branch}`])).trim()) || 0;
+  const behind = Number((await g.raw(['rev-list', '--count', `refs/heads/${branch}..FETCH_HEAD`])).trim()) || 0;
+  return { ahead, behind };
+}
+
+/** Pull (fetch + merge) the remote branch into the local branch's worktree. Reports conflicts. */
+export async function pullBranch(id: string, branch: string, tokenUrl: string): Promise<MergeResult> {
+  if (!BRANCH_RE.test(branch)) throw new Error('bad branch name');
+  const dir = await ensureWorktree(id, branch);
+  const g = git(dir);
+  await g.raw(['fetch', tokenUrl, branch]);
+  try {
+    await g.raw(['merge', '--no-edit', 'FETCH_HEAD']);
+    return { ok: true };
+  } catch (err: any) {
+    const conflicts = (await g.status()).conflicted;
+    await g.raw(['merge', '--abort']).catch(() => {});
+    return { ok: false, conflicts, message: String(err?.message || err) };
+  }
 }
 
 /** Remove stale worktree registrations on boot. */
