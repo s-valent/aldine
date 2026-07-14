@@ -736,20 +736,35 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     catch (err: any) { return reply.code(502).send({ error: err.message }); }
   });
 
-  app.post<{ Params: { id: string } }>('/api/projects/:id/github/push', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { message?: string } }>('/api/projects/:id/github/push', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
-    await gitops.commitAll(req.params.id, 'main', 'papyr: sync to GitHub', reqUser(req)?.name).catch(() => {});
+    flushBranchDocs(req.params.id, 'main'); // capture unsaved editor content before committing
+    const message = (req.body?.message || '').trim() || 'Update from Papyr';
+    await gitops.commitAll(req.params.id, 'main', message, reqUser(req)?.name).catch(() => {});
     try { await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url); return { ok: true }; }
     catch (err: any) { return reply.code(400).send({ error: `Push failed: ${err.message}` }); }
   });
 
   app.post<{ Params: { id: string } }>('/api/projects/:id/github/pull', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
-    await gitops.commitAll(req.params.id, 'main', 'papyr: local changes before pull', reqUser(req)?.name).catch(() => {});
+    flushBranchDocs(req.params.id, 'main');
+    await gitops.commitAll(req.params.id, 'main', 'Local changes before pull', reqUser(req)?.name).catch(() => {});
     try {
       const result = await gitops.pullFromRemote(req.params.id, link.remoteBranch, link.url);
-      return result.ok ? { ok: true } : reply.code(409).send({ error: 'Merge conflict — resolve locally', conflicts: result.conflicts });
+      if (!result.ok) return reply.code(409).send({ error: 'Merge conflict', conflicts: result.conflicts });
+      refreshBranchDocsFromDisk(req.params.id, 'main'); // push the merged content into open editors
+      return { ok: true };
     } catch (err: any) { return reply.code(400).send({ error: `Pull failed: ${err.message}` }); }
+  });
+
+  // Conflict escape hatch: discard local changes and take the GitHub version.
+  app.post<{ Params: { id: string } }>('/api/projects/:id/github/reset-to-remote', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    try {
+      await gitops.resetToRemote(req.params.id, link.remoteBranch, link.url);
+      refreshBranchDocsFromDisk(req.params.id, 'main');
+      return { ok: true };
+    } catch (err: any) { return reply.code(400).send({ error: `Reset failed: ${err.message}` }); }
   });
 
   // ---------- AI error fix ----------

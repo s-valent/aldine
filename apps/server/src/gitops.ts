@@ -73,15 +73,15 @@ export async function merge(id: string, from: string, into: string, author?: str
   await commitAll(id, into, `papyr: checkpoint before merge`, author).catch(() => {});
   const dir = await ensureWorktree(id, into);
   const g = git(dir);
-  try {
-    await g.raw(['merge', '--no-ff', '-m', `Merge ${from} into ${into}`, from]);
-    return { ok: true };
-  } catch (err: any) {
-    const status = await g.status();
-    const conflicts = status.conflicted;
+  let mergeErr: unknown = null;
+  try { await g.raw(['merge', '--no-ff', '-m', `Merge ${from} into ${into}`, from]); } catch (e) { mergeErr = e; }
+  const conflicts = (await g.status()).conflicted;
+  if (conflicts.length) {
     await g.raw(['merge', '--abort']).catch(() => {});
-    return { ok: false, conflicts, message: String(err?.message || err) };
+    return { ok: false, conflicts };
   }
+  if (mergeErr) return { ok: false, message: String((mergeErr as Error)?.message || mergeErr) };
+  return { ok: true };
 }
 
 export async function fileDiff(id: string, branch: string, base = 'main'): Promise<string> {
@@ -143,19 +143,30 @@ export async function remoteStatus(id: string, remoteBranch: string, tokenUrl: s
   return { ahead, behind };
 }
 
+/** Discard all local changes and hard-reset local `main` to the remote branch. */
+export async function resetToRemote(id: string, remoteBranch: string, tokenUrl: string): Promise<void> {
+  if (!BRANCH_RE.test(remoteBranch)) throw new Error('bad branch name');
+  const g = git(repoDir(id));
+  await g.raw(['fetch', tokenUrl, remoteBranch]);
+  await g.raw(['reset', '--hard', 'FETCH_HEAD']);
+}
+
 /** Pull (fetch + merge) the remote branch into local `main`. Reports conflicts. */
 export async function pullFromRemote(id: string, remoteBranch: string, tokenUrl: string): Promise<MergeResult> {
   if (!BRANCH_RE.test(remoteBranch)) throw new Error('bad branch name');
   const g = git(repoDir(id));
   await g.raw(['fetch', tokenUrl, remoteBranch]);
-  try {
-    await g.raw(['merge', '--no-edit', 'FETCH_HEAD']);
-    return { ok: true };
-  } catch (err: any) {
-    const conflicts = (await g.status()).conflicted;
+  // simple-git's raw() does NOT reject on a merge conflict, so check for unmerged
+  // paths after the merge rather than relying on the command to throw.
+  let mergeErr: unknown = null;
+  try { await g.raw(['merge', '--no-edit', 'FETCH_HEAD']); } catch (e) { mergeErr = e; }
+  const conflicts = (await g.status()).conflicted;
+  if (conflicts.length) {
     await g.raw(['merge', '--abort']).catch(() => {});
-    return { ok: false, conflicts, message: String(err?.message || err) };
+    return { ok: false, conflicts };
   }
+  if (mergeErr) throw mergeErr; // a non-conflict failure
+  return { ok: true };
 }
 
 /** Remove stale worktree registrations on boot. */

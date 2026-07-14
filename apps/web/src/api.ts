@@ -112,8 +112,16 @@ export const api = {
   githubRepos: () => req<GithubRepo[]>('/api/github/repos'),
   githubImport: (fullName: string) => req<ProjectSummary>('/api/github/import', { method: 'POST', body: JSON.stringify({ fullName }) }),
   projectGithubStatus: (id: string) => req<{ linked: boolean; ahead: number; behind: number; fullName: string }>(`/api/projects/${id}/github/status`),
-  githubPush: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/push`, { method: 'POST' }),
-  githubPull: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/pull`, { method: 'POST' }),
+  githubPush: (id: string, message?: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/push`, { method: 'POST', body: JSON.stringify({ message }) }),
+  // conflict-aware: returns { conflict, conflicts } on a 409 instead of throwing
+  githubPull: async (id: string): Promise<{ ok?: boolean; conflict?: boolean; conflicts?: string[] }> => {
+    const res = await fetch(`/api/projects/${id}/github/pull`, { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 409) return { conflict: true, conflicts: body.conflicts || [] };
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    return { ok: true };
+  },
+  githubResetToRemote: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/reset-to-remote`, { method: 'POST' }),
   merge: (id: string, from: string, into: string, author?: string) =>
     req<{ ok: boolean; conflicts?: string[]; message?: string }>(`/api/projects/${id}/merge`, { method: 'POST', body: JSON.stringify({ from, into, author }) }),
 

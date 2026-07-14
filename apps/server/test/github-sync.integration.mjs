@@ -51,5 +51,22 @@ r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/pull`});
 console.assert(r.statusCode===200, 'pull ok '+r.body);
 console.assert(fs.readFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'utf8').includes('EXTERNAL'),'pulled external change');
 
+// push with a custom commit message → the remote commit subject matches
+fs.writeFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'v2\n');
+r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/push`,payload:{message:'my custom message'}});
+console.assert(r.statusCode===200,'push2 '+r.body);
+console.assert(execSync(`git --git-dir="${bare}" log -1 --format=%s main`).toString().trim()==='my custom message','custom commit message on remote');
+
+// divergent edits to the same line → pull conflicts (409), then take-remote resolves
+execSync(`cd "${seed}" && git pull -q && printf 'REMOTE VERSION\\n' > main.tex && git commit -qam remoteedit && git push -q`);
+fs.writeFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'LOCAL VERSION\n');
+const prepo = path.join(process.env.DATA_DIR,'projects',pid);
+r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/pull`});
+console.assert(r.statusCode===409,'pull conflicts with 409 (got '+r.statusCode+')');
+console.assert(Array.isArray(J(r).conflicts) && J(r).conflicts.includes('main.tex'),'conflict lists main.tex');
+r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/reset-to-remote`});
+console.assert(r.statusCode===200,'reset-to-remote ok '+r.body);
+console.assert(fs.readFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'utf8').trim()==='REMOTE VERSION','took the remote version');
+
 mock.close(); await app.close(); fs.rmSync(tmp,{recursive:true,force:true});
-console.log('GitHub integration (connect→import→push→status→pull): ALL ASSERTIONS PASSED');
+console.log('GitHub integration (connect→import→push[msg]→status→pull→conflict→take-remote): ALL PASSED');
