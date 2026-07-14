@@ -19,6 +19,8 @@ services:
       PAPYR_AI_MODEL: ${PAPYR_AI_MODEL:-}
       # Optional multi-user auth. AUTH_ENABLED=1 turns on login + per-project access.
       AUTH_ENABLED: ${AUTH_ENABLED:-}
+      # PAPYR_SSO_ONLY=1 disables password sign-in entirely (SSO only; no SMTP needed).
+      PAPYR_SSO_ONLY: ${PAPYR_SSO_ONLY:-}
       GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
       GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}

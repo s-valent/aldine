@@ -12,6 +12,8 @@ import type { User } from './db/types.js';
  */
 
 export const AUTH_ENABLED = process.env.AUTH_ENABLED === '1' || process.env.AUTH_ENABLED === 'true';
+/** SSO-only mode: disable all password endpoints (register/login/reset/change) — sign-in is exclusively via a configured OAuth provider. */
+export const SSO_ONLY = process.env.PAPYR_SSO_ONLY === '1' || process.env.PAPYR_SSO_ONLY === 'true';
 export const COOKIE = 'papyr_session';
 const SESSION_DAYS = 30;
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour

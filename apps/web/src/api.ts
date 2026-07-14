@@ -125,7 +125,7 @@ export const api = {
   deleteComment: (id: string, cid: string) =>
     req<{ ok: boolean }>(`/api/projects/${id}/comments/${cid}`, { method: 'DELETE' }),
 
-  me: () => req<{ authEnabled: boolean; user: AuthUser | null; providers: OAuthProviderInfo[] }>('/api/auth/me'),
+  me: () => req<{ authEnabled: boolean; passwordAuth: boolean; user: AuthUser | null; providers: OAuthProviderInfo[] }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     req<{ ok: boolean }>('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   resetRequest: (email: string) =>

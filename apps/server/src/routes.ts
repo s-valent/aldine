@@ -70,10 +70,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => ({ ok: true, name: 'papyr' }));
 
   // ---------- auth (env-gated) ----------
-  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, user: reqUser(req), providers: oauthProviders() }));
+  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, passwordAuth: !auth.SSO_ONLY, user: reqUser(req), providers: oauthProviders() }));
+
+  /** 403 when password sign-in is disabled (SSO-only mode). */
+  const passwordDisabled = (reply: any) => reply.code(403).send({ error: 'Password sign-in is disabled — use single sign-on.' });
 
   app.post<{ Body: { email: string; password: string; name?: string } }>('/api/auth/register', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!registerLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
     try {
       const user = await auth.register(req.body.email, req.body.password, req.body.name);
@@ -84,6 +88,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: { email: string; password: string } }>('/api/auth/login', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
     try {
       const user = await auth.login(req.body.email, req.body.password);
@@ -101,6 +106,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // change password (logged in): revokes all sessions, then re-issues the current one
   app.post<{ Body: { currentPassword: string; newPassword: string } }>('/api/auth/password', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (auth.SSO_ONLY) return passwordDisabled(reply);
     const user = reqUser(req);
     if (!user) return reply.code(401).send({ error: 'Sign in required' });
     try {
@@ -114,6 +120,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // logged server-side and (when PAPYR_RESET_ECHO=1) returned for self-host relay.
   app.post<{ Body: { email: string } }>('/api/auth/reset-request', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!loginLimiter.take(clientKey(req))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
     const r = await auth.requestReset(req.body?.email || '');
     if (r) {
@@ -126,6 +133,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: { token: string; newPassword: string } }>('/api/auth/reset', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
+    if (auth.SSO_ONLY) return passwordDisabled(reply);
     try {
       await auth.resetPassword(req.body?.token || '', req.body?.newPassword || '');
       return { ok: true };

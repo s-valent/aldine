@@ -19,6 +19,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [authEnabled, setAuthEnabled] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [providers, setProviders] = useState<OAuthProviderInfo[]>([]);
+  const [passwordAuth, setPasswordAuth] = useState(true);
 
   const refresh = async () => {
     try {
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAuthEnabled(me.authEnabled);
       setUser(me.user);
       setProviders(me.providers || []);
+      setPasswordAuth(me.passwordAuth !== false);
     } catch {
       setAuthEnabled(false);
       setUser(null);
@@ -37,7 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   if (loading) return <div style={{ height: '100%' }} />;
 
-  if (authEnabled && !user) return <LoginScreen providers={providers} onAuthed={(u) => setUser(u)} />;
+  if (authEnabled && !user) return <LoginScreen providers={providers} passwordAuth={passwordAuth} onAuthed={(u) => setUser(u)} />;
 
   return <Ctx.Provider value={{ loading, authEnabled, user, providers, setUser, refresh }}>{children}</Ctx.Provider>;
 }
@@ -53,7 +55,7 @@ const PROVIDER_ICON: Record<string, JSX.Element> = {
   ),
 };
 
-function LoginScreen({ providers, onAuthed }: { providers: OAuthProviderInfo[]; onAuthed(u: AuthUser): void }) {
+function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthProviderInfo[]; passwordAuth: boolean; onAuthed(u: AuthUser): void }) {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -100,48 +102,52 @@ function LoginScreen({ providers, onAuthed }: { providers: OAuthProviderInfo[]; 
         <h1 className="home__brand" style={{ fontSize: 30, marginBottom: 2 }}>papyr<em>.</em></h1>
         <p className="home__tag" style={{ marginBottom: 18 }}>{title}</p>
 
-        {providers.length > 0 && (mode === 'login' || mode === 'register') && (
+        {providers.map((p) => (
+          <a key={p.id} className="btn login__oauth" href={`/api/auth/oauth/${p.id}`} data-testid={`oauth-${p.id}`}>
+            {PROVIDER_ICON[p.id]}
+            Continue with {p.label}
+          </a>
+        ))}
+        {providers.length > 0 && passwordAuth && <div className="login__or">or</div>}
+
+        {!passwordAuth && providers.length === 0 && (
+          <p className="login__error">No sign-in method is configured. Contact the administrator.</p>
+        )}
+
+        {passwordAuth && (
           <>
-            {providers.map((p) => (
-              <a key={p.id} className="btn login__oauth" href={`/api/auth/oauth/${p.id}`} data-testid={`oauth-${p.id}`}>
-                {PROVIDER_ICON[p.id]}
-                Continue with {p.label}
-              </a>
-            ))}
-            <div className="login__or">or</div>
+            {mode === 'register' && (
+              <input className="input login__input" placeholder="Name (optional)" value={name} data-testid="auth-name" onChange={(e) => setName(e.target.value)} />
+            )}
+            {mode !== 'reset' && (
+              <input className="input login__input" type="email" placeholder="Email" value={email} data-testid="auth-email" autoFocus onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+            )}
+            {mode === 'reset' && (
+              <input className="input login__input" placeholder="Reset token" value={token} data-testid="auth-token" onChange={(e) => setToken(e.target.value)} />
+            )}
+            {mode !== 'forgot' && (
+              <input className="input login__input" type="password" placeholder={mode === 'reset' ? 'New password (min 8)' : 'Password (min 8 characters)'} value={password} data-testid="auth-password" onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+            )}
+
+            {error && <p className="login__error" data-testid="auth-error">{error}</p>}
+            {info && <p className="login__info" data-testid="auth-info">{info}</p>}
+
+            <button className="btn btn--primary login__submit" onClick={submit} disabled={busy} data-testid="auth-submit">
+              {busy ? '…' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : mode === 'forgot' ? 'Send reset link' : 'Set password'}
+            </button>
+
+            {(mode === 'login' || mode === 'register') && (
+              <button className="btn btn--ghost login__switch" data-testid="auth-switch" onClick={() => { reset(); setMode(mode === 'login' ? 'register' : 'login'); }}>
+                {mode === 'login' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
+              </button>
+            )}
+            {mode === 'login' && (
+              <button className="btn btn--ghost login__switch" data-testid="auth-forgot" onClick={() => { reset(); setMode('forgot'); }}>Forgot password?</button>
+            )}
+            {(mode === 'forgot' || mode === 'reset') && (
+              <button className="btn btn--ghost login__switch" onClick={() => { reset(); setMode('login'); }}>Back to sign in</button>
+            )}
           </>
-        )}
-
-        {mode === 'register' && (
-          <input className="input login__input" placeholder="Name (optional)" value={name} data-testid="auth-name" onChange={(e) => setName(e.target.value)} />
-        )}
-        {mode !== 'reset' && (
-          <input className="input login__input" type="email" placeholder="Email" value={email} data-testid="auth-email" autoFocus onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-        )}
-        {mode === 'reset' && (
-          <input className="input login__input" placeholder="Reset token" value={token} data-testid="auth-token" onChange={(e) => setToken(e.target.value)} />
-        )}
-        {mode !== 'forgot' && (
-          <input className="input login__input" type="password" placeholder={mode === 'reset' ? 'New password (min 8)' : 'Password (min 8 characters)'} value={password} data-testid="auth-password" onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-        )}
-
-        {error && <p className="login__error" data-testid="auth-error">{error}</p>}
-        {info && <p className="login__info" data-testid="auth-info">{info}</p>}
-
-        <button className="btn btn--primary login__submit" onClick={submit} disabled={busy} data-testid="auth-submit">
-          {busy ? '…' : mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : mode === 'forgot' ? 'Send reset link' : 'Set password'}
-        </button>
-
-        {(mode === 'login' || mode === 'register') && (
-          <button className="btn btn--ghost login__switch" data-testid="auth-switch" onClick={() => { reset(); setMode(mode === 'login' ? 'register' : 'login'); }}>
-            {mode === 'login' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
-          </button>
-        )}
-        {mode === 'login' && (
-          <button className="btn btn--ghost login__switch" data-testid="auth-forgot" onClick={() => { reset(); setMode('forgot'); }}>Forgot password?</button>
-        )}
-        {(mode === 'forgot' || mode === 'reset') && (
-          <button className="btn btn--ghost login__switch" onClick={() => { reset(); setMode('login'); }}>Back to sign in</button>
         )}
       </div>
     </div>
