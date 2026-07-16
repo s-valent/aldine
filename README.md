@@ -18,6 +18,10 @@ no Redis, no 13-microservice sprawl.
 - **Git-native with branches** — every project is a real git repository.
   Create branches, edit them independently, merge back — from the UI.
   Auto-checkpoints while you write, named checkpoints when you want them.
+- **GitHub sync** — import a GitHub repo as a project (the primary way to start),
+  then push/pull with commit messages, ahead/behind indicators, conflict
+  resolution, opt-in auto-sync, branch switching, and open a pull request — all
+  from the editor. Connect via OAuth or a personal access token.
 - **Native Zotero integration** — link your Zotero library *or a single
   collection* (Overleaf can't), keep a `.bib` in sync with cheap
   version-aware refresh, insert citations from a search panel or via
@@ -37,10 +41,14 @@ no Redis, no 13-microservice sprawl.
 - **Templates** — article, IAC conference paper, beamer, report/thesis.
 - **Editor niceties** — auto-typeset on idle, live word count, PDF zoom,
   drag-drop figure upload, plain-English error hints + raw log.
-- **Multi-user auth** (optional) — set `AUTH_ENABLED=1` for email/password
-  login, per-project ownership, and sharing (invite-only or link). Off by
-  default (single-tenant). Passwords are scrypt-hashed; sessions are signed
-  HTTP-only cookies; the collab socket is access-checked.
+- **Multi-user auth** (optional) — set `AUTH_ENABLED=1` for login, per-project
+  ownership, and sharing (invite-only or link). **Google & GitHub SSO**, or
+  email/password (scrypt-hashed, revocable HTTP-only-cookie sessions); an
+  SSO-only mode disables passwords entirely. Off by default (single-tenant);
+  the collab socket is access-checked.
+- **Scales when you need it** — flat-file storage by default; set `DATABASE_URL`
+  for Postgres and `REDIS_URL` to run multiple app nodes. See
+  [docs/SCALING.md](docs/SCALING.md).
 - **Apple-style UI** — system fonts, hairline borders, light & dark mode,
   keyboard-first (⌘S typeset, ⌘J jump, ⌘K command palette).
 
@@ -81,8 +89,10 @@ PAPYR_DOMAIN=papyr.example.com docker compose --profile tls up -d
 
 # 2. Turn on the optional features you want (all env-gated, off by default)
 AUTH_ENABLED=1 \
-OPENROUTER_API_KEY=sk-or-... \
-GITHUB_OAUTH_CLIENT_ID=... GITHUB_OAUTH_CLIENT_SECRET=... PAPYR_PUBLIC_URL=https://papyr.example.com \
+OPENROUTER_API_KEY=sk-or-... \                         # AI error-fix (or ANTHROPIC_API_KEY)
+GOOGLE_OAUTH_CLIENT_ID=... GOOGLE_OAUTH_CLIENT_SECRET=... \   # Google SSO login
+GITHUB_CLIENT_ID=... GITHUB_CLIENT_SECRET=... \        # GitHub repo sync
+PAPYR_PUBLIC_URL=https://papyr.example.com \
 SENTRY_DSN=https://... \
 docker compose --profile tls up -d
 
@@ -93,8 +103,13 @@ deploy/restore.sh papyr-backup.tar.gz   # stop the stack first: docker compose d
 
 **Isolation & limits.** The compiler runs on an internal-only Docker network (no
 internet egress), drops all Linux capabilities, and is bounded on CPU / memory /
-PIDs; LaTeX compiles with `-no-shell-escape` and `openin_any=p`. Per-client rate
-limits guard login, AI, and reference lookups; compiles are concurrency-capped.
+PIDs; LaTeX compiles with **restricted shell-escape** (whitelist only) and
+`openin_any=p`. Per-client rate limits guard login, AI, and reference lookups;
+compiles are concurrency-capped and can be metered per plan.
+
+See [deploy/README.md](deploy/README.md) for the full single-VPS runbook (TLS,
+backups, SSO setup, Postgres/Redis) and [CONTRIBUTING.md](CONTRIBUTING.md) to
+hack on it.
 
 ## Architecture
 

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { createProject, openProject, cleanup } from './helpers';
 
 /** Runs against the mock Zotero API (tests/mock-zotero.mjs, key: test-key-123). */

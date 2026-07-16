@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { createProject, createPaperProject, openProject, cleanup, PAPER_DIR } from './helpers';
 import fs from 'node:fs';
 import path from 'node:path';

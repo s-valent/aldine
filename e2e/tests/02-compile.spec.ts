@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { createPaperProject, openProject, typeset, expectTypesetOk, cleanup } from './helpers';
 
 test.describe('LaTeX compilation', () => {

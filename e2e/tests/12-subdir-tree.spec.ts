@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { createProject, openProject, cleanup } from './helpers';
 
 test.describe('nested repos', () => {

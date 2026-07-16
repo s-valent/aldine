@@ -6,6 +6,7 @@ import { useAuth } from '../components/Auth';
 import { IconDoc, IconLink, IconX } from '../components/Icons';
 import AccountSettings from '../components/AccountSettings';
 import GithubImport from '../components/GithubImport';
+import Onboarding from '../components/Onboarding';
 import { friendlyDate } from '../util/dates';
 
 export default function Home() {
@@ -17,6 +18,8 @@ export default function Home() {
   const [sharing, setSharing] = useState<ProjectSummary | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showGithub, setShowGithub] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('papyr.onboarded') !== '1');
+  const dismissOnboarding = () => { localStorage.setItem('papyr.onboarded', '1'); setShowOnboarding(false); };
   const navigate = useNavigate();
   const toast = useToast();
   const { authEnabled, user, setUser } = useAuth();
@@ -157,6 +160,9 @@ export default function Home() {
       )}
       {showGithub && (
         <GithubImport onClose={() => setShowGithub(false)} onImported={(id) => navigate(`/p/${id}`)} />
+      )}
+      {showOnboarding && (
+        <Onboarding onNew={() => setCreating(true)} onGithub={() => setShowGithub(true)} onImportZip={importZip} onClose={dismissOnboarding} />
       )}
 
       {creating && (

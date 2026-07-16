@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 test.describe('home', () => {
   test('create a project from the home screen', async ({ page }) => {
@@ -26,5 +26,20 @@ test.describe('home', () => {
     page.on('dialog', (d) => d.accept());
     await card.locator('.project-card__del').click();
     await expect(card).not.toBeVisible();
+  });
+});
+
+test.describe('first-run onboarding', () => {
+  test('shows on first visit and stays dismissed after', async ({ browser }) => {
+    const ctx = await browser.newContext(); // raw context → no pre-dismiss, fresh localStorage
+    const p = await ctx.newPage();
+    try {
+      await p.goto('/');
+      await expect(p.getByTestId('onboarding')).toBeVisible({ timeout: 10_000 });
+      await p.getByTestId('onboard-dismiss').click();
+      await expect(p.getByTestId('onboarding')).toHaveCount(0);
+      await p.reload();
+      await expect(p.getByTestId('onboarding')).toHaveCount(0);
+    } finally { await ctx.close(); }
   });
 });

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures';
 
 /** Unique email per run so re-runs don't collide with the persisted user store. */
 const uniq = () => `u${Date.now()}${Math.floor(Math.random() * 1000)}@test.com`;
