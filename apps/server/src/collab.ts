@@ -75,11 +75,38 @@ const authHook = AUTH_ENABLED ? {
   },
 } : {};
 
+// Multi-node collaboration: when REDIS_URL is set, sync Yjs document updates and
+// awareness across every app instance via Redis pub/sub, so collaborators land
+// on different nodes and still edit the same live document (scaling wall #2).
+// Multi-node collaboration (scaling wall #2): with REDIS_URL, the Redis extension
+// syncs awareness across nodes and hands a document off cleanly on failover.
+// IMPORTANT: run the load balancer with sticky routing so each document lives on
+// one node at a time (route by the project id in the /collab doc name). Without
+// stickiness two nodes would each seed the same doc from disk and duplicate it.
+// See docs/SCALING.md.
+const collabExtensions: unknown[] = [];
+if (process.env.REDIS_URL) {
+  try {
+    const { Redis } = await import('@hocuspocus/extension-redis');
+    const u = new URL(process.env.REDIS_URL);
+    collabExtensions.push(new Redis({
+      host: u.hostname,
+      port: Number(u.port || 6379),
+      password: u.password || undefined,
+      db: Number((u.pathname || '/0').slice(1)) || 0,
+    } as never));
+    console.log('[papyr] collab: redis sync across nodes (requires sticky routing)');
+  } catch {
+    console.warn('[papyr] REDIS_URL set but @hocuspocus/extension-redis is not installed — collab is single-node');
+  }
+}
+
 export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
   // We handle upgrades ourselves from the Fastify HTTP server.
   quiet: true,
   debounce: 1500,
   maxDebounce: 8000,
+  extensions: collabExtensions as never,
   ...authHook,
   async onLoadDocument({ documentName, document }) {
     const parsed = parseDocName(documentName);
@@ -87,13 +114,11 @@ export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
     const { projectId, branch, filePath } = parsed;
     if (isSignalDoc(filePath)) return document; // ephemeral coordination channel, nothing to load
     await ensureWorktree(projectId, branch);
-    const abs = safeJoin(branchDir(projectId, branch), filePath);
-    let content = '';
-    try { content = fs.readFileSync(abs, 'utf8'); } catch { /* new file → empty */ }
     const text = document.getText(TEXT_KEY);
-    if (text.length === 0 && content.length > 0) {
-      text.insert(0, content);
-    }
+    if (text.length > 0) return document; // already has state (e.g. synced from a peer node)
+    let content = '';
+    try { content = fs.readFileSync(safeJoin(branchDir(projectId, branch), filePath), 'utf8'); } catch { /* new file → empty */ }
+    if (content.length > 0) text.insert(0, content);
     return document;
   },
   async onStoreDocument({ documentName, document }) {

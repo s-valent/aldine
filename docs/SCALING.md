@@ -44,9 +44,14 @@ unaffected.
    the metered compile quota). This wall is cleared — the app tier is now
    horizontally scalable.
 2. **Single-process Hocuspocus** — each Yjs document's CRDT state lives in one
-   process's memory; you can't just add replicas. → split collab into its own
-   service with a Redis pub/sub sync backend + sticky routing, and persist docs
-   to a store. The service boundary is drawn; extraction is a deploy change.
+   process's memory. → **Mostly done:** the Redis collab extension (`REDIS_URL`)
+   syncs awareness across nodes and hands a document off cleanly on failover
+   (verified: an edit on one node appears on another). **Deploy requirement:**
+   run the load balancer with **sticky routing** so each document lives on one
+   node at a time — route the `/collab` WebSocket by the project id in the doc
+   name (or a cookie). Without stickiness, two nodes would each seed the same
+   doc from disk and duplicate its content. Splitting collab into its own
+   separately-scaled service is a deploy change from here.
 3. **One shared compiler on one volume** — compiles are the cost driver. → a job
    queue + a fleet of stateless workers, autoscaled, with **per-compile
    isolation** (ephemeral containers / gVisor / Firecracker) for true

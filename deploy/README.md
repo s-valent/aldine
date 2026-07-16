@@ -53,7 +53,11 @@ PAPYR_COMPILE_QUOTA_MIN=30
 # error tracking (optional)
 SENTRY_DSN=
 
-# multi-node only: share rate limits across app instances (see the `redis` profile)
+# multi-node only: share rate limits + sync live collaboration across app
+# instances (see the `redis` profile). With multiple app nodes you MUST run the
+# load balancer with sticky routing so each project's /collab WebSocket lands on
+# a consistent node (e.g. hash by the project id in the path, or a cookie) — see
+# docs/SCALING.md. Single node needs none of this.
 REDIS_URL=redis://redis:6379
 
 # password-reset relay while no SMTP is wired (see caveats)

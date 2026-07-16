@@ -90,6 +90,13 @@ const papyrTheme = EditorView.theme({
   '&': { backgroundColor: 'var(--bg-panel)', color: 'var(--text)' },
   '.cm-cursor': { borderLeftColor: 'var(--text)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection) !important' },
+  // remote collaborator caret + always-visible name label (y-codemirror.next)
+  '.cm-ySelectionCaret': { position: 'relative', borderLeftWidth: '1.5px', borderRightWidth: '1.5px', marginLeft: '-1px', marginRight: '-1px', boxSizing: 'border-box' },
+  '.cm-ySelectionInfo': {
+    position: 'absolute', top: '-1.35em', left: '-1px', fontSize: '10px', fontWeight: '600', lineHeight: 'normal',
+    color: '#fff', padding: '1px 5px', borderRadius: '4px 4px 4px 0', whiteSpace: 'nowrap', opacity: '1',
+    userSelect: 'none', pointerEvents: 'none', zIndex: '20', fontFamily: 'var(--font-sans)',
+  },
   '.cm-tooltip': {
     backgroundColor: 'var(--bg-panel)',
     border: '1px solid var(--hairline)',
