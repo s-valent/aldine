@@ -14,6 +14,11 @@ const mock = http.createServer((req,res)=>{ res.setHeader('content-type','applic
   if (req.url==='/user') return res.end(JSON.stringify({login:'tester',name:'Tester'}));
   if (req.url.startsWith('/user/repos')) return res.end(JSON.stringify([repoJson]));
   if (req.url==='/repos/octocat/hello') return res.end(JSON.stringify(repoJson));
+  if (req.url.startsWith('/repos/octocat/hello/branches')) {
+    const names = execSync(`git --git-dir="${bare}" for-each-ref --format='%(refname:short)' refs/heads`).toString().trim().split('\n').filter(Boolean);
+    return res.end(JSON.stringify(names.map(n=>({name:n}))));
+  }
+  if (req.url==='/repos/octocat/hello/pulls' && req.method==='POST') return res.end(JSON.stringify({html_url:'https://github.com/octocat/hello/pull/7', number:7}));
   res.statusCode=404; res.end('{}');
 });
 await new Promise(r=>mock.listen(0,r)); process.env.GITHUB_API_BASE=`http://localhost:${mock.address().port}`;
@@ -68,5 +73,22 @@ r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/reset-to-re
 console.assert(r.statusCode===200,'reset-to-remote ok '+r.body);
 console.assert(fs.readFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'utf8').trim()==='REMOTE VERSION','took the remote version');
 
+// branch-level: create a branch → it appears on the remote and becomes current
+r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/create-branch`,payload:{name:'feature-x'}});
+console.assert(r.statusCode===200,'create-branch '+r.body);
+console.assert(execSync(`git --git-dir="${bare}" for-each-ref --format='%(refname:short)' refs/heads`).toString().includes('feature-x'),'remote has feature-x');
+r = await app.inject({url:`/api/projects/${pid}/github/branches`});
+console.assert(J(r).current==='feature-x' && J(r).branches.includes('main') && J(r).branches.includes('feature-x'),'branches list + current: '+r.body);
+
+// open a PR from the feature branch
+r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/pr`,payload:{title:'My PR'}});
+console.assert(r.statusCode===200 && J(r).url.includes('/pull/7'),'PR opened: '+r.body);
+
+// switch back to main
+r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/switch-branch`,payload:{branch:'main'}});
+console.assert(r.statusCode===200 && J(r).branch==='main','switch back to main '+r.body);
+r = await app.inject({url:`/api/projects/${pid}/github/branches`});
+console.assert(J(r).current==='main','current is main after switch');
+
 mock.close(); await app.close(); fs.rmSync(tmp,{recursive:true,force:true});
-console.log('GitHub integration (connect→import→push[msg]→status→pull→conflict→take-remote): ALL PASSED');
+console.log('GitHub integration (import→push→pull→conflict→branches→PR→switch): ALL PASSED');

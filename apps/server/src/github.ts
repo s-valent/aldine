@@ -97,6 +97,18 @@ export async function getRepo(token: string, owner: string, repo: string): Promi
   return mapRepo(await api(token, `/repos/${owner}/${repo}`));
 }
 
+/** Branch names in the repo, most relevant first (default branch bubbled to top). */
+export async function listBranches(token: string, owner: string, repo: string): Promise<string[]> {
+  const list = (await api(token, `/repos/${owner}/${repo}/branches?per_page=100`)) as Array<{ name: string }>;
+  return (list || []).map((b) => b.name);
+}
+
+/** Open a pull request; returns its web URL and number. */
+export async function createPullRequest(token: string, owner: string, repo: string, opts: { title: string; head: string; base: string; body?: string }): Promise<{ url: string; number: number }> {
+  const pr = await api(token, `/repos/${owner}/${repo}/pulls`, { method: 'POST', body: JSON.stringify(opts) });
+  return { url: pr.html_url, number: pr.number };
+}
+
 /** Create a new repo under the authenticated user. */
 export async function createRepo(token: string, name: string, isPrivate = true): Promise<Repo> {
   return mapRepo(await api(token, '/user/repos', { method: 'POST', body: JSON.stringify({ name, private: isPrivate, auto_init: false }) }));

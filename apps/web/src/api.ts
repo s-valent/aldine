@@ -122,6 +122,10 @@ export const api = {
     return { ok: true };
   },
   githubResetToRemote: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/github/reset-to-remote`, { method: 'POST' }),
+  githubBranches: (id: string) => req<{ branches: string[]; current: string; default: string }>(`/api/projects/${id}/github/branches`),
+  githubSwitchBranch: (id: string, branch: string) => req<{ ok: boolean; branch: string }>(`/api/projects/${id}/github/switch-branch`, { method: 'POST', body: JSON.stringify({ branch }) }),
+  githubCreateBranch: (id: string, name: string) => req<{ ok: boolean; branch: string }>(`/api/projects/${id}/github/create-branch`, { method: 'POST', body: JSON.stringify({ name }) }),
+  githubOpenPR: (id: string, title?: string) => req<{ url: string; number: number }>(`/api/projects/${id}/github/pr`, { method: 'POST', body: JSON.stringify({ title }) }),
   merge: (id: string, from: string, into: string, author?: string) =>
     req<{ ok: boolean; conflicts?: string[]; message?: string }>(`/api/projects/${id}/merge`, { method: 'POST', body: JSON.stringify({ from, into, author }) }),
 

@@ -727,7 +727,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!meta.github) { reply.code(400).send({ error: 'This project is not linked to GitHub' }); return null; }
     const conn = await github.getConnection(ghUserId(req));
     if (!conn) { reply.code(400).send({ error: 'Connect GitHub to sync' }); return null; }
-    return { meta, url: github.tokenUrl(meta.github.cloneUrl, conn.token), remoteBranch: meta.github.remoteBranch };
+    return { meta, token: conn.token, owner: meta.github.owner, repo: meta.github.repo, url: github.tokenUrl(meta.github.cloneUrl, conn.token), remoteBranch: meta.github.remoteBranch };
   };
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/github/status', async (req, reply) => {
@@ -765,6 +765,67 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       refreshBranchDocsFromDisk(req.params.id, 'main');
       return { ok: true };
     } catch (err: any) { return reply.code(400).send({ error: `Reset failed: ${err.message}` }); }
+  });
+
+  // ---------- GitHub branches + PRs ----------
+  app.get<{ Params: { id: string } }>('/api/projects/:id/github/branches', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    try {
+      const [branches, repo] = await Promise.all([
+        github.listBranches(link.token, link.owner, link.repo),
+        github.getRepo(link.token, link.owner, link.repo),
+      ]);
+      return { branches, current: link.remoteBranch, default: repo.defaultBranch };
+    } catch (err: any) { return reply.code(502).send({ error: err.message }); }
+  });
+
+  // Switch which GitHub branch this project tracks. Saves current work (commit +
+  // push) first so nothing is lost, then checks out the target branch.
+  app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/github/switch-branch', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    const target = (req.body?.branch || '').trim();
+    if (!target) return reply.code(400).send({ error: 'branch required' });
+    if (target === link.remoteBranch) return { ok: true };
+    flushBranchDocs(req.params.id, 'main');
+    try {
+      await gitops.commitAll(req.params.id, 'main', 'Save before switching branch', reqUser(req)?.name).catch(() => {});
+      await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url).catch(() => {}); // best-effort save
+      await gitops.resetToRemote(req.params.id, target, link.url);
+      const meta = link.meta; meta.github!.remoteBranch = target; await store.writeMeta(meta);
+      refreshBranchDocsFromDisk(req.params.id, 'main');
+      return { ok: true, branch: target };
+    } catch (err: any) { return reply.code(400).send({ error: `Switch failed: ${err.message}` }); }
+  });
+
+  // Create a new GitHub branch from the current content and switch to it.
+  app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/projects/:id/github/create-branch', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    const name = (req.body?.name || '').trim();
+    if (!name || !/^[A-Za-z0-9._\/-]+$/.test(name)) return reply.code(400).send({ error: 'Invalid branch name' });
+    flushBranchDocs(req.params.id, 'main');
+    try {
+      await gitops.commitAll(req.params.id, 'main', `Start branch ${name}`, reqUser(req)?.name).catch(() => {});
+      await gitops.pushToRemote(req.params.id, name, link.url); // push creates the remote branch
+      const meta = link.meta; meta.github!.remoteBranch = name; await store.writeMeta(meta);
+      return { ok: true, branch: name };
+    } catch (err: any) { return reply.code(400).send({ error: `Create branch failed: ${err.message}` }); }
+  });
+
+  // Open a pull request from the current branch into the repo's default branch.
+  app.post<{ Params: { id: string }; Body: { title?: string } }>('/api/projects/:id/github/pr', async (req, reply) => {
+    const link = await linkedRemote(req, reply); if (!link) return;
+    try {
+      await gitops.commitAll(req.params.id, 'main', 'Update before pull request', reqUser(req)?.name).catch(() => {});
+      await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url);
+      const repo = await github.getRepo(link.token, link.owner, link.repo);
+      if (link.remoteBranch === repo.defaultBranch) return reply.code(400).send({ error: `You're on the default branch (${repo.defaultBranch}). Create a branch first.` });
+      const pr = await github.createPullRequest(link.token, link.owner, link.repo, {
+        title: (req.body?.title || '').trim() || `Update ${link.remoteBranch}`,
+        head: link.remoteBranch,
+        base: repo.defaultBranch,
+      });
+      return pr;
+    } catch (err: any) { return reply.code(400).send({ error: `Could not open PR: ${err.message}` }); }
   });
 
   // ---------- AI error fix ----------
