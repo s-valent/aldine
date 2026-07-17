@@ -6,6 +6,14 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
+# A service can only reference FARGATE / FARGATE_SPOT in its capacity_provider_
+# strategy if the cluster has them associated first. Without this the first
+# apply fails with "capacity provider not found".
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name       = aws_ecs_cluster.main.name
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+}
+
 locals {
   server_image   = "${aws_ecr_repository.repos["papyr-server"].repository_url}:${var.image_tag}"
   compiler_image = "${aws_ecr_repository.repos["papyr-compiler"].repository_url}:${var.image_tag}"
@@ -154,7 +162,7 @@ resource "aws_ecs_service" "app" {
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
-  depends_on = [aws_lb_listener.https]
+  depends_on = [aws_lb_listener.https, aws_ecs_cluster_capacity_providers.main]
 
   lifecycle {
     ignore_changes = [desired_count] # don't fight manual/console scaling
