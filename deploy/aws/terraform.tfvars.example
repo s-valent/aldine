@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars (gitignored) and fill in. Only secret_env holds
+# sensitive values; everything else has a sane default in variables.tf.
+
+region            = "eu-central-1"
+domain_name       = "papyr.tobiasrahloff.com"
+route53_zone_name = "tobiasrahloff.com"
+
+# SSO-only by default (no passwords). Set sso_only = false to also allow email/password.
+auth_enabled = true
+sso_only     = true
+
+# Cheapest that still compiles real papers. Raise if big documents OOM.
+task_cpu         = 1024
+task_memory      = 3072
+use_fargate_spot = true
+
+# Secrets → SSM SecureString → injected into the server as these env vars.
+# Leave a line out (or set "") to skip provisioning it. Redirect/callback URLs in
+# the Google/GitHub OAuth apps must point at https://papyr.tobiasrahloff.com/...
+secret_env = {
+  GOOGLE_OAUTH_CLIENT_ID     = "REPLACE_ME.apps.googleusercontent.com"
+  GOOGLE_OAUTH_CLIENT_SECRET = "REPLACE_ME"
+  GITHUB_CLIENT_ID           = "REPLACE_ME" # GitHub *sync* app (repo scope)
+  GITHUB_CLIENT_SECRET       = "REPLACE_ME"
+  # OPENROUTER_API_KEY       = "sk-or-..."   # optional: AI error-fix
+  # GITHUB_LOGIN_CLIENT_ID   = "..."         # optional: "Sign in with GitHub"
+  # GITHUB_LOGIN_CLIENT_SECRET = "..."
+  # SENTRY_DSN               = "https://..." # optional: error reporting
+}

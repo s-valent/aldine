@@ -1,0 +1,107 @@
+# Papyr on AWS (serverless, all-IaC)
+
+Deploys Papyr to `https://papyr.tobiasrahloff.com` on **AWS Fargate** — no servers
+to manage, everything as Terraform. This is the cheapest AWS shape that actually
+fits the app; see [Why this architecture](#why-this-architecture-and-not-lambda).
+
+## What gets created
+
+```
+Route53  papyr.tobiasrahloff.com ─(alias)─►  ALB ─► Fargate task ── EFS (/data, /secrets)
+ACM      TLS cert (DNS-validated)                     ├─ server  container  (:3000)
+                                                       └─ compiler container (:4020, localhost)
+ECR      papyr-server, papyr-compiler images
+SSM      OAuth/API secrets (SecureString) ─► injected into the server
+```
+
+- **One Fargate service, two containers** sharing an EFS filesystem. The compiler
+  is reached over `localhost:4020` (same task network namespace).
+- **No NAT gateway** (tasks run in public subnets with locked-down inbound) —
+  saves ~$32/mo, the usual "cheap AWS" trap.
+- **EFS** holds the git repos + JSON datastore, so replacing/redeploying the task
+  loses nothing. `/secrets` is a **separate access point the compiler never
+  mounts**, preserving the code's rule that the compiler can't read API keys.
+
+## Prerequisites
+
+1. **AWS account + SSO configured** (`aws configure sso`, then `aws sso login --profile papyr`).
+2. **The hosted zone `tobiasrahloff.com` already exists in Route53** in this account.
+   (Registering/delegating the domain is a one-time manual step Terraform doesn't do.)
+3. `terraform` (or `tofu`) ≥ 1.6, `docker` with buildx, `aws` CLI.
+
+## Deploy
+
+```bash
+cd deploy/aws
+cp terraform.tfvars.example terraform.tfvars   # fill in secret_env (gitignored)
+
+export AWS_PROFILE=papyr
+
+terraform init
+terraform apply            # creates all infra + empty ECR repos + the ECS service
+                           # (the service won't be healthy yet — no image pushed)
+
+./push-images.sh           # builds server+compiler for amd64, pushes to ECR, rolls the service
+aws ecs wait services-stable --cluster papyr --services papyr
+```
+
+DNS + the ACM cert validate automatically through the Route53 zone (a few minutes
+on first apply). When `services-stable` returns, open **https://papyr.tobiasrahloff.com**.
+
+### OAuth redirect URLs
+
+Update the Google / GitHub OAuth apps so their callback URLs point at the new host:
+
+- Google:  `https://papyr.tobiasrahloff.com/api/auth/oauth/google/callback`
+- GitHub sync: `https://papyr.tobiasrahloff.com/api/github/oauth/callback`
+
+Set the corresponding client id/secret in `secret_env`.
+
+## Updating the app later
+
+- **New app version:** `./push-images.sh` (or run the **Deploy to AWS** GitHub
+  Action — manual trigger, ships images via OIDC without touching infra).
+- **Infra change:** edit the `.tf` files → `terraform apply`.
+
+## Cost (eu-central-1, low traffic, ballpark)
+
+| Item | ~Monthly |
+|------|----------|
+| Application Load Balancer (fixed) | $16–18 |
+| Fargate task, 1 vCPU / 3 GB, always-on **Spot** | $8–12 |
+| EFS (a few GB, with IA lifecycle) | $1–3 |
+| Route53 hosted zone + queries | $0.50 |
+| ECR storage, CloudWatch logs, data transfer | $1–3 |
+| **Total** | **~$27–37/mo** |
+
+On-demand Fargate (`use_fargate_spot = false`) adds ~$15/mo for reclaim-proof
+stability. The ALB is the dominant fixed cost — see below.
+
+## Why this architecture (and not "pure Lambda")
+
+Papyr is a **stateful real-time server**: it holds live Yjs documents in memory
+and serves persistent `/collab` WebSockets, runs a **multi-GB TeX Live** compiler,
+and keeps project state as **git repos on a filesystem**. That shape doesn't fit
+scale-to-zero Lambda without rewriting the collaboration layer onto API Gateway
+WebSockets + a shared document store, and the compiler's image size makes Lambda
+cold starts painful. Fargate is the "serverless" (no VMs, no patching) option that
+runs the app as-is.
+
+Consequences worth knowing:
+
+- **No true scale-to-zero.** The ALB + one small task are always on (~$27/mo floor).
+  A single small VM would be cheaper but isn't serverless — that's the tradeoff you
+  chose. Genuine scale-to-zero would need the collab-layer rewrite above.
+- **Single task by default.** Collaboration is per-node; `desired_count` stays 1
+  unless you also set `REDIS_URL` (+ sticky routing) so multiple tasks share docs.
+- **Fargate Spot** can reclaim the task (~2 min notice); the app autosaves open
+  docs on `SIGTERM`. Set `use_fargate_spot = false` to avoid that.
+
+## Teardown
+
+```bash
+./teardown.sh          # empties ECR, then terraform destroy
+```
+
+> EFS is deleted with the stack — **back up `/data` first** if it holds real
+> projects (`aws efs` / mount + copy, or the app's GitHub sync).
