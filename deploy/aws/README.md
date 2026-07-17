@@ -34,19 +34,23 @@ SSM      OAuth/API secrets (SecureString) ─► injected into the server
 ```bash
 cd deploy/aws
 cp terraform.tfvars.example terraform.tfvars   # fill in secret_env (gitignored)
+export AWS_PROFILE=papyr                        # or export AWS_ACCESS_KEY_ID / _SECRET_ACCESS_KEY
 
-export AWS_PROFILE=papyr
+./deploy.sh        # preflight → terraform apply → build+push images → wait → smoke-test the URL
+```
 
-terraform init
-terraform apply            # creates all infra + empty ECR repos + the ECS service
-                           # (the service won't be healthy yet — no image pushed)
+`deploy.sh` is idempotent and fails early with a clear reason if a prerequisite
+is missing (no creds, Route53 zone absent, Docker daemon off, empty tfvars). To
+run the steps by hand instead:
 
-./push-images.sh           # builds server+compiler for amd64, pushes to ECR, rolls the service
+```bash
+terraform init && terraform apply     # infra + empty ECR repos + the ECS service
+./push-images.sh                      # build server+compiler (amd64) → ECR → roll the service
 aws ecs wait services-stable --cluster papyr --services papyr
 ```
 
 DNS + the ACM cert validate automatically through the Route53 zone (a few minutes
-on first apply). When `services-stable` returns, open **https://papyr.tobiasrahloff.com**.
+on first apply). When it's stable, open **https://papyr.tobiasrahloff.com**.
 
 ### OAuth redirect URLs
 
