@@ -49,7 +49,17 @@ export class JsonStore implements DataStore {
 
   // ---- users ----
   private users() { return this.read<Record<string, User>>(this.usersPath, {}); }
-  async createUser(u: User) { const m = this.users(); m[u.id] = u; this.write(this.usersPath, m); }
+  async createUser(u: User) {
+    const m = this.users();
+    // Enforce email-uniqueness like Postgres' UNIQUE(email): this read-check-write
+    // is synchronous (no await), so it closes the register() TOCTOU race that two
+    // interleaved sign-ups would otherwise slip through on the JSON backend.
+    if (Object.values(m).some((x) => x.email === u.email && x.id !== u.id)) {
+      throw new Error('An account with that email already exists');
+    }
+    m[u.id] = u;
+    this.write(this.usersPath, m);
+  }
   async updateUser(u: User) { const m = this.users(); m[u.id] = u; this.write(this.usersPath, m); }
   async getUser(id: string) { return this.users()[id] || null; }
   async findUserByEmail(email: string) { return Object.values(this.users()).find((u) => u.email === email) || null; }
@@ -90,10 +100,15 @@ export class JsonStore implements DataStore {
   async deleteMeta(id: string) { fs.rmSync(this.metaPath(id), { force: true }); }
   async listMeta() {
     if (!fs.existsSync(this.metaDir)) return [];
-    return fs.readdirSync(this.metaDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(this.metaDir, f), 'utf8')) as ProjectMeta)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const out: ProjectMeta[] = [];
+    for (const f of fs.readdirSync(this.metaDir)) {
+      if (!f.endsWith('.json')) continue;
+      // Skip an unreadable/corrupt file rather than failing the whole listing —
+      // matches readMeta's null-on-error semantics (one bad project ≠ dead dashboard).
+      try { out.push(JSON.parse(fs.readFileSync(path.join(this.metaDir, f), 'utf8')) as ProjectMeta); }
+      catch (err) { console.error(`[store] skipping unreadable meta ${f}:`, (err as Error).message); }
+    }
+    return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   // ---- comments ----

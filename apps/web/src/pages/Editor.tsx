@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, CompileResult, ProjectDetail, TreeEntry, Comment } from '../api';
+import { api, CompileResult, ProjectDetail, TreeEntry, Comment, localUser } from '../api';
 import { useToast } from '../components/Toast';
 import FileTree from '../components/FileTree';
 import CodePane, { CodePaneHandle } from '../components/CodePane';
@@ -64,13 +64,20 @@ export default function Editor() {
   }, [id]);
 
   const loadFiles = useCallback(async () => {
-    const f = await api.listFiles(id, branch);
-    setFiles(f);
-    // files changed (rename/delete/upload/Zotero import) → bib & label indexes are stale
-    invalidateBibCache();
-    invalidateLabelCache();
-    return f;
-  }, [id, branch]);
+    // Several call sites invoke this fire-and-forget (onChanged, tree callbacks);
+    // swallow transient failures with a toast instead of an unhandled rejection.
+    try {
+      const f = await api.listFiles(id, branch);
+      setFiles(f);
+      // files changed (rename/delete/upload/Zotero import) → bib & label indexes are stale
+      invalidateBibCache();
+      invalidateLabelCache();
+      return f;
+    } catch {
+      toast('Could not refresh the file list', 'error');
+      return [];
+    }
+  }, [id, branch, toast]);
 
   useEffect(() => {
     (async () => {
@@ -178,7 +185,7 @@ export default function Editor() {
   const submitComment = useCallback(async (body: string, suggestion?: string) => {
     if (!composing || !activeFile) return;
     try {
-      await api.addComment(id, { branch, file: activeFile, anchor: composing, body, suggestion });
+      await api.addComment(id, { branch, file: activeFile, anchor: composing, body, suggestion, author: localUser().name });
       await loadComments();
       bumpComments();
       setTab('review');
@@ -201,7 +208,14 @@ export default function Editor() {
       // prefer the anchored range if it still holds the quoted text; else find the quote
       if (content.slice(c.anchor.from, c.anchor.to) === c.anchor.quote) {
         next = content.slice(0, c.anchor.from) + c.suggestion + content.slice(c.anchor.to);
-      } else if (c.anchor.quote && content.split(c.anchor.quote).length === 2) {
+      } else if (
+        c.anchor.quote &&
+        // Only safe when the quote is the WHOLE original selection. The server
+        // caps quote at 2000 chars (comments.ts), so for a longer selection the
+        // quote is truncated and a text-replace would drop the tail — bail instead.
+        c.anchor.quote.length === c.anchor.to - c.anchor.from &&
+        content.split(c.anchor.quote).length === 2
+      ) {
         // exactly one occurrence → unambiguous; function replacer keeps it literal
         const suggestion = c.suggestion;
         next = content.replace(c.anchor.quote, () => suggestion);
@@ -403,7 +417,7 @@ export default function Editor() {
                 onReveal={revealComment}
                 onResolve={async (c, resolved) => { await api.resolveComment(id, c.id, resolved); await loadComments(); bumpComments(); }}
                 onDelete={async (c) => { await api.deleteComment(id, c.id); await loadComments(); bumpComments(); }}
-                onReply={async (c, body) => { await api.replyComment(id, c.id, body); await loadComments(); bumpComments(); }}
+                onReply={async (c, body) => { await api.replyComment(id, c.id, body, localUser().name); await loadComments(); bumpComments(); }}
                 onAccept={acceptSuggestion}
               />
             )}
@@ -475,7 +489,12 @@ export default function Editor() {
           onMouseDown={(e) => {
             const startX = e.clientX;
             const start = pdfWidth;
-            const move = (ev: MouseEvent) => setPdfWidth(Math.min(Math.max(280, start + (startX - ev.clientX)), window.innerWidth - 500));
+            // Floor the upper bound so a narrow window can't push it below the
+            // 280 minimum (which would invert the clamp and collapse the pane).
+            const move = (ev: MouseEvent) => {
+              const maxW = Math.max(360, window.innerWidth - 500);
+              setPdfWidth(Math.min(Math.max(280, start + (startX - ev.clientX)), maxW));
+            };
             const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
             window.addEventListener('mousemove', move);
             window.addEventListener('mouseup', up);

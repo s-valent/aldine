@@ -10,6 +10,10 @@ export const PROJECT_ID_RE = /^[a-z0-9]{4,20}$/;
 
 /** Resolve a user-supplied relative file path inside a base dir, rejecting escapes. */
 export function safeJoin(base: string, rel: string): string {
+  // Reject any `..` segment up front: `path.resolve` would collapse `a/../.git`
+  // back inside `base` (so the prefix check below passes), letting a crafted
+  // path reach the repo's own `.git`. No legitimate project path needs `..`.
+  if (rel.split(/[\\/]/).includes('..')) throw new Error(`path escapes project: ${rel}`);
   const abs = path.resolve(base, rel);
   if (abs !== base && !abs.startsWith(base + path.sep)) throw new Error(`path escapes project: ${rel}`);
   return abs;

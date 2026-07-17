@@ -59,11 +59,12 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
     const container = innerRef.current;
     const scroller = scrollRef.current!;
     const prevScroll = scroller.scrollTop;
+    let doc: Awaited<ReturnType<typeof pdfjs.getDocument>['promise']> | null = null;
 
     (async () => {
       try {
-        const doc = await pdfjs.getDocument(pdfUrl).promise;
-        if (my !== renderTask.current) return;
+        doc = await pdfjs.getDocument(pdfUrl).promise;
+        if (my !== renderTask.current) { try { doc.destroy(); } catch { /* noop */ } return; }
         const width = Math.max(320, scroller.clientWidth - 36) * zoom;
         const frag = document.createDocumentFragment();
         const info: Array<{ el: HTMLCanvasElement; scale: number; height: number }> = [];
@@ -96,6 +97,13 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
         console.error('[pdf] render failed', err);
       }
     })();
+    // Invalidate any in-flight render (so its guarded loop bails before touching
+    // the DOM/state) and release the pdf.js document — each compile is a unique
+    // URL, so without this the worker's document memory accretes every typeset.
+    return () => {
+      renderTask.current++;
+      Promise.resolve(doc).then((d) => { try { d?.destroy(); } catch { /* already gone */ } });
+    };
   }, [pdfUrl, zoom]);
 
   const handleDblClick = (e: React.MouseEvent) => {

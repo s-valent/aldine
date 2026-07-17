@@ -71,16 +71,20 @@ function parseLog(log) {
 function run(cmd, args, opts, timeoutMs) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { ...opts });
+    // Decode via StringDecoder so a multibyte UTF-8 char split across two chunk
+    // boundaries (accented names, UTF-8 paths in biber output) isn't mangled.
+    const decoder = new (require('string_decoder').StringDecoder)('utf8');
     let out = '';
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGKILL'); } catch {} }
     }, timeoutMs);
-    child.stdout.on('data', (d) => { out += d; });
-    child.stderr.on('data', (d) => { out += d; });
+    child.stdout.on('data', (d) => { out += decoder.write(d); });
+    child.stderr.on('data', (d) => { out += decoder.write(d); });
     child.on('close', (code) => {
       clearTimeout(timer);
+      out += decoder.end();
       resolve({ code: timedOut ? -1 : code, out, timedOut });
     });
     child.on('error', (err) => {
@@ -172,6 +176,7 @@ async function compileInner(body) {
 async function synctex(body) {
   const { projectDir, rootFile = 'main.tex', direction, line, column = 0, page, x, y } = body;
   if (!projectDir || projectDir.includes('..')) throw new Error('invalid projectDir');
+  if (rootFile.includes('..') || path.isAbsolute(rootFile)) throw new Error('invalid rootFile');
   const absDir = path.resolve(DATA_DIR, projectDir);
   if (!absDir.startsWith(path.resolve(DATA_DIR))) throw new Error('projectDir escapes DATA_DIR');
   const rootDir = path.dirname(rootFile);

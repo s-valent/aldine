@@ -20,7 +20,7 @@ import * as auth from './auth.js';
 import * as oauth from './oauth.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
 import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
-import { safeJoin, isTextFile, newId } from './util.js';
+import { safeJoin, isTextFile, newId, BRANCH_RE } from './util.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
 
@@ -44,10 +44,12 @@ function publicBase(req: FastifyRequest): string {
   return `${proto}://${host}`;
 }
 
-/** git internals and compile output are never user-addressable. */
+/** git internals and compile output are never user-addressable — at any depth. */
 function isHiddenPath(rel: string): boolean {
-  const first = rel.split('/')[0];
-  return first === '.git' || first.startsWith('.papyr');
+  // Check every segment: 'sub/.git/config' and 'paper/.papyr-out/x' must be
+  // caught too, not just a leading '.git'. Matches store.listFiles, which skips
+  // these names at every level.
+  return rel.split(/[\\/]/).some((seg) => seg === '.git' || seg.startsWith('.papyr'));
 }
 
 async function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null) {
@@ -146,7 +148,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const provider = auth.AUTH_ENABLED ? oauth.getProvider(req.params.provider) : undefined;
     if (!provider) return reply.code(404).send({ error: 'This sign-in provider is not configured' });
     const state = crypto.randomBytes(12).toString('hex');
-    reply.header('set-cookie', `papyr_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`);
+    reply.header('set-cookie', `papyr_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
     const redirect = `${publicBase(req)}/api/auth/oauth/${provider.id}/callback`;
     return reply.redirect(provider.authorizeUrl(state, redirect));
   });
@@ -309,7 +311,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         : ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'].includes(ext)
           ? `image/${ext === '.jpg' ? 'jpeg' : ext.slice(1)}`
           : 'text/plain; charset=utf-8';
-      return reply.type(mime).send(buf);
+      // A committed .svg (or sniffed .html) served on our own origin would run its
+      // scripts on top-level navigation, acting as the viewer. nosniff pins the
+      // type and the sandbox CSP neutralizes any script while <img> embeds still render.
+      return reply
+        .header('X-Content-Type-Options', 'nosniff')
+        .header('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox")
+        .type(mime).send(buf);
     } catch {
       return reply.code(404).send({ error: 'file not found' });
     }
@@ -504,6 +512,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/zotero/link', async (req, reply) => {
       const { apiKey, libraryPrefix, collectionKey, bibFile = 'zotero.bib' } = req.body || {};
       if (!apiKey || !libraryPrefix) return reply.code(400).send({ error: 'apiKey and libraryPrefix required' });
+      if (isHiddenPath(bibFile)) return reply.code(403).send({ error: 'forbidden path' });
       try {
         const info = await zotero.validateKey(apiKey);
         const meta = await store.readMeta(req.params.id);
@@ -528,7 +537,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.delete<{ Params: { id: string } }>('/api/projects/:id/zotero', async (req) => {
     const meta = await store.readMeta(req.params.id);
     delete meta.zotero;
-    store.writeMeta(meta);
+    await store.writeMeta(meta);
     return { ok: true };
   });
 
@@ -547,6 +556,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/references/add', async (req, reply) => {
       const { query, branch = 'main', bibFile = 'references.bib' } = req.body || {};
       if (!query) return reply.code(400).send({ error: 'query required' });
+      if (isHiddenPath(bibFile)) return reply.code(403).send({ error: 'forbidden path' });
       if (!(await refLimiter.take(clientKey(req, reqUser(req)?.id)))) return reply.code(429).send({ error: 'Rate limit reached — please slow down' });
       try {
         const entry = await fetchBibEntry(query.trim());
@@ -618,13 +628,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // In no-auth (single-tenant) mode there's no user, so connections hang off a
   // fixed 'local' id. github.enabled reports whether OAuth connect is available.
   const ghUserId = (req: any) => reqUser(req)?.id || 'local';
+  // When auth is on, GitHub connections are per signed-in user; without this the
+  // anonymous fallback ('local') would let unauthenticated callers share one
+  // connection bucket — one user's PAT readable by the next. Mirrors /oauth + /import.
+  const requireSignIn = (req: any, reply: any): boolean => {
+    if (auth.AUTH_ENABLED && !reqUser(req)) { reply.code(401).send({ error: 'Sign in required' }); return true; }
+    return false;
+  };
 
-  app.get('/api/github/status', async (req) => {
+  app.get('/api/github/status', async (req, reply) => {
+    if (requireSignIn(req, reply)) return;
     const conn = await github.getConnection(ghUserId(req));
     return { connected: !!conn, login: conn?.login, oauth: github.oauthEnabled() };
   });
 
   app.post<{ Body: { token?: string } }>('/api/github/connect', async (req, reply) => {
+    if (requireSignIn(req, reply)) return;
     const token = (req.body?.token || '').trim();
     if (!token) return reply.code(400).send({ error: 'A GitHub token is required' });
     try {
@@ -636,7 +655,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.post('/api/github/disconnect', async (req) => {
+  app.post('/api/github/disconnect', async (req, reply) => {
+    if (requireSignIn(req, reply)) return;
     await github.disconnect(ghUserId(req));
     return { ok: true };
   });
@@ -646,7 +666,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!github.oauthEnabled()) return reply.code(404).send({ error: 'GitHub OAuth is not configured' });
     if (auth.AUTH_ENABLED && !reqUser(req)) return reply.code(401).send({ error: 'Sign in required' });
     const state = crypto.randomBytes(12).toString('hex');
-    reply.header('set-cookie', `papyr_gh_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`);
+    reply.header('set-cookie', `papyr_gh_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
     return reply.redirect(github.connectUrl(state, `${publicBase(req)}/api/github/oauth/callback`));
   });
 
@@ -668,6 +688,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/api/github/repos', async (req, reply) => {
+    if (requireSignIn(req, reply)) return;
     const conn = await github.getConnection(ghUserId(req));
     if (!conn) return reply.code(400).send({ error: 'GitHub is not connected' });
     try { return await github.listRepos(conn.token); }
@@ -801,7 +822,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/projects/:id/github/create-branch', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
     const name = (req.body?.name || '').trim();
-    if (!name || !/^[A-Za-z0-9._\/-]+$/.test(name)) return reply.code(400).send({ error: 'Invalid branch name' });
+    // Use the same BRANCH_RE gitops enforces on push/pull, so a name the UI
+    // accepts can't later be rejected by git after a stray commit is written.
+    if (!BRANCH_RE.test(name) || name.includes('..')) return reply.code(400).send({ error: 'Invalid branch name' });
     flushBranchDocs(req.params.id, 'main');
     try {
       await gitops.commitAll(req.params.id, 'main', `Start branch ${name}`, reqUser(req)?.name).catch(() => {});
@@ -815,6 +838,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string }; Body: { title?: string } }>('/api/projects/:id/github/pr', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
     try {
+      flushBranchDocs(req.params.id, 'main'); // capture unsaved editor content before committing (parity with push/pull/switch/create)
       await gitops.commitAll(req.params.id, 'main', 'Update before pull request', reqUser(req)?.name).catch(() => {});
       await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url);
       const repo = await github.getRepo(link.token, link.owner, link.repo);

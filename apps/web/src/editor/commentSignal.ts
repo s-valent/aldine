@@ -21,6 +21,10 @@ export function useCommentSignal(projectId: string, branch: string, onRemoteChan
       url: `${proto}//${location.host}/collab`,
       name: `${projectId}::${branch}::.papyr/comments-signal`,
       document: ydoc,
+      // With auth enabled the server defines onAuthenticate, so a tokenless
+      // provider never completes the handshake and this signal doc never syncs.
+      // The real credential is the session cookie; this is just the trigger.
+      token: 'papyr-session',
     });
     const map = ydoc.getMap<number>('signal');
     let last = 0;

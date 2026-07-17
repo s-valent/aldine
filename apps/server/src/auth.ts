@@ -21,8 +21,8 @@ const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 export type { User } from './db/types.js';
 export interface PublicUser { id: string; email: string; name: string; provider?: string }
 
-/** Session cookies get the Secure flag when the deployment is HTTPS. */
-const SECURE_COOKIES = (process.env.PAPYR_PUBLIC_URL || '').startsWith('https') || process.env.COOKIE_SECURE === '1';
+/** Session and OAuth-state cookies get the Secure flag when the deployment is HTTPS. */
+export const SECURE_COOKIES = (process.env.PAPYR_PUBLIC_URL || '').startsWith('https') || process.env.COOKIE_SECURE === '1';
 
 export function pub(u: User): PublicUser { return { id: u.id, email: u.email, name: u.name, provider: u.provider }; }
 

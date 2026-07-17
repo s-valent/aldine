@@ -20,9 +20,18 @@ export function docName(projectId: string, branch: string, filePath: string): st
 }
 
 export function parseDocName(name: string): { projectId: string; branch: string; filePath: string } | null {
-  const parts = name.split('::');
-  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
-  return { projectId: parts[0], branch: parts[1], filePath: parts[2] };
+  // Split on only the first two separators: projectId and branch never contain
+  // '::' (id/branch charsets exclude ':'), but a file path legitimately can, so
+  // the remainder is the whole filePath rather than being rejected as 4+ parts.
+  const i = name.indexOf('::');
+  if (i < 0) return null;
+  const j = name.indexOf('::', i + 2);
+  if (j < 0) return null;
+  const projectId = name.slice(0, i);
+  const branch = name.slice(i + 2, j);
+  const filePath = name.slice(j + 2);
+  if (!projectId || !branch || !filePath) return null;
+  return { projectId, branch, filePath };
 }
 
 const TEXT_KEY = 'content';
