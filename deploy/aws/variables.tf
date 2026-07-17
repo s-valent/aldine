@@ -4,6 +4,12 @@ variable "region" {
   default     = "eu-central-1"
 }
 
+variable "cpu_architecture" {
+  description = "Fargate CPU architecture. ARM64 (Graviton) is ~20% cheaper; images must be built for it."
+  type        = string
+  default     = "ARM64"
+}
+
 variable "domain_name" {
   description = "Public domain the app is served on."
   type        = string

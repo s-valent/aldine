@@ -8,6 +8,7 @@ set -euo pipefail
 
 TAG="${1:-latest}"
 REGION="${AWS_REGION:-eu-central-1}"
+PLATFORM="${PLATFORM:-linux/arm64}" # must match runtime_platform.cpu_architecture in ecs.tf
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
@@ -24,12 +25,12 @@ docker buildx inspect papyr-builder >/dev/null 2>&1 || docker buildx create --na
 docker buildx use papyr-builder
 
 echo "→ Building + pushing server image (${SERVER_REPO}:${TAG})"
-docker buildx build --platform linux/amd64 \
+docker buildx build --platform "${PLATFORM}" \
   -f "${REPO_ROOT}/apps/server/Dockerfile" \
   -t "${SERVER_REPO}:${TAG}" --push "${REPO_ROOT}"
 
 echo "→ Building + pushing compiler image (${COMPILER_REPO}:${TAG})"
-docker buildx build --platform linux/amd64 \
+docker buildx build --platform "${PLATFORM}" \
   -f "${REPO_ROOT}/apps/compiler/Dockerfile" \
   -t "${COMPILER_REPO}:${TAG}" --push "${REPO_ROOT}/apps/compiler"
 

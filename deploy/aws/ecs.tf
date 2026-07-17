@@ -47,7 +47,7 @@ resource "aws_ecs_task_definition" "app" {
 
   runtime_platform {
     operating_system_family = "LINUX"
-    cpu_architecture        = "X86_64"
+    cpu_architecture        = var.cpu_architecture
   }
 
   # /data — shared with the compiler.
