@@ -69,6 +69,25 @@ variable "ai_model" {
   default     = "anthropic/claude-opus-4.8"
 }
 
+# ---- transactional email (SES) ----
+variable "enable_ses" {
+  description = "Provision SES (domain identity, DKIM, MAIL FROM) and let the app send reset emails via the task role."
+  type        = bool
+  default     = true
+}
+
+variable "ses_from" {
+  description = "From address for outbound email. Empty → \"Papyr <no-reply@<domain>>\"."
+  type        = string
+  default     = ""
+}
+
+variable "ses_mail_from_subdomain" {
+  description = "Subdomain used as the custom MAIL FROM domain (for SPF alignment)."
+  type        = string
+  default     = "mail"
+}
+
 # ---- secrets ----
 # Each non-empty entry becomes an SSM SecureString parameter and is injected into
 # the server container as the env var of the same name. Empty values are skipped,

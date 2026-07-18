@@ -35,9 +35,24 @@ resource "aws_iam_role_policy" "read_secrets" {
   policy = data.aws_iam_policy_document.read_secrets[0].json
 }
 
-# Task role: the app itself needs no AWS API access (git/OAuth/compile are all
-# outbound HTTP), so this stays empty — least privilege.
+# Task role: the app's only AWS API need is sending email via SES (when enabled);
+# git/OAuth/compile are all outbound HTTP. Least privilege otherwise.
 resource "aws_iam_role" "task" {
   name               = "papyr-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+}
+
+data "aws_iam_policy_document" "send_email" {
+  count = var.enable_ses ? 1 : 0
+  statement {
+    actions   = ["ses:SendEmail"]
+    resources = [aws_sesv2_email_identity.domain[0].arn]
+  }
+}
+
+resource "aws_iam_role_policy" "send_email" {
+  count  = var.enable_ses ? 1 : 0
+  name   = "papyr-send-email"
+  role   = aws_iam_role.task.id
+  policy = data.aws_iam_policy_document.send_email[0].json
 }

@@ -33,6 +33,7 @@ locals {
     },
     var.auth_enabled ? { AUTH_ENABLED = "1" } : {},
     var.sso_only ? { PAPYR_SSO_ONLY = "1" } : {},
+    var.enable_ses ? { SES_FROM = local.ses_from, AWS_REGION = var.region } : {},
   )
 }
 

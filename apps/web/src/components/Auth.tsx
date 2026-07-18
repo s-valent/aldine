@@ -67,6 +67,18 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
 
   const reset = () => { setError(''); setInfo(''); };
 
+  // Arriving from a password-reset email link (…/?reset_token=…): pre-fill the
+  // token and jump straight to the "set a new password" step.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('reset_token');
+    if (t) {
+      setToken(t);
+      setMode('reset');
+      setInfo('Set a new password below.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
   const submit = async () => {
     reset();
     setBusy(true);

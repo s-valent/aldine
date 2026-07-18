@@ -18,6 +18,7 @@ import { aiConfigured, aiModel, diagnose } from './ai.js';
 import * as comments from './comments.js';
 import * as auth from './auth.js';
 import * as oauth from './oauth.js';
+import * as email from './email.js';
 import { canAccess, isOwner, ownerName } from './authz.js';
 import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
 import { safeJoin, isTextFile, newId, BRANCH_RE } from './util.js';
@@ -127,8 +128,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!(await loginLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
     const r = await auth.requestReset(req.body?.email || '');
     if (r) {
-      console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (relay this to the user; expires in 1h)`);
-      // TODO: if SMTP env configured, send an email with the reset link here.
+      const link = `${publicBase(req)}/?reset_token=${encodeURIComponent(r.token)}`;
+      if (email.emailConfigured()) {
+        // send in the background so the response time doesn't leak whether the
+        // address exists, and a slow SMTP/SES call can't hang the request
+        email.sendMail({
+          to: r.user.email,
+          subject: 'Reset your Papyr password',
+          text: `Someone requested a password reset for your Papyr account.\n\nOpen this link to set a new password (expires in 1 hour):\n${link}\n\nOr enter this token manually: ${r.token}\n\nIf you didn't request this, you can ignore this email.`,
+          html: `<p>Someone requested a password reset for your Papyr account.</p><p><a href="${link}">Set a new password</a> (expires in 1 hour).</p><p>Or enter this token manually: <code>${r.token}</code></p><p>If you didn't request this, you can ignore this email.</p>`,
+        }).catch((err) => console.error('[papyr] reset email failed:', err?.message || err));
+      } else {
+        console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (no email transport; relay manually, expires in 1h)`);
+      }
     }
     // never reveal whether the email exists
     return process.env.PAPYR_RESET_ECHO === '1' && r ? { ok: true, token: r.token } : { ok: true };
