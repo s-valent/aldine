@@ -43,12 +43,22 @@ const scheduleAutoCommit = debouncePerKey(20_000, (key: string) => {
   commitAll(projectId, branch, 'papyr: autosave').catch((err) => console.error('[collab] autocommit failed', err.message));
 });
 
+/** Schedule the same debounced auto-commit for non-collab writes (REST file
+ *  upload / rename / reference add) so working-tree changes reach git history
+ *  even when no Yjs doc is open — not just on the next manual push. */
+export function scheduleCommit(projectId: string, branch: string): void {
+  scheduleAutoCommit(`${projectId}::${branch}`);
+}
+
 /** Docs evicted because their file/branch was deleted — never write these back. */
 const tombstoned = new Set<string>();
 
-/** sha1 of the last text we wrote per doc — lets us skip redundant disk writes
- *  (and the read-back they used to require) when a debounced store is unchanged. */
+/** sha1 of the on-disk content per loaded doc — lets us skip redundant disk
+ *  writes when a debounced store is unchanged, without a per-store read-back.
+ *  Kept in sync with disk at load / refresh / evict / unload; a stale entry
+ *  would silently drop a real edit, so every disk-changing path updates it. */
 const lastWritten = new Map<string, string>();
+const sha1 = (s: string) => crypto.createHash('sha1').update(s).digest('hex');
 
 export function tombstone(name: string): void { tombstoned.add(name); }
 export function untombstone(name: string): void { tombstoned.delete(name); }
@@ -68,9 +78,9 @@ export function writeDocToDisk(name: string, document: Y.Doc): void {
   if (!fs.existsSync(dir)) return; // branch was deleted while doc loaded
   const abs = safeJoin(dir, filePath);
   const text = document.getText(TEXT_KEY).toString();
-  // Skip the write when the content is identical to what we last wrote (keeps
+  // Skip the write when the content is identical to what's on disk (keeps
   // latexmk incremental builds effective) — compared in memory, no disk read.
-  const hash = crypto.createHash('sha1').update(text).digest('hex');
+  const hash = sha1(text);
   if (lastWritten.get(name) === hash) return;
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, text);
@@ -144,10 +154,20 @@ export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
     let content = '';
     try { content = fs.readFileSync(safeJoin(branchDir(projectId, branch), filePath), 'utf8'); } catch { /* new file → empty */ }
     if (content.length > 0) text.insert(0, content);
+    // Seed lastWritten from what's actually on disk right now, so (a) the first
+    // store of an unchanged doc skips (no mtime churn) and (b) a doc reopened
+    // after an out-of-band disk change tracks the NEW disk state, not a stale
+    // hash from a previous load — otherwise a later store could wrongly skip.
+    lastWritten.set(documentName, sha1(content));
     return document;
   },
   async onStoreDocument({ documentName, document }) {
     writeDocToDisk(documentName, document);
+  },
+  // Reclaim the change-tracking entry when Hocuspocus unloads an idle doc, so
+  // the map is bounded by live docs and a reopened doc never trusts a stale hash.
+  async afterUnloadDocument({ documentName }: { documentName: string }) {
+    lastWritten.delete(documentName);
   },
 });
 
@@ -204,10 +224,16 @@ export function refreshBranchDocsFromDisk(projectId: string, branch: string): vo
     const abs = safeJoin(branchDir(projectId, branch), parsed.filePath);
     let content: string | null = null;
     try { content = fs.readFileSync(abs, 'utf8'); } catch { content = null; }
-    if (content === null) return; // file gone; leave doc as-is
+    if (content === null) {
+      // File deleted on disk (merge/reset). Drop the hash so the next store
+      // re-materializes the still-open doc's content instead of wrongly skipping
+      // (which would leave the editor showing content that never persists).
+      lastWritten.delete(name);
+      return;
+    }
     const text = doc.getText(TEXT_KEY);
+    lastWritten.set(name, sha1(content)); // disk now holds `content`; keep tracking in sync
     if (text.toString() === content) return;
-    lastWritten.delete(name); // disk changed under us (merge/reset) — force the next store to write
     doc.transact(() => {
       text.delete(0, text.length);
       text.insert(0, content!);

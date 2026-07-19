@@ -10,12 +10,12 @@ import { db } from './db/index.js';
  */
 
 /** Current calendar month as YYYY-MM (UTC), passed in so callers control the clock. */
-export function monthKey(now: Date): string {
+function monthKey(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 /** Monthly compile-minutes quota, or 0 when metering is disabled. */
-export function quotaSeconds(): number {
+function quotaSeconds(): number {
   const min = Number(process.env.PAPYR_COMPILE_QUOTA_MIN || 0);
   return Number.isFinite(min) && min > 0 ? min * 60 : 0;
 }

@@ -22,6 +22,7 @@ export class JsonStore implements DataStore {
   private connectionsPath: string;
   private metaDir: string;
   private commentsDir: string;
+  private flat: Set<string>;
 
   constructor(private metaRoot: string) {
     this.usersPath = path.join(metaRoot, 'users.json');
@@ -31,6 +32,7 @@ export class JsonStore implements DataStore {
     this.connectionsPath = path.join(metaRoot, 'connections.json');
     this.metaDir = path.join(metaRoot, 'meta');
     this.commentsDir = path.join(metaRoot, 'comments');
+    this.flat = new Set([this.usersPath, this.sessionsPath, this.resetsPath, this.usagePath, this.connectionsPath]);
   }
 
   async init(): Promise<void> {
@@ -38,23 +40,40 @@ export class JsonStore implements DataStore {
   }
   async close(): Promise<void> {}
 
-  // Write-through cache of the flat JSON files (users/sessions/resets/usage/
-  // connections). The header guarantees single-process access, so the cache is
-  // authoritative — this avoids re-parsing users.json + sessions.json on every
-  // authenticated request. Per-id meta/comment files are not cached here.
+  // Write-through cache of the FLAT JSON files only (users/sessions/resets/usage/
+  // connections) — per-id meta/comment files are read straight from disk, so
+  // caching their writes would only leak memory. The header guarantees
+  // single-process access, so the cache is authoritative for reads. This avoids
+  // re-parsing users.json + sessions.json on every authenticated request.
   private cache = new Map<string, unknown>();
   private read<T>(p: string, dflt: T): T {
     if (this.cache.has(p)) return this.cache.get(p) as T;
     let v: T;
-    try { v = JSON.parse(fs.readFileSync(p, 'utf8')) as T; } catch { v = dflt; }
+    try {
+      v = JSON.parse(fs.readFileSync(p, 'utf8')) as T;
+    } catch (err: unknown) {
+      // Only a genuinely-absent file means "empty" (a fresh store). A transient
+      // read error (EMFILE/EIO/EACCES) or a corrupt/partial file must NOT be
+      // cached as the empty default — a later write would then persist that
+      // default OVER real data. Fail loud so the next call retries the disk.
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
+      v = dflt;
+    }
     this.cache.set(p, v);
     return v;
   }
   private write(p: string, v: unknown): void {
-    this.cache.set(p, v); // keep the cache coherent with what we persist
-    const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(v, null, 2), { mode: 0o600 });
-    fs.renameSync(tmp, p);
+    if (this.flat.has(p)) this.cache.set(p, v); // only flat files are served from cache
+    try {
+      const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(v, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, p);
+    } catch (err) {
+      // The in-memory entry now holds an unpersisted (caller-mutated) value; drop
+      // it so the next read re-reads authoritative disk instead of serving it.
+      this.cache.delete(p);
+      throw err;
+    }
   }
 
   // ---- users ----
@@ -143,10 +162,19 @@ export class JsonStore implements DataStore {
   // Keyed per (user, month) like PgStore, so a new month doesn't wipe the prior
   // month's total and past-month reads don't return 0.
   private usage() { return this.read<Record<string, Record<string, number>>>(this.usagePath, {}); }
-  async getUsageSeconds(userId: string, month: string) { return this.usage()[userId]?.[month] ?? 0; }
+  // Migrate the pre-2026-07 shape {userId:{month,seconds}} to {userId:{[month]:seconds}}
+  // on read, so upgrading a JSON-backed self-host doesn't silently reset quotas.
+  private userMonths(rec: Record<string, number> | undefined): Record<string, number> {
+    if (rec && typeof (rec as any).month === 'string' && typeof (rec as any).seconds === 'number') {
+      return { [(rec as any).month]: (rec as any).seconds };
+    }
+    return rec || {};
+  }
+  async getUsageSeconds(userId: string, month: string) { return this.userMonths(this.usage()[userId])[month] ?? 0; }
   async addUsageSeconds(userId: string, month: string, seconds: number) {
     const u = this.usage();
-    (u[userId] ||= {})[month] = (u[userId][month] || 0) + seconds;
+    u[userId] = this.userMonths(u[userId]);
+    u[userId][month] = (u[userId][month] || 0) + seconds;
     this.write(this.usagePath, u);
   }
 }

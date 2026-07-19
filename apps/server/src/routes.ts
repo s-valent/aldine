@@ -8,8 +8,8 @@ import * as zotero from './zotero.js';
 import { compileProject, synctexLookup } from './compile.js';
 import * as usage from './usage.js';
 import * as github from './github.js';
-import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc } from './collab.js';
-import { parseBib, BibEntry } from './bib.js';
+import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc, scheduleCommit } from './collab.js';
+import { parseBib, bibKeys, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
 import { fetchBibEntry, searchWorks } from './references.js';
@@ -132,8 +132,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!(await loginLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many attempts — wait a moment' });
     const r = await auth.requestReset(req.body?.email || '');
     if (r) {
-      const link = `${publicBase(req)}/?reset_token=${encodeURIComponent(r.token)}`;
-      if (email.emailConfigured()) {
+      // Build the reset link from the CONFIGURED public URL only — never the
+      // request Host/X-Forwarded-Host, which an attacker controls and could use
+      // to redirect the victim's valid token to their own domain (takeover).
+      const base = process.env.PAPYR_PUBLIC_URL?.replace(/\/$/, '');
+      const link = `${base}/?reset_token=${encodeURIComponent(r.token)}`;
+      if (email.emailConfigured() && base) {
         // send in the background so the response time doesn't leak whether the
         // address exists, and a slow SMTP/SES call can't hang the request
         email.sendMail({
@@ -143,7 +147,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           html: `<p>Someone requested a password reset for your Papyr account.</p><p><a href="${link}">Set a new password</a> (expires in 1 hour).</p><p>Or enter this token manually: <code>${r.token}</code></p><p>If you didn't request this, you can ignore this email.</p>`,
         }).catch((err) => console.error('[papyr] reset email failed:', err?.message || err));
       } else {
-        console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (no email transport; relay manually, expires in 1h)`);
+        // no transport, or no PAPYR_PUBLIC_URL to build a trusted link → don't
+        // email a host-derived (poisonable) link; log the token for manual relay
+        console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (set PAPYR_PUBLIC_URL + an email transport to send links; relay manually, expires in 1h)`);
       }
     }
     // never reveal whether the email exists
@@ -306,6 +312,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const meta = await store.readMeta(req.params.id);
     if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can delete this project' });
     await store.deleteProject(req.params.id);
+    lastPushedHead.delete(req.params.id); // don't leak the push-dedup entry (or reuse a stale hash)
     return { ok: true };
   });
 
@@ -347,6 +354,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       await gitops.ensureWorktree(req.params.id, branch);
       store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
       refreshBranchDocsFromDisk(req.params.id, branch);
+      scheduleCommit(req.params.id, branch); // non-collab write → still reach git history
       return { ok: true };
     });
 
@@ -358,6 +366,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // evict the source doc first so its final store can't recreate the old file
       evictDoc(req.params.id, branch, from);
       store.renameFile(req.params.id, branch, from, to);
+      scheduleCommit(req.params.id, branch);
       return { ok: true };
     });
 
@@ -367,6 +376,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
     evictDoc(req.params.id, branch, rel); // prevent resurrection via pending store
     store.deleteFile(req.params.id, branch, rel);
+    scheduleCommit(req.params.id, branch);
     return { ok: true };
   });
 
@@ -377,11 +387,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!rel || rel.includes('..') || !/(^|\/)\.papyr-out\/[^/]+$/.test(rel)) return reply.code(400).send({ error: 'bad output path' });
     try {
       const abs = safeJoin(store.branchDir(req.params.id, branch), rel);
-      const stat = fs.statSync(abs); // throws → 404 below if the artifact is missing
+      fs.accessSync(abs); // throws → 404 below if the artifact is missing
       const type = rel.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
-      // stream from disk with constant memory instead of reading the whole PDF
-      // into a Buffer on every viewer's post-compile fetch
-      return reply.type(type).header('cache-control', 'no-store').header('content-length', stat.size).send(fs.createReadStream(abs));
+      // Stream from disk (constant memory) instead of buffering the whole PDF per
+      // fetch. No Content-Length: a concurrent recompile can change the file size
+      // between stat and read, and a fixed length would then hang/truncate the
+      // client — chunked transfer sends exactly what's read and ends cleanly.
+      return reply.type(type).header('cache-control', 'no-store').send(fs.createReadStream(abs));
     } catch {
       return reply.code(404).send({ error: 'artifact not found' });
     }
@@ -584,14 +596,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         await gitops.ensureWorktree(req.params.id, branch);
         let existing = '';
         try { existing = store.readFile(req.params.id, branch, bibFile).toString('utf8'); } catch { /* new file */ }
-        // use the shared BibTeX parser for both keys so @comment/@string entries
-        // and paren-form keys are handled consistently with the /bib index
-        const key = parseBib(entry, bibFile)[0]?.key;
-        if (key && parseBib(existing, bibFile).some((e) => e.key === key)) {
+        // key-only dedup via the shared bibKeys scanner — consistent with the
+        // /bib index (skips @comment/@string) but without parsing every field
+        // of every existing entry just to compare keys.
+        const key = [...bibKeys(entry)][0];
+        if (key && bibKeys(existing).has(key)) {
           return { ok: true, key, duplicate: true };
         }
         store.writeFile(req.params.id, branch, bibFile, existing.trimEnd() + '\n\n' + entry.trim() + '\n');
         refreshBranchDocsFromDisk(req.params.id, branch);
+        scheduleCommit(req.params.id, branch);
         return { ok: true, key, bibFile };
       } catch (err: any) {
         return reply.code(502).send({ error: err.message });
@@ -778,17 +792,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     catch (err: any) { return reply.code(502).send({ error: err.message }); }
   });
 
-  app.post<{ Params: { id: string }; Body: { message?: string } }>('/api/projects/:id/github/push', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { message?: string; auto?: boolean } }>('/api/projects/:id/github/push', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
     flushBranchDocs(req.params.id, 'main'); // capture unsaved editor content before committing
     const message = (req.body?.message || '').trim() || 'Update from Papyr';
-    const commit = await gitops.commitAll(req.params.id, 'main', message, reqUser(req)?.name).catch(() => ({ committed: false }));
-    // Auto-sync fires every ~20s; skip the full git-push round-trip when nothing
-    // was committed and HEAD is unchanged since our last successful push. Defaults
-    // to pushing whenever unsure (e.g. after a restart clears the in-memory map),
-    // so unpushed commits are never stranded. Single-node state (see docs/SCALING).
-    const head = await gitops.headCommit(req.params.id).catch(() => null);
-    if (!commit.committed && head && lastPushedHead.get(req.params.id) === head) return { ok: true, skipped: true };
+    const commit = await gitops.commitAll(req.params.id, 'main', message, reqUser(req)?.name).catch(() => ({ committed: false, hash: undefined as string | undefined }));
+    // HEAD is the commit hash we just made (when we committed), else look it up.
+    const head = commit.committed ? commit.hash ?? null : await gitops.headCommit(req.params.id).catch(() => null);
+    // Auto-sync (client sends auto:true, fires ~every 20s) skips the full git-push
+    // round-trip when nothing was committed and HEAD is unchanged since our last
+    // successful push. A MANUAL push always pushes — so a user pushing to restore
+    // content after a remote-side rollback isn't wrongly skipped. In-memory,
+    // single-node (see docs/SCALING); defaults to pushing whenever unsure.
+    if (req.body?.auto && !commit.committed && head && lastPushedHead.get(req.params.id) === head) {
+      return { ok: true, skipped: true };
+    }
     try {
       await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url);
       if (head) lastPushedHead.set(req.params.id, head);

@@ -15,10 +15,17 @@ interface PgPool {
   end(): Promise<void>;
 }
 
-// Postgres jsonb rejects the NUL character (); strip it from the serialized
-// JSON so user text pasted from a PDF can't 500 a write (the JSON backend tolerates it).
+// Postgres rejects the U+0000 (NUL) character in both jsonb and text. Strip it
+// from string VALUES during serialization (a replacer, not a regex over the
+// escaped output — the latter corrupts values containing the literal text
+// "\u0000"). Text columns are handled by stripNul at the query boundary below.
 function jsonb(v: unknown): string {
-  return JSON.stringify(v).replace(/\\u0000/g, '');
+  return JSON.stringify(v, (_k, val) => (typeof val === 'string' ? val.replace(/\u0000/g, '') : val));
+}
+
+/** Strip raw NUL from string query params so text columns (name/email/…) can't 500. */
+function stripNulParams(params?: unknown[]): unknown[] | undefined {
+  return params?.map((p) => (typeof p === 'string' ? p.replace(/\u0000/g, '') : p));
 }
 
 export class PgStore implements DataStore {
@@ -31,7 +38,10 @@ export class PgStore implements DataStore {
     try { Pg = await import('pg'); }
     catch { throw new Error('DATABASE_URL is set but the "pg" package is not installed. Run: npm i pg'); }
     const Pool = Pg.default?.Pool || Pg.Pool;
-    this.pool = new Pool({ connectionString: this.connectionString, max: Number(process.env.PG_POOL_MAX || 10) });
+    const pool = new Pool({ connectionString: this.connectionString, max: Number(process.env.PG_POOL_MAX || 10) });
+    // Route every query through a NUL-stripping wrapper so text columns (name,
+    // email, …) can't 500 on a pasted U+0000 — jsonb() already guards jsonb columns.
+    this.pool = { query: (text, params) => pool.query(text, stripNulParams(params)), end: () => pool.end() };
     // Postgres may still be starting when we come up (compose starts both at once).
     // Retry the first connection with backoff instead of crash-looping.
     for (let attempt = 1; ; attempt++) {

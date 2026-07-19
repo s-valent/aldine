@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# Build the server + compiler images for linux/amd64 (Fargate is x86_64), push
-# them to ECR, and roll the ECS service onto the new images.
+# Build the server + compiler images for linux/arm64 (Fargate/Graviton — must
+# match cpu_architecture in ecs.tf), push them to ECR, and roll the ECS service.
 #
 # Usage: AWS_PROFILE=papyr ./push-images.sh [tag]     (tag defaults to "latest")
 # Run `terraform apply` first so the ECR repos and ECS service exist.
 set -euo pipefail
 
+cd "$(dirname "$0")"
 TAG="${1:-latest}"
-REGION="${AWS_REGION:-eu-central-1}"
+# Region: env override → terraform.tfvars → default. Must match where terraform
+# created the ECR repos, or `docker push` fails with 'repository does not exist'.
+REGION="${AWS_REGION:-$( { [ -f terraform.tfvars ] && grep -E '^[[:space:]]*region[[:space:]]*=' terraform.tfvars | head -1 | sed -E 's/.*"([^"]+)".*/\1/'; } || true )}"
+REGION="${REGION:-eu-west-1}"
 PLATFORM="${PLATFORM:-linux/arm64}" # must match runtime_platform.cpu_architecture in ecs.tf
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="$(cd "../.." && pwd)"
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"

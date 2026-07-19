@@ -15,9 +15,10 @@ fail() { echo "✗ $*" >&2; exit 1; }
 tfvar() { { [ -f terraform.tfvars ] && grep -E "^[[:space:]]*$1[[:space:]]*=" terraform.tfvars | head -1 | sed -E 's/.*"([^"]+)".*/\1/'; } || true; }
 
 TF="$(command -v terraform || command -v tofu || true)"
-REGION="${AWS_REGION:-$(tfvar region)}"; REGION="${REGION:-eu-central-1}"
+REGION="${AWS_REGION:-$(tfvar region)}"; REGION="${REGION:-eu-west-1}"
 ZONE="$(tfvar route53_zone_name)";       ZONE="${ZONE:-tobiasrahloff.com}"
 DOMAIN="$(tfvar domain_name)";           DOMAIN="${DOMAIN:-papyr.tobiasrahloff.com}"
+export AWS_REGION="$REGION" # so push-images.sh + aws CLI target the same region terraform used
 
 echo "── preflight ────────────────────────────────────────"
 [ -n "$TF" ] || fail "terraform (or tofu) not found on PATH."

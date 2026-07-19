@@ -35,8 +35,10 @@ export async function sendMail(mail: Mail): Promise<void> {
 
 async function sendViaSes(mail: Mail): Promise<void> {
   if (!sesClient) {
+    const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
+    if (!region) console.warn('[papyr] SES_FROM is set but AWS_REGION/AWS_DEFAULT_REGION is not — SES sends will fail with "Region is missing"');
     const mod: any = await import('@aws-sdk/client-sesv2');
-    sesClient = { mod, client: new mod.SESv2Client({ region: process.env.AWS_REGION }) };
+    sesClient = { mod, client: new mod.SESv2Client({ region }) };
   }
   const { mod, client } = sesClient;
   await client.send(new mod.SendEmailCommand({

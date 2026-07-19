@@ -156,12 +156,13 @@ resource "aws_ecs_service" "app" {
     rollback = true
   }
 
-  # EFS holds all state, so replacing the single task loses nothing. Rolling
-  # (100/200) is zero-downtime; there's a brief 2-task window where — without
-  # REDIS_URL — a hot doc could momentarily seed on both. It's seconds and
-  # autosaved; set 0/100 if you'd rather trade that for a short downtime.
-  deployment_minimum_healthy_percent = 100
-  deployment_maximum_percent         = 200
+  # Stop the old task before starting the new one (0/100). This single-task
+  # deploy shares one EFS /data RW between tasks, so a 2-task overlap could lose
+  # a concurrent datastore write (last atomic rename wins) or dual-seed a hot
+  # Yjs doc without REDIS_URL. 0/100 trades a brief redeploy downtime for no
+  # overlap; the old task still gets SIGTERM to flush + autosave before it stops.
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
 
   depends_on = [aws_lb_listener.https, aws_ecs_cluster_capacity_providers.main]
 

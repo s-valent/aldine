@@ -10,6 +10,20 @@ export interface BibEntry {
   file: string;
 }
 
+/** Just the citation keys (skipping @comment/@string/@preamble) — a cheap
+ *  dedup check without parseBib's per-entry field extraction. */
+export function bibKeys(source: string): Set<string> {
+  const keys = new Set<string>();
+  const re = /@([a-zA-Z]+)\s*\{\s*([^,\s]+)\s*,/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) {
+    const type = m[1].toLowerCase();
+    if (type === 'comment' || type === 'preamble' || type === 'string') continue;
+    keys.add(m[2]);
+  }
+  return keys;
+}
+
 export function parseBib(source: string, file: string): BibEntry[] {
   const entries: BibEntry[] = [];
   const re = /@([a-zA-Z]+)\s*\{\s*([^,\s]+)\s*,/g;

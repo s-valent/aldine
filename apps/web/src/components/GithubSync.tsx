@@ -29,9 +29,9 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
   }, [projectId]);
   useEffect(() => { refresh(); loadBranches(); }, [refresh, loadBranches]);
 
-  const doPush = async (msg?: string) => {
+  const doPush = async (msg?: string, auto = false) => {
     setBusy('push'); setShowPush(false);
-    try { await api.githubPush(projectId, msg); if (msg !== undefined) toast('Pushed to GitHub', 'ok'); await refresh(); }
+    try { await api.githubPush(projectId, msg, auto); if (msg !== undefined) toast('Pushed to GitHub', 'ok'); await refresh(); }
     catch (err: any) { toast(err.message, 'error'); }
     setBusy('');
   };
@@ -77,7 +77,7 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
   useEffect(() => {
     localStorage.setItem(`papyr.autopush.${projectId}`, auto ? '1' : '0');
     if (!auto) return;
-    const t = setInterval(() => { if (autoRef.current && !busyRef.current) doPush(); }, 20_000);
+    const t = setInterval(() => { if (autoRef.current && !busyRef.current) doPush(undefined, true); }, 20_000);
     return () => clearInterval(t);
   }, [auto, projectId]);
 

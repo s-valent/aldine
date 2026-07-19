@@ -39,7 +39,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   if (loading) return <div style={{ height: '100%' }} />;
 
-  if (authEnabled && !user) return <LoginScreen providers={providers} passwordAuth={passwordAuth} onAuthed={(u) => setUser(u)} />;
+  // Show the login/reset screen when signed out, OR when a reset link was opened
+  // in an already-signed-in session (otherwise the ?reset_token= link does nothing).
+  const hasResetToken = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('reset_token');
+  if (authEnabled && (!user || hasResetToken)) return <LoginScreen providers={providers} passwordAuth={passwordAuth} onAuthed={(u) => setUser(u)} />;
 
   return <Ctx.Provider value={{ loading, authEnabled, user, providers, setUser, refresh }}>{children}</Ctx.Provider>;
 }
@@ -70,12 +73,15 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
   // Arriving from a password-reset email link (…/?reset_token=…): pre-fill the
   // token and jump straight to the "set a new password" step.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('reset_token');
+    const url = new URL(window.location.href);
+    const t = url.searchParams.get('reset_token');
     if (t) {
       setToken(t);
       setMode('reset');
       setInfo('Set a new password below.');
-      window.history.replaceState({}, '', window.location.pathname);
+      // strip only reset_token, preserving any co-arriving query params / hash
+      url.searchParams.delete('reset_token');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
     }
   }, []);
 

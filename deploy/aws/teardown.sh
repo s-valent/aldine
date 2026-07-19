@@ -11,4 +11,6 @@ echo "project data on it. This cannot be undone."
 read -r -p 'Type "destroy" to continue: ' confirm
 [ "$confirm" = "destroy" ] || { echo "Aborted."; exit 1; }
 
-terraform destroy
+TF="$(command -v terraform || command -v tofu || true)"
+[ -n "$TF" ] || { echo "✗ neither terraform nor tofu on PATH" >&2; exit 1; }
+"$TF" destroy
