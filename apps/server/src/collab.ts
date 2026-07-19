@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { Server as HocuspocusServer } from '@hocuspocus/server';
 import type { Hocuspocus } from '@hocuspocus/server';
 import * as Y from 'yjs';
@@ -45,6 +46,10 @@ const scheduleAutoCommit = debouncePerKey(20_000, (key: string) => {
 /** Docs evicted because their file/branch was deleted — never write these back. */
 const tombstoned = new Set<string>();
 
+/** sha1 of the last text we wrote per doc — lets us skip redundant disk writes
+ *  (and the read-back they used to require) when a debounced store is unchanged. */
+const lastWritten = new Map<string, string>();
+
 export function tombstone(name: string): void { tombstoned.add(name); }
 export function untombstone(name: string): void { tombstoned.delete(name); }
 
@@ -63,10 +68,13 @@ export function writeDocToDisk(name: string, document: Y.Doc): void {
   if (!fs.existsSync(dir)) return; // branch was deleted while doc loaded
   const abs = safeJoin(dir, filePath);
   const text = document.getText(TEXT_KEY).toString();
+  // Skip the write when the content is identical to what we last wrote (keeps
+  // latexmk incremental builds effective) — compared in memory, no disk read.
+  const hash = crypto.createHash('sha1').update(text).digest('hex');
+  if (lastWritten.get(name) === hash) return;
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  // Avoid needless mtime churn (keeps latexmk incremental builds effective)
-  try { if (fs.readFileSync(abs, 'utf8') === text) return; } catch { /* new file */ }
   fs.writeFileSync(abs, text);
+  lastWritten.set(name, hash);
   scheduleAutoCommit(`${projectId}::${branch}`);
 }
 
@@ -98,11 +106,19 @@ if (process.env.REDIS_URL) {
   try {
     const { Redis } = await import('@hocuspocus/extension-redis');
     const u = new URL(process.env.REDIS_URL);
+    // Forward the full connection through ioredis `options` so managed Redis
+    // works: honor the ACL username and rediss:// TLS (a bare host/port/password
+    // parse silently dropped both, breaking auth against e.g. Elasticache/Upstash).
     collabExtensions.push(new Redis({
       host: u.hostname,
       port: Number(u.port || 6379),
-      password: u.password || undefined,
-      db: Number((u.pathname || '/0').slice(1)) || 0,
+      options: {
+        username: u.username || undefined,
+        password: u.password || undefined,
+        db: Number((u.pathname || '/0').slice(1)) || 0,
+        maxRetriesPerRequest: 3,
+        ...(u.protocol === 'rediss:' ? { tls: {} } : {}),
+      },
     } as never));
     console.log('[papyr] collab: redis sync across nodes (requires sticky routing)');
   } catch {
@@ -135,11 +151,16 @@ export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
   },
 });
 
-/** Flush ALL loaded docs to disk (graceful shutdown). */
-export function flushAllDocs(): number {
-  let n = 0;
-  hocuspocus.documents.forEach((doc: Y.Doc, name: string) => { writeDocToDisk(name, doc); n++; });
-  return n;
+/** Flush ALL loaded docs to disk (graceful shutdown); returns the distinct
+ *  project/branch pairs that had open docs, so the caller commits only those. */
+export function flushAllDocs(): { projectId: string; branch: string }[] {
+  const dirty = new Map<string, { projectId: string; branch: string }>();
+  hocuspocus.documents.forEach((doc: Y.Doc, name: string) => {
+    writeDocToDisk(name, doc);
+    const p = parseDocName(name);
+    if (p) dirty.set(`${p.projectId}::${p.branch}`, { projectId: p.projectId, branch: p.branch });
+  });
+  return [...dirty.values()];
 }
 
 /**
@@ -149,6 +170,7 @@ export function flushAllDocs(): number {
 export function evictDoc(projectId: string, branch: string, filePath: string): void {
   const name = docName(projectId, branch, filePath);
   tombstone(name);
+  lastWritten.delete(name);
   const doc = hocuspocus.documents.get(name) as (Y.Doc & { destroy?: () => void }) | undefined;
   if (doc) {
     hocuspocus.documents.delete(name);
@@ -185,6 +207,7 @@ export function refreshBranchDocsFromDisk(projectId: string, branch: string): vo
     if (content === null) return; // file gone; leave doc as-is
     const text = doc.getText(TEXT_KEY);
     if (text.toString() === content) return;
+    lastWritten.delete(name); // disk changed under us (merge/reset) — force the next store to write
     doc.transact(() => {
       text.delete(0, text.length);
       text.insert(0, content!);

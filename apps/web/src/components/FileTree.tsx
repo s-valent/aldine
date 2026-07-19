@@ -127,7 +127,7 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
         onContextMenu={(e) => { e.preventDefault(); setMenu({ path: node.path, x: e.clientX, y: e.clientY }); }}
         title={node.path}
       >
-        <span className="tree__icon">{fileIcon(node.path, node.path === rootFile, node.binary)}</span>
+        <span className="tree__icon">{fileIcon(node.path, node.path === rootFile)}</span>
         {node.name}
         {node.path === rootFile && <span className="tree__root-tag">root</span>}
       </button>

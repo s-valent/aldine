@@ -109,11 +109,6 @@ export async function createPullRequest(token: string, owner: string, repo: stri
   return { url: pr.html_url, number: pr.number };
 }
 
-/** Create a new repo under the authenticated user. */
-export async function createRepo(token: string, name: string, isPrivate = true): Promise<Repo> {
-  return mapRepo(await api(token, '/user/repos', { method: 'POST', body: JSON.stringify({ name, private: isPrivate, auto_init: false }) }));
-}
-
 /**
  * Inject the token into an https clone URL for a git network op. Non-http URLs
  * (e.g. a local path in tests) are returned unchanged. The result is used

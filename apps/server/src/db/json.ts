@@ -38,10 +38,20 @@ export class JsonStore implements DataStore {
   }
   async close(): Promise<void> {}
 
+  // Write-through cache of the flat JSON files (users/sessions/resets/usage/
+  // connections). The header guarantees single-process access, so the cache is
+  // authoritative — this avoids re-parsing users.json + sessions.json on every
+  // authenticated request. Per-id meta/comment files are not cached here.
+  private cache = new Map<string, unknown>();
   private read<T>(p: string, dflt: T): T {
-    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return dflt; }
+    if (this.cache.has(p)) return this.cache.get(p) as T;
+    let v: T;
+    try { v = JSON.parse(fs.readFileSync(p, 'utf8')) as T; } catch { v = dflt; }
+    this.cache.set(p, v);
+    return v;
   }
   private write(p: string, v: unknown): void {
+    this.cache.set(p, v); // keep the cache coherent with what we persist
     const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(v, null, 2), { mode: 0o600 });
     fs.renameSync(tmp, p);
@@ -130,12 +140,13 @@ export class JsonStore implements DataStore {
   }
 
   // ---- usage ----
-  private usage() { return this.read<Record<string, { month: string; seconds: number }>>(this.usagePath, {}); }
-  async getUsageSeconds(userId: string, month: string) { const e = this.usage()[userId]; return e && e.month === month ? e.seconds : 0; }
+  // Keyed per (user, month) like PgStore, so a new month doesn't wipe the prior
+  // month's total and past-month reads don't return 0.
+  private usage() { return this.read<Record<string, Record<string, number>>>(this.usagePath, {}); }
+  async getUsageSeconds(userId: string, month: string) { return this.usage()[userId]?.[month] ?? 0; }
   async addUsageSeconds(userId: string, month: string, seconds: number) {
     const u = this.usage();
-    const e = u[userId];
-    u[userId] = e && e.month === month ? { month, seconds: e.seconds + seconds } : { month, seconds };
+    (u[userId] ||= {})[month] = (u[userId][month] || 0) + seconds;
     this.write(this.usagePath, u);
   }
 }

@@ -15,6 +15,12 @@ interface PgPool {
   end(): Promise<void>;
 }
 
+// Postgres jsonb rejects the NUL character (); strip it from the serialized
+// JSON so user text pasted from a PDF can't 500 a write (the JSON backend tolerates it).
+function jsonb(v: unknown): string {
+  return JSON.stringify(v).replace(/\\u0000/g, '');
+}
+
 export class PgStore implements DataStore {
   private pool!: PgPool;
 
@@ -123,7 +129,7 @@ export class PgStore implements DataStore {
     await this.pool.query(
       `INSERT INTO project_meta(id,created_at,data) VALUES($1,$2,$3)
        ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, created_at=EXCLUDED.created_at`,
-      [meta.id, meta.createdAt, JSON.stringify(meta)],
+      [meta.id, meta.createdAt, jsonb(meta)],
     );
   }
   async deleteMeta(id: string) { await this.pool.query(`DELETE FROM project_meta WHERE id=$1`, [id]); }
@@ -141,7 +147,7 @@ export class PgStore implements DataStore {
     await this.pool.query(
       `INSERT INTO comments(project_id,data) VALUES($1,$2)
        ON CONFLICT(project_id) DO UPDATE SET data=EXCLUDED.data`,
-      [projectId, JSON.stringify(list)],
+      [projectId, jsonb(list)],
     );
   }
 
@@ -167,7 +173,7 @@ export class PgStore implements DataStore {
     await this.pool.query(
       `INSERT INTO connections(user_id,provider,data) VALUES($1,$2,$3)
        ON CONFLICT(user_id,provider) DO UPDATE SET data=EXCLUDED.data`,
-      [userId, provider, JSON.stringify(data)],
+      [userId, provider, jsonb(data)],
     );
   }
   async deleteConnection(userId: string, provider: string) {

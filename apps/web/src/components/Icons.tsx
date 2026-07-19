@@ -71,21 +71,11 @@ export const IconX = (p: SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export const IconGrid = (p: SVGProps<SVGSVGElement>) => (
-  <svg {...base(p)} width={15} height={15}>
-    <rect x="2" y="2" width="5" height="5" rx="1" />
-    <rect x="9" y="2" width="5" height="5" rx="1" />
-    <rect x="2" y="9" width="5" height="5" rx="1" />
-    <rect x="9" y="9" width="5" height="5" rx="1" />
-  </svg>
-);
-
 /** Icon for a file path. */
-export function fileIcon(path: string, isRoot: boolean, binary?: boolean) {
+export function fileIcon(path: string, isRoot: boolean) {
   if (isRoot) return <IconStar style={{ color: 'var(--warn)' }} />;
   if (path.endsWith('.tex')) return <IconDoc />;
   if (path.endsWith('.bib')) return <IconBook />;
   if (/\.(png|jpe?g|gif|svg|webp|pdf)$/i.test(path)) return <IconImage />;
-  if (binary) return <IconFile />;
   return <IconFile />;
 }

@@ -7,7 +7,6 @@ import { config } from './config.js';
 import { registerRoutes } from './routes.js';
 import { hocuspocus, flushAllDocs } from './collab.js';
 import { commitAll } from './gitops.js';
-import { listProjects } from './store.js';
 import { initObservability, captureError } from './observability.js';
 import { initDb, closeDb } from './db/index.js';
 import { initRateLimit } from './ratelimit.js';
@@ -61,11 +60,11 @@ async function shutdown(signal: string) {
   shuttingDown = true;
   console.log(`[papyr] ${signal} — flushing ${hocuspocus.documents.size} open documents…`);
   try {
-    const n = flushAllDocs();
-    // best-effort commit of every project's main branch so nothing is lost
-    const projects = await listProjects();
-    await Promise.allSettled(projects.map((p) => commitAll(p.id, 'main', 'papyr: autosave on shutdown')));
-    console.log(`[papyr] flushed ${n} documents; exiting`);
+    // commit only the branches that actually had open docs (typically a handful),
+    // not every project — avoids a SIGTERM fan-out of hundreds of git processes
+    const dirty = flushAllDocs();
+    await Promise.allSettled(dirty.map((d) => commitAll(d.projectId, d.branch, 'papyr: autosave on shutdown')));
+    console.log(`[papyr] flushed ${dirty.length} project/branch(es); exiting`);
   } catch (err) {
     console.error('[papyr] shutdown flush error', err);
   }

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { worktreesDir, projectsDir } from './config.js';
+import { projectsDir } from './config.js';
 import { repoDir, branchDir, git } from './store.js';
 import { BRANCH_RE } from './util.js';
 
@@ -84,11 +84,6 @@ export async function merge(id: string, from: string, into: string, author?: str
   return { ok: true };
 }
 
-export async function fileDiff(id: string, branch: string, base = 'main'): Promise<string> {
-  const g = git(repoDir(id));
-  return g.raw(['diff', `${base}...${branch}`, '--stat']);
-}
-
 /** Unified patch for a single commit (handles root commits, which have no parent). */
 export async function commitDiff(id: string, hash: string): Promise<{ patch: string; stat: string }> {
   if (!/^[0-9a-f]{4,40}$/.test(hash)) throw new Error('bad commit hash');
@@ -133,6 +128,11 @@ export async function pushToRemote(id: string, remoteBranch: string, tokenUrl: s
   await git(repoDir(id)).raw(['push', tokenUrl, `refs/heads/main:refs/heads/${remoteBranch}`]);
 }
 
+/** Current HEAD commit hash of the project's main branch (cheap, local). */
+export async function headCommit(id: string): Promise<string> {
+  return (await git(repoDir(id)).revparse(['HEAD'])).trim();
+}
+
 /** How many commits local `main` is ahead/behind the remote branch (fetches first). */
 export async function remoteStatus(id: string, remoteBranch: string, tokenUrl: string): Promise<{ ahead: number; behind: number }> {
   if (!BRANCH_RE.test(remoteBranch)) throw new Error('bad branch name');
@@ -167,13 +167,4 @@ export async function pullFromRemote(id: string, remoteBranch: string, tokenUrl:
   }
   if (mergeErr) throw mergeErr; // a non-conflict failure
   return { ok: true };
-}
-
-/** Remove stale worktree registrations on boot. */
-export async function pruneWorktrees(id: string): Promise<void> {
-  try { await git(repoDir(id)).raw(['worktree', 'prune']); } catch { /* noop */ }
-}
-
-export function worktreeRoot(id: string): string {
-  return path.join(worktreesDir, id);
 }

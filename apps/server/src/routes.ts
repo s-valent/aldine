@@ -45,6 +45,10 @@ function publicBase(req: FastifyRequest): string {
   return `${proto}://${host}`;
 }
 
+/** Last HEAD we successfully pushed per project — lets auto-sync skip a no-op
+ *  network push. In-memory (single-node); cleared on restart → push-when-unsure. */
+const lastPushedHead = new Map<string, string>();
+
 /** git internals and compile output are never user-addressable — at any depth. */
 function isHiddenPath(rel: string): boolean {
   // Check every segment: 'sub/.git/config' and 'paper/.papyr-out/x' must be
@@ -373,9 +377,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!rel || rel.includes('..') || !/(^|\/)\.papyr-out\/[^/]+$/.test(rel)) return reply.code(400).send({ error: 'bad output path' });
     try {
       const abs = safeJoin(store.branchDir(req.params.id, branch), rel);
-      const buf = fs.readFileSync(abs);
+      const stat = fs.statSync(abs); // throws → 404 below if the artifact is missing
       const type = rel.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
-      return reply.type(type).header('cache-control', 'no-store').send(buf);
+      // stream from disk with constant memory instead of reading the whole PDF
+      // into a Buffer on every viewer's post-compile fetch
+      return reply.type(type).header('cache-control', 'no-store').header('content-length', stat.size).send(fs.createReadStream(abs));
     } catch {
       return reply.code(404).send({ error: 'artifact not found' });
     }
@@ -520,9 +526,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.post<{ Params: { id: string }; Body: { apiKey: string; libraryPrefix: string; collectionKey?: string; bibFile?: string } }>(
+  app.post<{ Params: { id: string }; Body: { apiKey: string; libraryPrefix: string; collectionKey?: string; bibFile?: string; branch?: string } }>(
     '/api/projects/:id/zotero/link', async (req, reply) => {
-      const { apiKey, libraryPrefix, collectionKey, bibFile = 'zotero.bib' } = req.body || {};
+      const { apiKey, libraryPrefix, collectionKey, bibFile = 'zotero.bib', branch = 'main' } = req.body || {};
       if (!apiKey || !libraryPrefix) return reply.code(400).send({ error: 'apiKey and libraryPrefix required' });
       if (isHiddenPath(bibFile)) return reply.code(403).send({ error: 'forbidden path' });
       try {
@@ -530,7 +536,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         const meta = await store.readMeta(req.params.id);
         meta.zotero = { apiKey, userId: info.userID, username: info.username, libraryPrefix, collectionKey, bibFile };
         await store.writeMeta(meta);
-        const sync = await zotero.syncProject(req.params.id, 'main', true);
+        // sync into the branch the user linked from (the plugin refreshes that branch), not always main
+        const sync = await zotero.syncProject(req.params.id, branch, true);
         return { ok: true, ...sync };
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
@@ -577,8 +584,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         await gitops.ensureWorktree(req.params.id, branch);
         let existing = '';
         try { existing = store.readFile(req.params.id, branch, bibFile).toString('utf8'); } catch { /* new file */ }
-        const key = (entry.match(/@\w+\s*\{\s*([^,\s]+)/) || [])[1];
-        if (key && new RegExp(`@\\w+\\s*\\{\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*,`).test(existing)) {
+        // use the shared BibTeX parser for both keys so @comment/@string entries
+        // and paren-form keys are handled consistently with the /bib index
+        const key = parseBib(entry, bibFile)[0]?.key;
+        if (key && parseBib(existing, bibFile).some((e) => e.key === key)) {
           return { ok: true, key, duplicate: true };
         }
         store.writeFile(req.params.id, branch, bibFile, existing.trimEnd() + '\n\n' + entry.trim() + '\n');
@@ -773,9 +782,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const link = await linkedRemote(req, reply); if (!link) return;
     flushBranchDocs(req.params.id, 'main'); // capture unsaved editor content before committing
     const message = (req.body?.message || '').trim() || 'Update from Papyr';
-    await gitops.commitAll(req.params.id, 'main', message, reqUser(req)?.name).catch(() => {});
-    try { await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url); return { ok: true }; }
-    catch (err: any) { return reply.code(400).send({ error: `Push failed: ${err.message}` }); }
+    const commit = await gitops.commitAll(req.params.id, 'main', message, reqUser(req)?.name).catch(() => ({ committed: false }));
+    // Auto-sync fires every ~20s; skip the full git-push round-trip when nothing
+    // was committed and HEAD is unchanged since our last successful push. Defaults
+    // to pushing whenever unsure (e.g. after a restart clears the in-memory map),
+    // so unpushed commits are never stranded. Single-node state (see docs/SCALING).
+    const head = await gitops.headCommit(req.params.id).catch(() => null);
+    if (!commit.committed && head && lastPushedHead.get(req.params.id) === head) return { ok: true, skipped: true };
+    try {
+      await gitops.pushToRemote(req.params.id, link.remoteBranch, link.url);
+      if (head) lastPushedHead.set(req.params.id, head);
+      return { ok: true };
+    } catch (err: any) { return reply.code(400).send({ error: `Push failed: ${err.message}` }); }
   });
 
   app.post<{ Params: { id: string } }>('/api/projects/:id/github/pull', async (req, reply) => {
