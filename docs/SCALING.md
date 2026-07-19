@@ -19,7 +19,7 @@ and infrastructure, not a rewrite.
 | Users, sessions, reset tokens | DataStore | `db/` (`JsonStore` \| `PgStore`) |
 | Project metadata, sharing | DataStore | `db/` |
 | Review comments | DataStore | `db/` |
-| Compile-minutes usage (metering) | DataStore | `db/` |
+| Compile-minutes usage (quotas) | DataStore | `db/` |
 | Rate-limit / quota counters | in-memory (per process) | `ratelimit.ts` |
 | Live collaboration state (Yjs CRDT) | in-process (Hocuspocus) | `collab.ts` |
 
@@ -41,7 +41,7 @@ unaffected.
    sessions, project metadata, comments, and usage/quotas; Redis (`REDIS_URL`)
    shares the rate limiters across nodes. The compile concurrency gate stays
    per-node by design (it protects each node's compiler; the shared ceiling is
-   the metered compile quota). This wall is cleared — the app tier is now
+   the per-user compile quota). This wall is cleared — the app tier is now
    horizontally scalable.
 2. **Single-process Hocuspocus** — each Yjs document's CRDT state lives in one
    process's memory. → **Mostly done:** the Redis collab extension (`REDIS_URL`)
@@ -71,8 +71,9 @@ built.
 
 ## Cost & hosting
 
-Compiles (CPU/RAM bursts) dominate cost, so cheap dedicated compute (a Hetzner
-CCX-class box, EU for data residency) beats hyperscalers on margin. Meter
-compile-minutes (`PAPYR_COMPILE_QUOTA_MIN`, read `/api/usage`) and tier plans on
-them rather than seats. See [../deploy/README.md](../deploy/README.md) for the
-single-VPS runbook.
+Compiles (CPU/RAM bursts) dominate resource usage, so if you host Papyr for a
+lab, class, or team, cheap dedicated compute (a Hetzner CCX-class box, EU for
+data residency) goes a lot further than hyperscaler instances. If you need to
+keep a shared box fair, cap compile-minutes per user
+(`PAPYR_COMPILE_QUOTA_MIN`; `/api/usage` reports consumption). See
+[../deploy/README.md](../deploy/README.md) for the single-VPS runbook.

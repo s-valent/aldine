@@ -2,7 +2,7 @@ import { APIRequestContext, Page, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const PAPER_DIR = process.env.PAPER_DIR || '/Users/rahloff/projects/paper-gsaas-2026/paper';
+export const PAPER_DIR = process.env.PAPER_DIR || path.resolve(__dirname, '..', 'fixtures', 'demo-paper');
 
 export async function createProject(request: APIRequestContext, name: string): Promise<string> {
   const res = await request.post('/api/projects', { data: { name } });
@@ -22,8 +22,8 @@ function paperSourceFiles(dir = PAPER_DIR, rel = ''): string[] {
   return out;
 }
 
-/** Create a project seeded with the real IAC example paper (all source files). */
-export async function createPaperProject(request: APIRequestContext, name = 'GSaaS Paper'): Promise<string> {
+/** Create a project seeded with the demo paper fixture (all source files). */
+export async function createPaperProject(request: APIRequestContext, name = 'Demo Paper'): Promise<string> {
   const id = await createProject(request, name);
   for (const f of paperSourceFiles()) {
     const content = fs.readFileSync(path.join(PAPER_DIR, f), 'utf8');

@@ -60,7 +60,7 @@ export async function createProject(name: string, files: Record<string, string> 
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, content);
   }
-  fs.writeFileSync(path.join(dir, '.gitignore'), '*.aux\n*.log\n*.out\n*.toc\n*.bbl\n*.bcf\n*.blg\n*.synctex.gz\n*.fls\n*.fdb_latexmk\n*.run.xml\n');
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.papyr-out/\n*.aux\n*.log\n*.out\n*.toc\n*.bbl\n*.bcf\n*.blg\n*.synctex.gz\n*.fls\n*.fdb_latexmk\n*.run.xml\n');
   await g.add(['-A']);
   await g.commit('Initial commit');
 

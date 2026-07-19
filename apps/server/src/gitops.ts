@@ -44,9 +44,30 @@ export async function ensureWorktree(id: string, name: string): Promise<string> 
   return dir;
 }
 
+/**
+ * Compile output must never enter git history (or get pushed to GitHub). New
+ * projects get `.papyr-out/` in their generated .gitignore; this covers
+ * pre-existing and GitHub-cloned repos via the shared .git/info/exclude
+ * (worktrees read the common dir's exclude file, so one write covers all branches).
+ */
+function ensureOutputExcluded(id: string): void {
+  try {
+    const info = path.join(repoDir(id), '.git', 'info');
+    const file = path.join(info, 'exclude');
+    const cur = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    if (!/^\.papyr-out\/$/m.test(cur)) {
+      fs.mkdirSync(info, { recursive: true });
+      fs.writeFileSync(file, cur + (cur && !cur.endsWith('\n') ? '\n' : '') + '.papyr-out/\n');
+    }
+  } catch { /* best-effort; commit path must not fail on this */ }
+}
+
 export async function commitAll(id: string, branch: string, message: string, author?: string): Promise<{ committed: boolean; hash?: string }> {
   const dir = await ensureWorktree(id, branch);
   const g = git(dir);
+  ensureOutputExcluded(id);
+  // Self-heal projects that committed compile output before it was excluded.
+  await g.raw(['rm', '-r', '--cached', '--ignore-unmatch', '--quiet', '--', '.papyr-out']).catch(() => {});
   await g.add(['-A']);
   const status = await g.status();
   if (status.staged.length === 0 && status.files.length === 0) return { committed: false };
@@ -119,6 +140,7 @@ export async function cloneRepo(id: string, tokenUrl: string): Promise<{ remoteB
   await g.addConfig('user.email', 'papyr@localhost');
   const remoteBranch = (await g.raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'main';
   if (remoteBranch !== 'main') await g.raw(['branch', '-m', 'main']);
+  ensureOutputExcluded(id); // cloned repos have no Papyr .gitignore; keep compile output out of their history
   return { remoteBranch };
 }
 

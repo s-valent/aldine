@@ -3,17 +3,26 @@ dist/
 .data/
 .data-e2e/
 .data-auth/
+.data-shots/
 .secrets/
 .secrets-auth/
 .secrets-pb/
+.secrets-shots/
 .cache/
+.cache-shots/
 *.log
 .DS_Store
+test-results/
 e2e/test-results/
 e2e/playwright-report/
 e2e/.auth/
+.data-c2/
+.secrets-c2/
 apps/web/dist/
 apps/server/dist/
 
 # local runtime config / secrets
 .env
+
+# maintainer-local launch playbook (not for the public repo)
+LAUNCH.md

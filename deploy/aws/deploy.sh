@@ -16,8 +16,9 @@ tfvar() { { [ -f terraform.tfvars ] && grep -E "^[[:space:]]*$1[[:space:]]*=" te
 
 TF="$(command -v terraform || command -v tofu || true)"
 REGION="${AWS_REGION:-$(tfvar region)}"; REGION="${REGION:-eu-west-1}"
-ZONE="$(tfvar route53_zone_name)";       ZONE="${ZONE:-tobiasrahloff.com}"
-DOMAIN="$(tfvar domain_name)";           DOMAIN="${DOMAIN:-papyr.tobiasrahloff.com}"
+ZONE="$(tfvar route53_zone_name)"
+DOMAIN="$(tfvar domain_name)"
+[ -n "$ZONE" ] && [ -n "$DOMAIN" ] || fail "set domain_name and route53_zone_name in terraform.tfvars (copy terraform.tfvars.example)."
 export AWS_REGION="$REGION" # so push-images.sh + aws CLI target the same region terraform used
 
 echo "── preflight ────────────────────────────────────────"

@@ -79,11 +79,12 @@ resource "aws_ecs_task_definition" "app" {
 
   container_definitions = jsonencode([
     {
-      name        = "compiler"
-      image       = local.compiler_image
-      essential   = true
-      environment = [{ name = "DATA_DIR", value = "/data" }, { name = "PORT", value = "4020" }]
-      mountPoints = [{ sourceVolume = "data", containerPath = "/data", readOnly = false }]
+      name            = "compiler"
+      image           = local.compiler_image
+      essential       = true
+      linuxParameters = { initProcessEnabled = true } # reap orphaned pdflatex/biber
+      environment     = [{ name = "DATA_DIR", value = "/data" }, { name = "PORT", value = "4020" }]
+      mountPoints     = [{ sourceVolume = "data", containerPath = "/data", readOnly = false }]
       healthCheck = {
         command     = ["CMD-SHELL", "node -e \"require('http').get('http://localhost:4020/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
         interval    = 30
@@ -101,10 +102,11 @@ resource "aws_ecs_task_definition" "app" {
       }
     },
     {
-      name        = "server"
-      image       = local.server_image
-      essential   = true
-      environment = [for k, v in local.server_env : { name = k, value = tostring(v) }]
+      name            = "server"
+      image           = local.server_image
+      essential       = true
+      linuxParameters = { initProcessEnabled = true } # reap orphaned git children
+      environment     = [for k, v in local.server_env : { name = k, value = tostring(v) }]
       secrets     = [for k, p in aws_ssm_parameter.secret : { name = k, valueFrom = p.arn }]
       dependsOn   = [{ containerName = "compiler", condition = "HEALTHY" }]
       # Give the shutdown hook time to flush open Yjs docs + autosave-commit.

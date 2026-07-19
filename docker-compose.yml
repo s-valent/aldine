@@ -8,15 +8,19 @@ services:
     ports:
       # bind to all interfaces by default (local dev); set PAPYR_APP_BIND=127.0.0.1
       # in production so only the Caddy reverse proxy faces the internet.
-      - "${PAPYR_APP_BIND:-0.0.0.0}:8080:3000"
+      # PAPYR_PORT changes the host port if 8080 is taken.
+      - "${PAPYR_APP_BIND:-0.0.0.0}:${PAPYR_PORT:-8080}:3000"
     environment:
       DATA_DIR: /data
       META_DIR: /secrets
       COMPILER_URL: http://compiler:4020
-      # Optional AI error-fix (bring your own key: Anthropic or OpenRouter). Unset = disabled.
+      # Optional AI error-fix (bring your own key). Precedence when several are
+      # set: OPENROUTER_API_KEY > OPENAI_API_KEY > ANTHROPIC_API_KEY. Unset = disabled.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       PAPYR_AI_MODEL: ${PAPYR_AI_MODEL:-}
+      PAPYR_AI_BASE_URL: ${PAPYR_AI_BASE_URL:-}
       # Optional multi-user auth. AUTH_ENABLED=1 turns on login + per-project access.
       AUTH_ENABLED: ${AUTH_ENABLED:-}
       # PAPYR_SSO_ONLY=1 disables password sign-in entirely (SSO only; no SMTP needed).
@@ -30,6 +34,17 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
+      # Optional outbound email for password resets: SMTP (any provider) or AWS
+      # SES (SES_FROM + AWS_REGION). Without a transport, reset tokens are
+      # logged server-side instead of emailed.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SES_FROM: ${SES_FROM:-}
+      AWS_REGION: ${AWS_REGION:-}
       # Optional error tracking.
       SENTRY_DSN: ${SENTRY_DSN:-}
       # Optional: share rate limits across app nodes (see the `redis` profile).
@@ -41,9 +56,17 @@ services:
       - papyr-data:/data
       - papyr-secrets:/secrets
     depends_on:
-      - compiler
+      compiler:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
     stop_grace_period: 30s
+    init: true # reap orphaned git/compile children (node runs as PID 1 otherwise)
     networks:
       - frontend
       - backend
@@ -54,6 +77,12 @@ services:
     environment:
       DATA_DIR: /data
       COMPILE_TIMEOUT_MS: "120000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4020/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     volumes:
       - papyr-data:/data
     # Hardening: no external egress (internal network), drop all Linux caps,
@@ -68,6 +97,7 @@ services:
       - ALL
     security_opt:
       - no-new-privileges
+    init: true # reap orphaned pdflatex/biber children left by killed latexmk runs
     restart: unless-stopped
 
   # TLS reverse proxy — opt in with `--profile tls` and set PAPYR_DOMAIN.

@@ -133,9 +133,9 @@ async function compileInner(body) {
   fs.mkdirSync(path.join(absDir, rootDir, OUT_SUBDIR), { recursive: true });
 
   const engineFlag = engine === 'xelatex' ? '-pdfxe' : engine === 'lualatex' ? '-pdflua' : '-pdf';
-  const args = [
+  const mkArgs = (force) => [
     engineFlag,
-    '-g', // user asked for a typeset: run even if latexmk thinks it's up-to-date (also recovers from stale failed state)
+    ...(force ? ['-g'] : []), // -g: run even if latexmk thinks it's up-to-date
     '-interaction=nonstopmode',
     '-halt-on-error',
     '-file-line-error',
@@ -146,13 +146,21 @@ async function compileInner(body) {
     `-outdir=${OUT_SUBDIR}`,
     rootFile,
   ];
-  const t0 = Date.now();
-  const { code, out, timedOut } = await run('latexmk', args, { cwd: absDir, detached: true, env: { ...process.env, HOME: process.env.HOME || '/tmp' } }, TIMEOUT_MS);
-  const durationMs = Date.now() - t0;
-
   const base = path.basename(rootFile).replace(/\.tex$/, '');
   const rel = (f) => path.join(rootDir, OUT_SUBDIR, f); // path relative to the project dir
   const pdfPath = path.join(absDir, rootDir, OUT_SUBDIR, `${base}.pdf`);
+
+  // First pass without -g: latexmk skips work that is already up to date, so an
+  // unchanged document "recompiles" in ~a second instead of a full rebuild.
+  const runOpts = { cwd: absDir, detached: true, env: { ...process.env, HOME: process.env.HOME || '/tmp' } };
+  const t0 = Date.now();
+  let { code, out, timedOut } = await run('latexmk', mkArgs(false), runOpts, TIMEOUT_MS);
+  if (code === 0 && !timedOut && !fs.existsSync(pdfPath)) {
+    // latexmk believed everything was current but the PDF is gone (cleaned
+    // output dir / stale state) — force a real rebuild.
+    ({ code, out, timedOut } = await run('latexmk', mkArgs(true), runOpts, TIMEOUT_MS));
+  }
+  const durationMs = Date.now() - t0;
   const logPath = path.join(absDir, rootDir, OUT_SUBDIR, `${base}.log`);
   let log = '';
   try { log = fs.readFileSync(logPath, 'utf8'); } catch { log = out; }

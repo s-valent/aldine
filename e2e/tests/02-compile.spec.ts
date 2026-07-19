@@ -2,7 +2,7 @@ import { test, expect } from '../fixtures';
 import { createPaperProject, openProject, typeset, expectTypesetOk, cleanup } from './helpers';
 
 test.describe('LaTeX compilation', () => {
-  test('typesets the real IAC example paper to a multi-page PDF', async ({ page, request }) => {
+  test('typesets the demo paper to a multi-page PDF', async ({ page, request }) => {
     const id = await createPaperProject(request);
     try {
       await openProject(page, id);

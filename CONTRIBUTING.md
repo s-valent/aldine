@@ -12,6 +12,7 @@ apps/web        React + Vite + CodeMirror 6 + pdf.js frontend
 plugins/        Built-in plugins (zotero, references, aifix)
 e2e/            Playwright suites (main + auth) and helpers
 deploy/         Single-VPS deploy bundle (Caddy TLS, backups, prod compose)
+deploy/aws/     Terraform for an AWS Fargate deployment (see its README)
 docs/           Architecture & scaling notes
 ```
 
@@ -23,7 +24,7 @@ npm ci
 docker build -t papyr-compiler apps/compiler
 docker run -d --name papyr-compiler-dev -p 4020:4020 -v "$PWD/.data:/data" papyr-compiler
 
-# API on :3000, Vite on :5173 (proxies /api + /collab to :3000)
+# API on :3000, Vite on :5173 (proxies /api, /plugins + /collab to :3000)
 npm run dev -w apps/server
 npm run dev -w apps/web    # in another terminal
 ```
@@ -38,12 +39,14 @@ npm run typecheck -w apps/server
 npm run build -w apps/web
 npm run test:github -w apps/server        # hermetic GitHub-sync integration test
 
-# Playwright suites (need the compiler on :4020 + the dev stack running)
+# Playwright suites — need only the compiler on :4020; each suite builds and
+# starts its own app instance (:3100 main, :3200 auth)
 npx playwright test -c e2e                                   # main (no-auth)
 npx playwright test -c e2e/playwright.auth.config.ts         # auth
 ```
 
-CI runs the typecheck/build/integration checks on every push (`.github/workflows/ci.yml`).
+CI runs the typecheck/build/integration checks on pushes to `main` and on PRs
+(`.github/workflows/ci.yml`).
 
 ## Conventions
 

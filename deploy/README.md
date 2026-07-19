@@ -3,7 +3,8 @@
 This is the recommended production setup: one dedicated-CPU box (e.g. a Hetzner
 CCX, OVH, or any VPS with ≥8 GB RAM and 2+ dedicated vCPUs), Docker, and Caddy
 for automatic HTTPS. It runs the whole stack from the committed compose files —
-no managed platform required, which keeps compute cost (your main COGS) low.
+no managed platform required. (Prefer AWS? There's a complete Terraform
+deployment — Fargate, EFS, ALB, SES — in [`deploy/aws`](aws/).)
 
 ## 1. Provision
 
@@ -43,12 +44,31 @@ GITHUB_LOGIN_CLIENT_SECRET=...
 GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
 
-# AI error-fix (bring your own key)
-OPENROUTER_API_KEY=sk-or-...      # or ANTHROPIC_API_KEY
-PAPYR_AI_MODEL=anthropic/claude-opus-4.8
+# AI error-fix (bring your own key; unset = feature off). If several are set,
+# precedence is OPENROUTER > OPENAI > ANTHROPIC. Leave PAPYR_AI_MODEL unset to
+# use the provider's default — if you do set it, use that provider's naming
+# (e.g. "anthropic/claude-opus-4.8" for OpenRouter, "claude-opus-4-8" for
+# direct Anthropic).
+OPENROUTER_API_KEY=sk-or-...
+#ANTHROPIC_API_KEY=
+#OPENAI_API_KEY=
+#PAPYR_AI_MODEL=
 
-# plan metering: monthly compile-minutes per user (blank = unmetered)
-PAPYR_COMPILE_QUOTA_MIN=30
+# password-reset email: SMTP (any provider) or AWS SES — set one transport.
+# Without one, reset tokens are logged server-side (or echoed in the API
+# response when PAPYR_RESET_ECHO=1 — dev only).
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASS=...
+SMTP_FROM="Papyr <no-reply@papyr.example.com>"
+#SMTP_SECURE=1                    # implicit TLS (port 465) instead of STARTTLS
+#SES_FROM="Papyr <no-reply@papyr.example.com>"   # AWS SES instead of SMTP
+#AWS_REGION=eu-west-1             # required with SES_FROM
+
+# optional per-user compile quota, in minutes per month (blank = uncapped).
+# Useful when hosting for a group; over-quota compiles return HTTP 402.
+PAPYR_COMPILE_QUOTA_MIN=
 
 # error tracking (optional)
 SENTRY_DSN=
@@ -57,11 +77,8 @@ SENTRY_DSN=
 # instances (see the `redis` profile). With multiple app nodes you MUST run the
 # load balancer with sticky routing so each project's /collab WebSocket lands on
 # a consistent node (e.g. hash by the project id in the path, or a cookie) — see
-# docs/SCALING.md. Single node needs none of this.
-REDIS_URL=redis://redis:6379
-
-# password-reset relay while no SMTP is wired (see caveats)
-PAPYR_RESET_ECHO=
+# ../docs/SCALING.md. Single node needs none of this.
+#REDIS_URL=redis://redis:6379
 ```
 
 ## 3. Launch (with TLS)
@@ -73,7 +90,8 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 Caddy provisions and renews the certificate for `PAPYR_DOMAIN`. The app is bound
 to loopback (`127.0.0.1:8080`) — only Caddy's 80/443 face the internet. The
 compiler runs on an internal-only network (no egress) with all Linux caps
-dropped.
+dropped. The prod overlay also sets `TRUST_PROXY=1` (so per-client rate limits
+see real IPs through Caddy) and `COOKIE_SECURE=1`.
 
 ## 4. Backups (systemd timer)
 
@@ -87,6 +105,8 @@ sudo systemctl enable --now papyr-backup.timer
 Daily snapshots of the `papyr-data` (projects/git) and `papyr-secrets` (users,
 sessions, keys, comments, usage) volumes land in `/var/backups/papyr`, 14 kept.
 Restore with `deploy/restore.sh <backup.tar.gz>` after `docker compose down`.
+(If your compose project name isn't `papyr`, set `PAPYR_PROJECT` for both
+scripts.)
 
 ## 5. Upgrade
 
@@ -95,12 +115,12 @@ cd /opt/papyr && git pull
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
 ```
 
-## Scaling & monetization notes
+## Scaling notes
 
 - **Scale vertically first** — a bigger box absorbs a lot of users before you
-  need HA. LaTeX compiles are the cost driver, so meter them: set
-  `PAPYR_COMPILE_QUOTA_MIN` per plan and read `/api/usage` for a plan UI. Users
-  over quota get HTTP 402 with `quotaExceeded: true`.
+  need HA. LaTeX compiles are the resource driver; if you host for a group,
+  cap them per user with `PAPYR_COMPILE_QUOTA_MIN` and read `/api/usage` for a
+  usage UI. Users over quota get HTTP 402 with `quotaExceeded: true`.
 - **When one box isn't enough**, keep the web/collab tier here and run
   additional **compiler workers** on cheap burstable boxes pointed at the shared
   data volume (NFS/object store) — the compiler is stateless per compile.
@@ -110,15 +130,44 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   # in .env
   DATABASE_URL=postgres://papyr:papyr@db:5432/papyr
   # bring up with the bundled Postgres (or point at a managed one)
-  docker compose --profile tls --profile postgres up -d
+  docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
+    --profile tls --profile postgres up -d
   ```
   Users, sessions, project metadata, comments, and usage move to Postgres;
   git repos stay on disk. The same test suite passes on both backends.
+  Enabling Redis works the same way: `--profile redis` plus the `REDIS_URL`
+  line in `.env`.
 
-## Caveats to close before charging money
+See [../docs/SCALING.md](../docs/SCALING.md) for the full multi-node picture
+and the remaining single-node walls.
 
-- **Password-reset email**: currently the reset token is logged server-side (or
-  returned when `PAPYR_RESET_ECHO=1`). Wire SMTP into `/api/auth/reset-request`
-  before onboarding real users.
-- **Auth/metadata stores are flat JSON** (fine for a single node). Move to
-  SQLite/Postgres behind the persistence interface when you scale horizontally.
+## All configuration
+
+Everything is env-gated; blank/unset means "off" or the listed default.
+
+| Variable | Purpose |
+|---|---|
+| `PAPYR_DOMAIN` | Domain Caddy serves + provisions TLS for (`tls` profile) |
+| `PAPYR_PUBLIC_URL` | Absolute origin used in OAuth callbacks and reset links — required for SSO and email |
+| `PAPYR_APP_BIND` | Host interface for the app port (set `127.0.0.1` behind a proxy) |
+| `AUTH_ENABLED` | `1` = multi-user login, ownership, sharing. Unset = single-tenant, no login |
+| `PAPYR_SSO_ONLY` | `1` = disable password auth entirely (SSO only) |
+| `GOOGLE_OAUTH_CLIENT_ID/SECRET` | Google SSO |
+| `GITHUB_LOGIN_CLIENT_ID/SECRET` | GitHub SSO (login) |
+| `GITHUB_CLIENT_ID/SECRET` | GitHub **sync** OAuth app (repo import/push/pull) — separate from login |
+| `SMTP_HOST/PORT/USER/PASS/FROM`, `SMTP_SECURE` | Password-reset email via SMTP |
+| `SES_FROM` + `AWS_REGION` | Password-reset email via AWS SES (instead of SMTP) |
+| `PAPYR_RESET_ECHO` | `1` = echo reset tokens in the API response (dev only, never in prod) |
+| `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY` | AI error-fix; precedence OpenRouter > OpenAI > Anthropic |
+| `PAPYR_AI_MODEL`, `PAPYR_AI_BASE_URL` | Override AI model / OpenAI-compatible endpoint |
+| `PAPYR_COMPILE_QUOTA_MIN` | Per-user compile minutes per month (blank = uncapped) |
+| `DATABASE_URL` | Postgres datastore (blank = flat JSON files) |
+| `PG_POOL_MAX` | Postgres pool size (default 10) |
+| `REDIS_URL` | Shared rate limits + collab sync across app nodes |
+| `SENTRY_DSN` | Error tracking |
+| `TRUST_PROXY` | `1` = trust `X-Forwarded-For` (set by the prod overlay; needed behind any proxy) |
+| `COOKIE_SECURE` | `1` = Secure session cookies (prod overlay sets it) |
+| `RL_LOGIN_BURST`, `RL_REGISTER_BURST`, `RL_AI_BURST`, `RL_AI_REFILL_PER_MIN`, `RL_REF_BURST` | Rate-limit tuning (sane defaults) |
+| `RL_COMPILE_CONCURRENCY` | Max concurrent compiles the app forwards (default 2) |
+| `COMPILE_TIMEOUT_MS`, `MAX_CONCURRENT_COMPILES` | Compiler-container limits (set on the `compiler` service) |
+| `PAPYR_PROJECT` | Compose project name for `backup.sh`/`restore.sh` (default `papyr`) |

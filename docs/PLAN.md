@@ -1,4 +1,11 @@
-# Papyr — Slim Open-Source LaTeX Collaboration Platform
+# Papyr — original build plan (historical)
+
+> **What is this?** The working plan Papyr was built against. Papyr was built
+> largely by an AI agent (Claude) running in an autonomous
+> plan → implement → test → review loop, directed and reviewed by a human —
+> the commit history tells that story honestly. This file is kept as a
+> record of the original acceptance criteria and how far they got; it is not
+> a roadmap. For current status see the README and CHANGELOG.
 
 A modern, fast, Apple-style Overleaf alternative. Docker-hosted, git-native, plugin-extensible.
 
@@ -27,7 +34,7 @@ docker-compose.yml
 │              - Zotero Web API sync -> references.bib
 │              - plugin registry (manifest.json + ESM entry, served to frontend)
 ├── compiler   TeX Live + latexmk behind tiny HTTP API (POST files -> PDF/log/synctex)
-│              - nonstopmode, no-shell-escape, timeout, per-project cache dir for speed
+│              - nonstopmode, restricted shell-escape, timeout, per-project cache dir for speed
 └── (volumes)  papyr-data (projects, yjs), papyr-cache (latex aux)
 ```
 
@@ -40,7 +47,7 @@ Hypothesis → Plan → Implement → Test (Playwright) → QA/review via subage
 Product-management subagents propose UX improvements each major cycle.
 
 ## Test assets
-Example paper: /Users/rahloff/projects/paper-gsaas-2026/paper (iac.cls, biblatex, references.bib)
+Example paper: `e2e/fixtures/demo-paper/` (article class, TikZ, BibTeX)
 — must compile in Papyr.
 
 ## Status log — v0.2 COMPLETE (all acceptance criteria met + verified on Docker)
@@ -65,7 +72,7 @@ Example paper: /Users/rahloff/projects/paper-gsaas-2026/paper (iac.cls, biblatex
 - [x] Project-wide \ref indexing
 
 ### Remaining ideas (future)
-- AI error auto-fix (Bibby parity — needs LLM/BYO key)
-- Track changes / review mode
+- ~~AI error auto-fix~~ — shipped (`plugins/aifix` + `ai.ts`, BYO key)
+- ~~Track changes / review mode~~ — shipped (`comments.ts` + review panel)
 - Better BibTeX local companion (CAYW)
 - Hunspell WASM spellcheck (upgrade from native)

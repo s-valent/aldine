@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/trahloff/Papyr/discussions
+    about: Ask questions and share ideas in Discussions rather than issues.
+  - name: Security vulnerability
+    url: https://github.com/trahloff/Papyr/security/advisories/new
+    about: Please report security issues privately, not as public issues.

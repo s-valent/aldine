@@ -1,0 +1,40 @@
+name: Bug report
+description: Something broke or behaved wrongly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+      placeholder: |
+        1. Opened a project with ...
+        2. Clicked Typeset
+        3. Expected a PDF, got ...
+    validations:
+      required: true
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: How are you running Papyr?
+      options:
+        - docker compose (README quick start)
+        - docker compose with the tls profile
+        - Dev setup (npm run dev)
+        - Cloud/other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, browser, and any non-default env vars (AUTH_ENABLED, DATABASE_URL, REDIS_URL, ...). Never paste secrets.
+      placeholder: macOS 15 / Chrome 138 / AUTH_ENABLED=1, defaults otherwise
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "`docker compose logs app compiler` around the failure, or the browser console. Redact anything private."
+      render: text

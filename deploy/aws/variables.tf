@@ -11,15 +11,13 @@ variable "cpu_architecture" {
 }
 
 variable "domain_name" {
-  description = "Public domain the app is served on."
+  description = "Public domain the app is served on (e.g. papyr.example.com)."
   type        = string
-  default     = "papyr.tobiasrahloff.com"
 }
 
 variable "route53_zone_name" {
   description = "Existing Route53 hosted zone that owns the domain (no trailing dot). The domain_name must be at or below it."
   type        = string
-  default     = "tobiasrahloff.com"
 }
 
 # ---- container sizing (Fargate task) ----

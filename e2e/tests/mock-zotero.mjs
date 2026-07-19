@@ -84,7 +84,7 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname.endsWith('/collections')) {
     return send(200, [
-      { key: 'COLL1', data: { name: 'GSaaS Research', parentCollection: false } },
+      { key: 'COLL1', data: { name: 'CRDT Research', parentCollection: false } },
     ]);
   }
   // (references DOI/arXiv mock handled by a separate server below; keep Zotero paths here)
