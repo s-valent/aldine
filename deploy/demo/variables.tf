@@ -10,15 +10,15 @@ variable "ssh_public_key" {
 }
 
 variable "server_type" {
-  description = "Hetzner server type. CX22 (2 vCPU / 4 GB) handles demo-size compiles for ~€4/mo."
+  description = "Hetzner server type. cx23 (2 vCPU / 4 GB) handles demo-size compiles for ~€4/mo. Availability varies by location — check the API if placement fails."
   type        = string
-  default     = "cx22"
+  default     = "cx23"
 }
 
 variable "location" {
-  description = "Hetzner location."
+  description = "Hetzner location. nbg1 carries the budget cx-line."
   type        = string
-  default     = "fsn1"
+  default     = "nbg1"
 }
 
 variable "repo_url" {

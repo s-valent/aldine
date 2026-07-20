@@ -1,4 +1,4 @@
-# Throwaway public demo box for Papyr (~€4/mo Hetzner CX22).
+# Throwaway public demo box for Papyr (~€6/mo Hetzner cax11).
 #
 # Design: auth OFF (visitors get the full editor instantly), TLS via Caddy,
 # and a nightly wipe (volumes destroyed + stack recreated at 04:00 UTC) so

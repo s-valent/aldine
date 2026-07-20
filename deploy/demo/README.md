@@ -28,6 +28,6 @@ before `terraform apply` (or pass `-var repo_url=` pointing at a mirror).
 terraform destroy
 ```
 
-That's the whole lifecycle. If launch traffic melts a CX22, bump
-`-var server_type=cx32` (~€7/mo, 8 GB) and re-apply — the wipe timer makes
+That's the whole lifecycle. If launch traffic melts a cax11, bump
+`-var server_type=cax21` (~€12/mo, 8 GB) and re-apply — the wipe timer makes
 the box stateless by design.
