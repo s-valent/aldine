@@ -1,0 +1,39 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+
+write_files:
+  # Demo config: auth off, TLS via the compose tls profile, app on loopback.
+  - path: /opt/papyr/.env.demo
+    content: |
+      PAPYR_DOMAIN=${demo_domain}
+      PAPYR_PUBLIC_URL=https://${demo_domain}
+      PAPYR_APP_BIND=127.0.0.1
+
+  # Nightly wipe: destroy volumes and recreate the stack. A demo box keeps nothing.
+  - path: /etc/systemd/system/papyr-demo-wipe.service
+    content: |
+      [Unit]
+      Description=Wipe and recreate the Papyr demo stack
+      [Service]
+      Type=oneshot
+      WorkingDirectory=/opt/papyr/repo
+      ExecStart=/bin/bash -c 'docker compose --env-file /opt/papyr/.env.demo -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls down -v && docker compose --env-file /opt/papyr/.env.demo -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d'
+  - path: /etc/systemd/system/papyr-demo-wipe.timer
+    content: |
+      [Unit]
+      Description=Nightly Papyr demo wipe
+      [Timer]
+      OnCalendar=*-*-* 04:00:00 UTC
+      Persistent=true
+      [Install]
+      WantedBy=timers.target
+
+runcmd:
+  - git clone ${repo_url} /opt/papyr/repo
+  - cd /opt/papyr/repo && docker compose --env-file /opt/papyr/.env.demo -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
+  - systemctl daemon-reload
+  - systemctl enable --now papyr-demo-wipe.timer
