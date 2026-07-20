@@ -12,6 +12,7 @@ editing, every project a real git repo with branches, native Zotero, ~2s warm
 recompiles. Two containers and flat files by default: no database to migrate,
 nothing to babysit.
 
+**[Try the live demo](https://demo.papyr.tobiasrahloff.com)** (resets nightly) ·
 [Quick start](#quick-start) · [How Papyr compares](#how-papyr-compares) ·
 [Screenshots](#screenshots) · [Self-hosting](#production-deploy) ·
 [Contributing](CONTRIBUTING.md)
