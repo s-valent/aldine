@@ -41,7 +41,7 @@ test.describe('command palette', () => {
 test.describe('ZIP import', () => {
   test('import a project ZIP from the home page', async ({ page, request }) => {
     // build a small zip fixture
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-zip-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aldine-zip-'));
     fs.writeFileSync(path.join(tmp, 'main.tex'), '\\documentclass{article}\\begin{document}ZIP-IMPORTED\\end{document}');
     fs.writeFileSync(path.join(tmp, 'notes.txt'), 'hello');
     const zip = path.join(tmp, 'proj.zip');
@@ -57,7 +57,7 @@ test.describe('ZIP import', () => {
   });
 
   test('import rejects .git/ entries (no config injection)', async ({ request }) => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-evil-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aldine-evil-'));
     fs.writeFileSync(path.join(tmp, 'main.tex'), '\\documentclass{article}\\begin{document}x\\end{document}');
     fs.mkdirSync(path.join(tmp, '.git'));
     fs.writeFileSync(path.join(tmp, '.git', 'config'), '[core]\n  evil = true');

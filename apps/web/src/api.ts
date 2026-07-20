@@ -169,16 +169,16 @@ export const api = {
 
 /** Local identity for presence + commit attribution. */
 export function localUser(): { name: string; color: string } {
-  let name = localStorage.getItem('papyr.name');
+  let name = localStorage.getItem('aldine.name');
   if (!name) {
     name = `Writer ${Math.floor(100 + Math.random() * 900)}`;
-    localStorage.setItem('papyr.name', name);
+    localStorage.setItem('aldine.name', name);
   }
   const palette = ['#e8554d', '#f0a202', '#2e933c', '#2e62e9', '#8f3ec9', '#d63384', '#0aa2c0'];
-  let color = localStorage.getItem('papyr.color');
+  let color = localStorage.getItem('aldine.color');
   if (!color) {
     color = palette[Math.floor(Math.random() * palette.length)];
-    localStorage.setItem('papyr.color', color);
+    localStorage.setItem('aldine.color', color);
   }
   return { name, color };
 }

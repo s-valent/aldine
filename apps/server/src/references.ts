@@ -14,7 +14,7 @@ export interface SearchHit { id: string; doi: string | null; title: string; auth
 
 /** Full-text search across OpenAlex (250M+ works, no key). */
 export async function searchWorks(query: string, limit = 12): Promise<SearchHit[]> {
-  const url = `${OPENALEX_BASE}/works?search=${encodeURIComponent(query)}&per_page=${limit}&mailto=papyr@localhost`;
+  const url = `${OPENALEX_BASE}/works?search=${encodeURIComponent(query)}&per_page=${limit}&mailto=aldine@localhost`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Search failed (HTTP ${res.status})`);
   const data = JSON.parse(await readCapped(res, 4 * 1024 * 1024)) as { results?: Array<Record<string, unknown>> };
@@ -35,7 +35,7 @@ export async function searchWorks(query: string, limit = 12): Promise<SearchHit[
 
 /** BibTeX for an OpenAlex work id (Wxxxx): prefer its DOI, else synthesize from metadata. */
 async function fetchOpenAlex(id: string): Promise<string | null> {
-  const res = await fetch(`${OPENALEX_BASE}/works/${encodeURIComponent(id)}?mailto=papyr@localhost`);
+  const res = await fetch(`${OPENALEX_BASE}/works/${encodeURIComponent(id)}?mailto=aldine@localhost`);
   if (!res.ok) throw new Error(`OpenAlex lookup failed (HTTP ${res.status})`);
   const w = JSON.parse(await readCapped(res)) as Record<string, unknown>;
   const doi = w.doi ? String(w.doi).replace(/^https?:\/\/doi\.org\//, '') : null;

@@ -1,32 +1,32 @@
-# Papyr
+# Aldine
 
 **Write LaTeX together. Fast, versioned, yours.**
 
-[![CI](https://github.com/trahloff/Papyr/actions/workflows/ci.yml/badge.svg)](https://github.com/trahloff/Papyr/actions/workflows/ci.yml)
+[![CI](https://github.com/trahloff/Aldine/actions/workflows/ci.yml/badge.svg)](https://github.com/trahloff/Aldine/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-Papyr is a slim, self-hosted, open-source LaTeX collaboration platform — an
+Aldine is a slim, self-hosted, open-source LaTeX collaboration platform — an
 Overleaf alternative built for speed and simplicity. Real-time multi-cursor
 editing, every project a real git repo with branches, native Zotero, ~2s warm
 recompiles. Two containers and flat files by default: no database to migrate,
 nothing to babysit.
 
-**[Try the live demo](https://demo.papyr.tobiasrahloff.com)** (resets nightly) ·
-[Quick start](#quick-start) · [How Papyr compares](#how-papyr-compares) ·
+**[Try the live demo](https://demo.aldine.dev)** (resets nightly) ·
+[Quick start](#quick-start) · [How Aldine compares](#how-aldine-compares) ·
 [Screenshots](#screenshots) · [Self-hosting](#production-deploy) ·
 [Contributing](CONTRIBUTING.md)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="e2e/shots/editor-dark.png">
-  <img alt="Papyr editor: LaTeX source on the left, live PDF on the right, collaborator cursors visible" src="e2e/shots/editor-light.png">
+  <img alt="Aldine editor: LaTeX source on the left, live PDF on the right, collaborator cursors visible" src="e2e/shots/editor-light.png">
 </picture>
 
 Live collaboration, a recompile, and a SyncTeX jump — one real, unedited recording:
 
 ![A collaborator's edits stream in live, the PDF recompiles in about two seconds, and double-clicking the PDF jumps the editor to the source line](e2e/shots/demo.gif)
 
-> **Status:** Papyr is young (v0.x). It compiles real papers daily and every
+> **Status:** Aldine is young (v0.x). It compiles real papers daily and every
 > headline feature is exercised by a Playwright e2e suite in CI — but expect
 > rough edges. File issues generously.
 
@@ -58,9 +58,9 @@ Live collaboration, a recompile, and a SyncTeX jump — one real, unedited recor
 - **AI error fix** (optional, BYO key) — on a failed typeset, get a
   plain-English diagnosis and one-click fixes. Set `ANTHROPIC_API_KEY`,
   `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` on the server to enable (that
-  precedence order if several are set; `PAPYR_AI_MODEL` overrides the model).
+  precedence order if several are set; `ALDINE_AI_MODEL` overrides the model).
   The key stays server-side and never reaches the browser. Unset the key and
-  Papyr is a 100% AI-free editor.
+  Aldine is a 100% AI-free editor.
 - **Cite by DOI / arXiv** — paste an identifier, get BibTeX appended and the
   `\cite` inserted (no account, free public APIs).
 - **SyncTeX both ways** — double-click the PDF to jump to source; ⌘J to jump
@@ -76,7 +76,7 @@ Live collaboration, a recompile, and a SyncTeX jump — one real, unedited recor
 - **Multi-user auth** (optional) — set `AUTH_ENABLED=1` for login, per-project
   ownership, and sharing (invite-only or link). Google & GitHub SSO, or
   email/password (scrypt-hashed, revocable HTTP-only-cookie sessions);
-  `PAPYR_SSO_ONLY=1` disables passwords entirely. Off by default
+  `ALDINE_SSO_ONLY=1` disables passwords entirely. Off by default
   (single-tenant); the collab socket is access-checked.
 - **Scales when you need it** — flat-file storage by default; set
   `DATABASE_URL` for Postgres and `REDIS_URL` to run multiple app nodes. See
@@ -93,18 +93,18 @@ docker compose up -d --build
 open http://localhost:8080
 ```
 
-That's it. Projects live in the `papyr-data` volume.
+That's it. Projects live in the `aldine-data` volume.
 
 - **The first build is big**: it pulls a ~2.5 GB TeX Live image and installs
   LaTeX packages — expect 15–40 minutes on a fresh machine. Every build after
   that is cached and takes seconds. It's ready when
   `curl localhost:8080/api/health` returns `{"ok":true}`.
-- **Port 8080 taken?** `PAPYR_PORT=18080 docker compose up -d` and open
+- **Port 8080 taken?** `ALDINE_PORT=18080 docker compose up -d` and open
   http://localhost:18080.
 
-## How Papyr compares
+## How Aldine compares
 
-| | Papyr | Overleaf CE (self-hosted) | git + VS Code + LaTeX Workshop |
+| | Aldine | Overleaf CE (self-hosted) | git + VS Code + LaTeX Workshop |
 |---|---|---|---|
 | Deploy | 2 containers, `docker compose up` | Toolkit-managed monolith + Mongo + Redis | n/a (local) |
 | Real-time collaboration | ✅ CRDT, unlimited collaborators | ✅ | ❌ (async via git) |
@@ -118,7 +118,7 @@ That's it. Projects live in the `papyr-data` volume.
 | Maturity | Young (v0.x, 2026) — **they win** | A decade in production | Very mature |
 | License | MIT | AGPL | MIT/varies |
 
-If Overleaf CE fits you, use it — it's good software. Papyr exists for people
+If Overleaf CE fits you, use it — it's good software. Aldine exists for people
 who want track changes, git, and Zotero without paid tiers, in a deployment
 they can hold in their head.
 
@@ -137,8 +137,8 @@ they can hold in their head.
 npm install
 npm run dev:server     # API + collab on :3000
 npm run dev:web        # Vite on :5173 (proxies to :3000)
-docker build -t papyr-compiler apps/compiler
-docker run -d -p 4020:4020 -v $PWD/.data:/data papyr-compiler
+docker build -t aldine-compiler apps/compiler
+docker run -d -p 4020:4020 -v $PWD/.data:/data aldine-compiler
 ```
 
 ### Tests
@@ -148,7 +148,7 @@ End-to-end (Playwright — covers compile, collab, branches, plugins, Zotero):
 ```bash
 npx playwright install chromium
 npm run test:e2e                          # self-starting stack on :3100
-PAPYR_URL=http://localhost:8080 npm run test:e2e   # against docker compose
+ALDINE_URL=http://localhost:8080 npm run test:e2e   # against docker compose
 ```
 
 ## Production deploy
@@ -157,7 +157,7 @@ PAPYR_URL=http://localhost:8080 npm run test:e2e   # against docker compose
 # HTTPS via Caddy (auto-provisions certificates for your domain), with the
 # production overlay: app bound to localhost only, proxy headers trusted,
 # secure cookies, log rotation.
-PAPYR_DOMAIN=papyr.example.com PAPYR_APP_BIND=127.0.0.1 \
+ALDINE_DOMAIN=aldine.example.com ALDINE_APP_BIND=127.0.0.1 \
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
   --profile tls up -d --build
 
@@ -169,12 +169,12 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
 #   GITHUB_CLIENT_ID/SECRET                          GitHub repo sync
 #   OPENROUTER_API_KEY (or ANTHROPIC/OPENAI)         AI error fix
 #   SMTP_HOST/PORT/USER/PASS/FROM or SES_FROM        password-reset email
-#   PAPYR_PUBLIC_URL=https://papyr.example.com       absolute links (resets, OAuth)
+#   ALDINE_PUBLIC_URL=https://aldine.example.com       absolute links (resets, OAuth)
 #   SENTRY_DSN                                       error tracking
 
 # Back up (data + secrets volumes) / restore
-deploy/backup.sh papyr-backup.tar.gz
-deploy/restore.sh papyr-backup.tar.gz   # stop the stack first: docker compose down
+deploy/backup.sh aldine-backup.tar.gz
+deploy/restore.sh aldine-backup.tar.gz   # stop the stack first: docker compose down
 ```
 
 **Isolation & limits.** The compiler runs on an internal-only Docker network
@@ -182,7 +182,7 @@ deploy/restore.sh papyr-backup.tar.gz   # stop the stack first: docker compose d
 memory / PIDs; LaTeX compiles with **restricted shell-escape** (whitelist
 only) and `openin_any=p`. Per-client rate limits guard login, AI, and
 reference lookups; compiles are concurrency-capped, with optional per-user
-compile quotas (`PAPYR_COMPILE_QUOTA_MIN`) if you host for a group.
+compile quotas (`ALDINE_COMPILE_QUOTA_MIN`) if you host for a group.
 
 See [deploy/README.md](deploy/README.md) for the full single-VPS runbook
 (TLS, backups, SSO setup, Postgres/Redis, every config variable),
@@ -208,7 +208,7 @@ vulnerabilities.
 - One Yjs document per file per branch (`project::branch::path`), persisted
   straight to the git worktree with debounced writes and auto-commits.
 - Branches are git worktrees, so every branch is editable concurrently.
-- Compile output stays inside the project tree (`.papyr-out/`, kept out of
+- Compile output stays inside the project tree (`.aldine-out/`, kept out of
   git history) which keeps latexmk's incremental cache warm.
 
 ### Data & storage
@@ -234,14 +234,14 @@ A plugin is a folder in `plugins/`:
 ```
 plugins/hello/
 ├── manifest.json   # { "id": "hello", "name": "Hello", "version": "1.0.0", "entry": "index.js" }
-└── index.js        # export default { activate(papyr) { ... } }
+└── index.js        # export default { activate(aldine) { ... } }
 ```
 
-The `papyr` API exposes `ui.registerSidebarPanel`, `editor.insertAtCursor`,
+The `aldine` API exposes `ui.registerSidebarPanel`, `editor.insertAtCursor`,
 `project` context, `compile()`, `toast()`, and `fetch()`. See
 `plugins/zotero` for a complete example.
 
-## How Papyr was built
+## How Aldine was built
 
 Most of this codebase was written by an AI agent (Claude) running in an
 autonomous plan → implement → test → review loop, directed and reviewed by a
@@ -253,5 +253,5 @@ original build plan is preserved in [docs/PLAN.md](docs/PLAN.md).
 
 ## License
 
-[MIT](LICENSE). Overleaf is a trademark of its owners; Papyr is an
+[MIT](LICENSE). Overleaf is a trademark of its owners; Aldine is an
 independent project, not affiliated with or endorsed by Overleaf.

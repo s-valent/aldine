@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Papyr are documented here. The format follows
+All notable changes to Aldine are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [SemVer](https://semver.org/) (pre-1.0: minor bumps may break things).
 
@@ -54,5 +54,5 @@ First public release. Everything below is new.
   timer, Terraform for a full serverless-ish AWS deployment (deploy/aws).
 - Templates: article, IAC conference paper, beamer, report/thesis.
 
-[Unreleased]: https://github.com/trahloff/Papyr/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/trahloff/Papyr/releases/tag/v0.1.0
+[Unreleased]: https://github.com/trahloff/Aldine/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/trahloff/Aldine/releases/tag/v0.1.0

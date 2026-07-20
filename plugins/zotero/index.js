@@ -1,5 +1,5 @@
 /**
- * Papyr Zotero plugin — vanilla-DOM sidebar panel.
+ * Aldine Zotero plugin — vanilla-DOM sidebar panel.
  * Link a Zotero library (API key), pick a library/collection, keep a .bib
  * in sync, and insert \cite{...} while writing.
  */
@@ -20,8 +20,8 @@ const h = (tag, attrs = {}, ...children) => {
 };
 
 export default {
-  activate(papyr) {
-    papyr.ui.registerSidebarPanel({
+  activate(aldine) {
+    aldine.ui.registerSidebarPanel({
       id: 'zotero',
       title: 'Zotero',
       render(root) {
@@ -43,7 +43,7 @@ export default {
         };
 
         const jfetch = async (url, init) => {
-          const res = await papyr.fetch(url, init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined);
+          const res = await aldine.fetch(url, init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined);
           const body = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
           return body;
@@ -51,7 +51,7 @@ export default {
 
         const loadStatus = async () => {
           try {
-            const p = await jfetch(`/api/projects/${papyr.project.id}`);
+            const p = await jfetch(`/api/projects/${aldine.project.id}`);
             state.link = p.zotero;
             state.view = p.zotero ? 'linked' : 'connect';
           } catch {
@@ -74,7 +74,7 @@ export default {
             await loadCollections();
             state.view = 'pick';
           } catch (err) {
-            papyr.toast(`Zotero: ${err.message}`, 'error');
+            aldine.toast(`Zotero: ${err.message}`, 'error');
           }
           setBusy(false);
           rerender();
@@ -94,7 +94,7 @@ export default {
         const link = async (collectionKey) => {
           setBusy(true);
           try {
-            const res = await jfetch(`/api/projects/${papyr.project.id}/zotero/link`, {
+            const res = await jfetch(`/api/projects/${aldine.project.id}/zotero/link`, {
               method: 'POST',
               body: JSON.stringify({
                 apiKey: state.apiKey.trim(),
@@ -103,11 +103,11 @@ export default {
                 bibFile: 'zotero.bib',
               }),
             });
-            papyr.toast(`Imported ${res.itemCount ?? '?'} references into zotero.bib`, 'ok');
-            await papyr.project.refreshFiles();
+            aldine.toast(`Imported ${res.itemCount ?? '?'} references into zotero.bib`, 'ok');
+            await aldine.project.refreshFiles();
             await loadStatus();
           } catch (err) {
-            papyr.toast(`Zotero link failed: ${err.message}`, 'error');
+            aldine.toast(`Zotero link failed: ${err.message}`, 'error');
             setBusy(false);
           }
         };
@@ -115,28 +115,28 @@ export default {
         const sync = async () => {
           setBusy(true);
           try {
-            const res = await jfetch(`/api/projects/${papyr.project.id}/zotero/sync`, {
+            const res = await jfetch(`/api/projects/${aldine.project.id}/zotero/sync`, {
               method: 'POST',
-              body: JSON.stringify({ branch: papyr.project.branch, force: false }),
+              body: JSON.stringify({ branch: aldine.project.branch, force: false }),
             });
-            papyr.toast(res.unchanged ? 'Zotero library unchanged' : `Synced ${res.itemCount ?? ''} references`, 'ok');
-            await papyr.project.refreshFiles();
+            aldine.toast(res.unchanged ? 'Zotero library unchanged' : `Synced ${res.itemCount ?? ''} references`, 'ok');
+            await aldine.project.refreshFiles();
             await loadStatus();
           } catch (err) {
-            papyr.toast(`Sync failed: ${err.message}`, 'error');
+            aldine.toast(`Sync failed: ${err.message}`, 'error');
             setBusy(false);
           }
         };
 
         const unlink = async () => {
           if (!window.confirm('Unlink Zotero from this project? The .bib file stays.')) return;
-          await jfetch(`/api/projects/${papyr.project.id}/zotero`, { method: 'DELETE' });
+          await jfetch(`/api/projects/${aldine.project.id}/zotero`, { method: 'DELETE' });
           await loadStatus();
         };
 
         const loadBib = async () => {
           try {
-            state.bibEntries = await jfetch(`/api/projects/${papyr.project.id}/bib?branch=${encodeURIComponent(papyr.project.branch)}`);
+            state.bibEntries = await jfetch(`/api/projects/${aldine.project.id}/bib?branch=${encodeURIComponent(aldine.project.branch)}`);
           } catch {
             state.bibEntries = [];
           }
@@ -250,7 +250,7 @@ export default {
               style: { height: 'auto', padding: '5px 8px', display: 'block' },
               dataset: { testid: `cite-${e.key}` },
               title: `Insert \\cite{${e.key}}`,
-              onclick: () => { papyr.editor.insertAtCursor(`\\cite{${e.key}}`); papyr.toast(`Inserted \\cite{${e.key}}`, 'ok'); },
+              onclick: () => { aldine.editor.insertAtCursor(`\\cite{${e.key}}`); aldine.toast(`Inserted \\cite{${e.key}}`, 'ok'); },
             },
               h('div', { style: { fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis' } }, e.key),
               h('div', { style: { color: 'var(--text-2)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis' } },

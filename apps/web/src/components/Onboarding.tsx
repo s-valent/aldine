@@ -7,7 +7,7 @@ export default function Onboarding({ onNew, onGithub, onImportZip, onClose }: {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal onboard" onClick={(e) => e.stopPropagation()} data-testid="onboarding">
-        <h1 className="home__brand" style={{ fontSize: 30, marginBottom: 2 }}>papyr<em>.</em></h1>
+        <h1 className="home__brand" style={{ fontSize: 30, marginBottom: 2 }}>aldine<em>.</em></h1>
         <p className="home__tag" style={{ marginBottom: 20 }}>Write LaTeX together — fast, versioned, yours.</p>
 
         <div className="onboard__tiles">

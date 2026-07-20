@@ -18,8 +18,8 @@ export default function Home() {
   const [sharing, setSharing] = useState<ProjectSummary | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showGithub, setShowGithub] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('papyr.onboarded') !== '1');
-  const dismissOnboarding = () => { localStorage.setItem('papyr.onboarded', '1'); setShowOnboarding(false); };
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('aldine.onboarded') !== '1');
+  const dismissOnboarding = () => { localStorage.setItem('aldine.onboarded', '1'); setShowOnboarding(false); };
   const navigate = useNavigate();
   const toast = useToast();
   const { authEnabled, user, setUser } = useAuth();
@@ -85,7 +85,7 @@ export default function Home() {
       <div className="home__inner">
         <div className="home__bar">
           <div>
-            <h1 className="home__brand">papyr<em>.</em></h1>
+            <h1 className="home__brand">aldine<em>.</em></h1>
             <p className="home__tag">Write LaTeX together. Fast, versioned, yours.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

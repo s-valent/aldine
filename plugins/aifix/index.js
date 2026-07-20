@@ -17,8 +17,8 @@ const h = (tag, attrs = {}, ...kids) => {
 };
 
 export default {
-  activate(papyr) {
-    papyr.ui.registerSidebarPanel({
+  activate(aldine) {
+    aldine.ui.registerSidebarPanel({
       id: 'aifix',
       title: 'Fix',
       render(root) {
@@ -28,7 +28,7 @@ export default {
         let error = '';
 
         const jfetch = async (url, init) => {
-          const res = await papyr.fetch(url, init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined);
+          const res = await aldine.fetch(url, init ? { headers: { 'content-type': 'application/json' }, ...init } : undefined);
           const body = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
           return body;
@@ -41,14 +41,14 @@ export default {
         };
 
         const diagnose = async () => {
-          const compile = papyr.project.lastCompile();
-          if (!compile) { papyr.toast('Typeset the document first to check for errors.', 'info'); return; }
-          if (compile.ok) { papyr.toast('Your document compiles cleanly — no errors to fix.', 'ok'); return; }
+          const compile = aldine.project.lastCompile();
+          if (!compile) { aldine.toast('Typeset the document first to check for errors.', 'info'); return; }
+          if (compile.ok) { aldine.toast('Your document compiles cleanly — no errors to fix.', 'ok'); return; }
           busy = true; error = ''; result = null; draw();
           try {
-            result = await jfetch(`/api/projects/${papyr.project.id}/ai/fix`, {
+            result = await jfetch(`/api/projects/${aldine.project.id}/ai/fix`, {
               method: 'POST',
-              body: JSON.stringify({ branch: papyr.project.branch, errors: compile.errors, log: compile.log }),
+              body: JSON.stringify({ branch: aldine.project.branch, errors: compile.errors, log: compile.log }),
             });
           } catch (err) {
             error = err.message;
@@ -58,23 +58,23 @@ export default {
 
         const applyFix = async (fix) => {
           try {
-            const res = await papyr.fetch(`/api/projects/${papyr.project.id}/file?branch=${encodeURIComponent(papyr.project.branch)}&path=${encodeURIComponent(fix.file)}`);
+            const res = await aldine.fetch(`/api/projects/${aldine.project.id}/file?branch=${encodeURIComponent(aldine.project.branch)}&path=${encodeURIComponent(fix.file)}`);
             if (!res.ok) throw new Error(`could not read ${fix.file}`);
             const content = await res.text();
             if (!content.includes(fix.find)) throw new Error('the target text has changed — re-run diagnosis');
             const updated = content.replace(fix.find, () => fix.replace); // literal replace (LaTeX $$/$& are not patterns)
-            const put = await papyr.fetch(`/api/projects/${papyr.project.id}/file`, {
+            const put = await aldine.fetch(`/api/projects/${aldine.project.id}/file`, {
               method: 'PUT',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ branch: papyr.project.branch, path: fix.file, content: updated }),
+              body: JSON.stringify({ branch: aldine.project.branch, path: fix.file, content: updated }),
             });
             if (!put.ok) throw new Error('could not save the fix');
-            papyr.toast(`Applied fix to ${fix.file}`, 'ok');
+            aldine.toast(`Applied fix to ${fix.file}`, 'ok');
             fix._applied = true;
             draw();
-            papyr.compile();
+            aldine.compile();
           } catch (err) {
-            papyr.toast(`Could not apply: ${err.message}`, 'error');
+            aldine.toast(`Could not apply: ${err.message}`, 'error');
           }
         };
 
@@ -85,7 +85,7 @@ export default {
             wrap.append(
               h('div', { class: 'menu__label', style: { padding: '0 2px' } }, 'AI fix'),
               h('p', { style: { color: 'var(--text-2)', fontSize: '12px', lineHeight: '1.5', margin: 0 } },
-                'AI error-fix is off. Set ', h('code', {}, 'ANTHROPIC_API_KEY'), ' on the Papyr server (BYO key) and restart to enable one-click LaTeX fixes.'),
+                'AI error-fix is off. Set ', h('code', {}, 'ANTHROPIC_API_KEY'), ' on the Aldine server (BYO key) and restart to enable one-click LaTeX fixes.'),
             );
             root.replaceChildren(wrap);
             return;
@@ -93,7 +93,7 @@ export default {
 
           wrap.append(h('div', { class: 'menu__label', style: { padding: '0 2px' } }, 'AI fix'));
 
-          const compile = papyr.project.lastCompile();
+          const compile = aldine.project.lastCompile();
           const hasErrors = compile && !compile.ok;
           const hint = hasErrors ? 'Diagnose the current compile errors and apply fixes.'
             : compile && compile.ok ? 'Your document compiles cleanly — nothing to fix right now. This tool fixes compile errors, not warnings.'
@@ -147,7 +147,7 @@ export default {
         let lastHadErrors = null;
         const poll = setInterval(() => {
           if (!root.isConnected) { clearInterval(poll); return; }
-          const c = papyr.project.lastCompile();
+          const c = aldine.project.lastCompile();
           const has = !!(c && !c.ok);
           if (has !== lastHadErrors && !busy) { lastHadErrors = has; draw(); }
         }, 1500);

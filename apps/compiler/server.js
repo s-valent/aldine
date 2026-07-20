@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Papyr compile service — zero-dependency Node HTTP server wrapping latexmk.
+ * Aldine compile service — zero-dependency Node HTTP server wrapping latexmk.
  *
  * Contract:
  *   POST /compile  { projectDir, rootFile, engine? }  ->
@@ -23,7 +23,7 @@ const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../../.data');
 const TIMEOUT_MS = Number(process.env.COMPILE_TIMEOUT_MS || 120_000);
 // Aux/PDF output lives inside the project tree (relative path) so TeX path
 // restrictions (openout_any=p) never apply and incremental caches persist.
-const OUT_SUBDIR = '.papyr-out';
+const OUT_SUBDIR = '.aldine-out';
 
 function json(res, code, body) {
   const buf = Buffer.from(JSON.stringify(body));

@@ -46,7 +46,7 @@ export async function ensureWorktree(id: string, name: string): Promise<string> 
 
 /**
  * Compile output must never enter git history (or get pushed to GitHub). New
- * projects get `.papyr-out/` in their generated .gitignore; this covers
+ * projects get `.aldine-out/` in their generated .gitignore; this covers
  * pre-existing and GitHub-cloned repos via the shared .git/info/exclude
  * (worktrees read the common dir's exclude file, so one write covers all branches).
  */
@@ -54,10 +54,14 @@ function ensureOutputExcluded(id: string): void {
   try {
     const info = path.join(repoDir(id), '.git', 'info');
     const file = path.join(info, 'exclude');
-    const cur = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-    if (!/^\.papyr-out\/$/m.test(cur)) {
+    let cur = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    // '.papyr-out/' is the pre-rename output dir — keep excluding it so
+    // projects created before the Aldine rename never re-track old output.
+    const missing = ['.aldine-out/', '.papyr-out/'].filter((d) => !cur.split('\n').includes(d));
+    if (missing.length) {
       fs.mkdirSync(info, { recursive: true });
-      fs.writeFileSync(file, cur + (cur && !cur.endsWith('\n') ? '\n' : '') + '.papyr-out/\n');
+      cur += (cur && !cur.endsWith('\n') ? '\n' : '') + missing.join('\n') + '\n';
+      fs.writeFileSync(file, cur);
     }
   } catch { /* best-effort; commit path must not fail on this */ }
 }
@@ -66,13 +70,14 @@ export async function commitAll(id: string, branch: string, message: string, aut
   const dir = await ensureWorktree(id, branch);
   const g = git(dir);
   ensureOutputExcluded(id);
-  // Self-heal projects that committed compile output before it was excluded.
-  await g.raw(['rm', '-r', '--cached', '--ignore-unmatch', '--quiet', '--', '.papyr-out']).catch(() => {});
+  // Self-heal projects that committed compile output before it was excluded
+  // (.papyr-out is the pre-rename output dir).
+  await g.raw(['rm', '-r', '--cached', '--ignore-unmatch', '--quiet', '--', '.aldine-out', '.papyr-out']).catch(() => {});
   await g.add(['-A']);
   const status = await g.status();
   if (status.staged.length === 0 && status.files.length === 0) return { committed: false };
   const opts: Record<string, string | null> = {};
-  if (author) opts['--author'] = `${author} <${author.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@papyr.local>`;
+  if (author) opts['--author'] = `${author} <${author.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@aldine.local>`;
   const res = await g.commit(message, undefined, opts);
   return { committed: true, hash: res.commit };
 }
@@ -90,8 +95,8 @@ export interface MergeResult { ok: boolean; conflicts?: string[]; message?: stri
 /** Merge `from` into `into`. On conflict: abort and report conflicting files. */
 export async function merge(id: string, from: string, into: string, author?: string): Promise<MergeResult> {
   // commit any pending changes in both branches first so the merge sees latest state
-  await commitAll(id, from, `papyr: checkpoint before merge`, author).catch(() => {});
-  await commitAll(id, into, `papyr: checkpoint before merge`, author).catch(() => {});
+  await commitAll(id, from, `aldine: checkpoint before merge`, author).catch(() => {});
+  await commitAll(id, into, `aldine: checkpoint before merge`, author).catch(() => {});
   const dir = await ensureWorktree(id, into);
   const g = git(dir);
   let mergeErr: unknown = null;
@@ -125,7 +130,7 @@ export function stripCreds(url: string): string {
 }
 
 /**
- * Clone a remote into a (new) project's repo dir. Papyr is main-centric, so the
+ * Clone a remote into a (new) project's repo dir. Aldine is main-centric, so the
  * checked-out default branch is renamed to `main` locally; the original name is
  * returned as `remoteBranch` for push/pull mapping. The token is scrubbed from origin.
  */
@@ -136,11 +141,11 @@ export async function cloneRepo(id: string, tokenUrl: string): Promise<{ remoteB
   await git(projectsDir).clone(tokenUrl, dir, ['--no-single-branch']);
   const g = git(dir);
   await g.remote(['set-url', 'origin', stripCreds(tokenUrl)]); // never persist the token
-  await g.addConfig('user.name', 'Papyr');
-  await g.addConfig('user.email', 'papyr@localhost');
+  await g.addConfig('user.name', 'Aldine');
+  await g.addConfig('user.email', 'aldine@localhost');
   const remoteBranch = (await g.raw(['rev-parse', '--abbrev-ref', 'HEAD'])).trim() || 'main';
   if (remoteBranch !== 'main') await g.raw(['branch', '-m', 'main']);
-  ensureOutputExcluded(id); // cloned repos have no Papyr .gitignore; keep compile output out of their history
+  ensureOutputExcluded(id); // cloned repos have no Aldine .gitignore; keep compile output out of their history
   return { remoteBranch };
 }
 

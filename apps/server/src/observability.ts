@@ -14,9 +14,9 @@ export async function initObservability(app: FastifyInstance): Promise<void> {
       const Sentry = await import('@sentry/node');
       Sentry.init({ dsn, tracesSampleRate: 0, environment: process.env.NODE_ENV || 'production' });
       sentry = Sentry;
-      console.log('[papyr] Sentry error tracking enabled');
+      console.log('[aldine] Sentry error tracking enabled');
     } catch {
-      console.warn('[papyr] SENTRY_DSN is set but @sentry/node is not installed — run `npm i @sentry/node` to enable it');
+      console.warn('[aldine] SENTRY_DSN is set but @sentry/node is not installed — run `npm i @sentry/node` to enable it');
     }
   }
 

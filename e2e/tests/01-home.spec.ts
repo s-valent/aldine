@@ -3,7 +3,7 @@ import { test, expect } from '../fixtures';
 test.describe('home', () => {
   test('create a project from the home screen', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('.home__brand')).toContainText('papyr');
+    await expect(page.locator('.home__brand')).toContainText('aldine');
     await page.getByTestId('new-project').click();
     await page.getByTestId('new-project-name').fill('My First Paper');
     await page.getByTestId('create-project').click();

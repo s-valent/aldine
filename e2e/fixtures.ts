@@ -6,7 +6,7 @@ import { test as base, expect } from '@playwright/test';
  */
 export const test = base.extend({
   page: async ({ page }, use) => {
-    await page.addInitScript(() => window.localStorage.setItem('papyr.onboarded', '1'));
+    await page.addInitScript(() => window.localStorage.setItem('aldine.onboarded', '1'));
     await use(page);
   },
 });

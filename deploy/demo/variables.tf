@@ -1,5 +1,5 @@
 variable "demo_domain" {
-  description = "Domain the demo is served on (e.g. demo.papyr.example.com). An A record must point at the server's IP."
+  description = "Domain the demo is served on (e.g. demo.aldine.example.com). An A record must point at the server's IP."
   type        = string
 }
 
@@ -24,5 +24,5 @@ variable "location" {
 variable "repo_url" {
   description = "Public git URL the box clones and runs. Must be public (or reachable with no credentials) at apply time."
   type        = string
-  default     = "https://github.com/trahloff/Papyr.git"
+  default     = "https://github.com/trahloff/Aldine.git"
 }

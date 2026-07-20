@@ -19,9 +19,9 @@ export function emailConfigured(): boolean {
   return !!(process.env.SES_FROM || process.env.SMTP_HOST);
 }
 
-/** e.g. "Papyr <no-reply@papyr.example.com>" or a bare address. */
+/** e.g. "Aldine <no-reply@aldine.example.com>" or a bare address. */
 function fromAddress(): string {
-  return process.env.SES_FROM || process.env.SMTP_FROM || `Papyr <no-reply@localhost>`;
+  return process.env.SES_FROM || process.env.SMTP_FROM || `Aldine <no-reply@localhost>`;
 }
 
 let sesClient: any = null;
@@ -30,13 +30,13 @@ let smtpTransport: any = null;
 export async function sendMail(mail: Mail): Promise<void> {
   if (process.env.SES_FROM) return sendViaSes(mail);
   if (process.env.SMTP_HOST) return sendViaSmtp(mail);
-  console.log(`[papyr] email (no transport configured) → ${mail.to}: ${mail.subject}\n${mail.text}`);
+  console.log(`[aldine] email (no transport configured) → ${mail.to}: ${mail.subject}\n${mail.text}`);
 }
 
 async function sendViaSes(mail: Mail): Promise<void> {
   if (!sesClient) {
     const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
-    if (!region) console.warn('[papyr] SES_FROM is set but AWS_REGION/AWS_DEFAULT_REGION is not — SES sends will fail with "Region is missing"');
+    if (!region) console.warn('[aldine] SES_FROM is set but AWS_REGION/AWS_DEFAULT_REGION is not — SES sends will fail with "Region is missing"');
     const mod: any = await import('@aws-sdk/client-sesv2');
     sesClient = { mod, client: new mod.SESv2Client({ region }) };
   }

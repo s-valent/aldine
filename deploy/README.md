@@ -1,4 +1,4 @@
-# Deploying Papyr on a single VPS
+# Deploying Aldine on a single VPS
 
 This is the recommended production setup: one dedicated-CPU box (e.g. a Hetzner
 CCX, OVH, or any VPS with ≥8 GB RAM and 2+ dedicated vCPUs), Docker, and Caddy
@@ -14,23 +14,23 @@ deployment — Fargate, EFS, ALB, SES — in [`deploy/aws`](aws/).)
 - Install Docker Engine + the compose plugin.
 
 ```bash
-sudo mkdir -p /opt/papyr && cd /opt/papyr
+sudo mkdir -p /opt/aldine && cd /opt/aldine
 git clone <your-repo> .
 ```
 
 ## 2. Configure
 
-Create `/opt/papyr/.env` (compose reads it automatically):
+Create `/opt/aldine/.env` (compose reads it automatically):
 
 ```dotenv
-PAPYR_DOMAIN=papyr.example.com
-PAPYR_PUBLIC_URL=https://papyr.example.com
-PAPYR_APP_BIND=127.0.0.1          # app on loopback only; Caddy fronts it
+ALDINE_DOMAIN=aldine.example.com
+ALDINE_PUBLIC_URL=https://aldine.example.com
+ALDINE_APP_BIND=127.0.0.1          # app on loopback only; Caddy fronts it
 
 # multi-user mode
 AUTH_ENABLED=1
 # Single sign-on (optional; each provider is independent). Set the callback/redirect
-# URI in the provider console to  <PAPYR_PUBLIC_URL>/api/auth/oauth/<provider>/callback
+# URI in the provider console to  <ALDINE_PUBLIC_URL>/api/auth/oauth/<provider>/callback
 # Google:  https://console.cloud.google.com/apis/credentials  (OAuth client, type "Web")
 GOOGLE_OAUTH_CLIENT_ID=...
 GOOGLE_OAUTH_CLIENT_SECRET=...
@@ -39,36 +39,36 @@ GITHUB_LOGIN_CLIENT_ID=...
 GITHUB_LOGIN_CLIENT_SECRET=...
 
 # GitHub sync (import repos as projects, push/pull) — a SEPARATE OAuth app with
-# repo scope. Callback: <PAPYR_PUBLIC_URL>/api/github/oauth/callback
+# repo scope. Callback: <ALDINE_PUBLIC_URL>/api/github/oauth/callback
 # (users can also connect with a Personal Access Token, no app needed).
 GITHUB_CLIENT_ID=...
 GITHUB_CLIENT_SECRET=...
 
 # AI error-fix (bring your own key; unset = feature off). If several are set,
-# precedence is OPENROUTER > OPENAI > ANTHROPIC. Leave PAPYR_AI_MODEL unset to
+# precedence is OPENROUTER > OPENAI > ANTHROPIC. Leave ALDINE_AI_MODEL unset to
 # use the provider's default — if you do set it, use that provider's naming
 # (e.g. "anthropic/claude-opus-4.8" for OpenRouter, "claude-opus-4-8" for
 # direct Anthropic).
 OPENROUTER_API_KEY=sk-or-...
 #ANTHROPIC_API_KEY=
 #OPENAI_API_KEY=
-#PAPYR_AI_MODEL=
+#ALDINE_AI_MODEL=
 
 # password-reset email: SMTP (any provider) or AWS SES — set one transport.
 # Without one, reset tokens are logged server-side (or echoed in the API
-# response when PAPYR_RESET_ECHO=1 — dev only).
+# response when ALDINE_RESET_ECHO=1 — dev only).
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=...
 SMTP_PASS=...
-SMTP_FROM="Papyr <no-reply@papyr.example.com>"
+SMTP_FROM="Aldine <no-reply@aldine.example.com>"
 #SMTP_SECURE=1                    # implicit TLS (port 465) instead of STARTTLS
-#SES_FROM="Papyr <no-reply@papyr.example.com>"   # AWS SES instead of SMTP
+#SES_FROM="Aldine <no-reply@aldine.example.com>"   # AWS SES instead of SMTP
 #AWS_REGION=eu-west-1             # required with SES_FROM
 
 # optional per-user compile quota, in minutes per month (blank = uncapped).
 # Useful when hosting for a group; over-quota compiles return HTTP 402.
-PAPYR_COMPILE_QUOTA_MIN=
+ALDINE_COMPILE_QUOTA_MIN=
 
 # error tracking (optional)
 SENTRY_DSN=
@@ -87,7 +87,7 @@ SENTRY_DSN=
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
 ```
 
-Caddy provisions and renews the certificate for `PAPYR_DOMAIN`. The app is bound
+Caddy provisions and renews the certificate for `ALDINE_DOMAIN`. The app is bound
 to loopback (`127.0.0.1:8080`) — only Caddy's 80/443 face the internet. The
 compiler runs on an internal-only network (no egress) with all Linux caps
 dropped. The prod overlay also sets `TRUST_PROXY=1` (so per-client rate limits
@@ -96,22 +96,22 @@ see real IPs through Caddy) and `COOKIE_SECURE=1`.
 ## 4. Backups (systemd timer)
 
 ```bash
-sudo cp deploy/papyr-backup.service deploy/papyr-backup.timer /etc/systemd/system/
-# WorkingDirectory in the .service already points at /opt/papyr
+sudo cp deploy/aldine-backup.service deploy/aldine-backup.timer /etc/systemd/system/
+# WorkingDirectory in the .service already points at /opt/aldine
 sudo systemctl daemon-reload
-sudo systemctl enable --now papyr-backup.timer
+sudo systemctl enable --now aldine-backup.timer
 ```
 
-Daily snapshots of the `papyr-data` (projects/git) and `papyr-secrets` (users,
-sessions, keys, comments, usage) volumes land in `/var/backups/papyr`, 14 kept.
+Daily snapshots of the `aldine-data` (projects/git) and `aldine-secrets` (users,
+sessions, keys, comments, usage) volumes land in `/var/backups/aldine`, 14 kept.
 Restore with `deploy/restore.sh <backup.tar.gz>` after `docker compose down`.
-(If your compose project name isn't `papyr`, set `PAPYR_PROJECT` for both
+(If your compose project name isn't `aldine`, set `ALDINE_PROJECT` for both
 scripts.)
 
 ## 5. Upgrade
 
 ```bash
-cd /opt/papyr && git pull
+cd /opt/aldine && git pull
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
 ```
 
@@ -119,7 +119,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
 
 - **Scale vertically first** — a bigger box absorbs a lot of users before you
   need HA. LaTeX compiles are the resource driver; if you host for a group,
-  cap them per user with `PAPYR_COMPILE_QUOTA_MIN` and read `/api/usage` for a
+  cap them per user with `ALDINE_COMPILE_QUOTA_MIN` and read `/api/usage` for a
   usage UI. Users over quota get HTTP 402 with `quotaExceeded: true`.
 - **When one box isn't enough**, keep the web/collab tier here and run
   additional **compiler workers** on cheap burstable boxes pointed at the shared
@@ -128,7 +128,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   multiple app nodes, switch to Postgres — no code change, just config:
   ```bash
   # in .env
-  DATABASE_URL=postgres://papyr:papyr@db:5432/papyr
+  DATABASE_URL=postgres://aldine:aldine@db:5432/aldine
   # bring up with the bundled Postgres (or point at a managed one)
   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
     --profile tls --profile postgres up -d
@@ -147,20 +147,20 @@ Everything is env-gated; blank/unset means "off" or the listed default.
 
 | Variable | Purpose |
 |---|---|
-| `PAPYR_DOMAIN` | Domain Caddy serves + provisions TLS for (`tls` profile) |
-| `PAPYR_PUBLIC_URL` | Absolute origin used in OAuth callbacks and reset links — required for SSO and email |
-| `PAPYR_APP_BIND` | Host interface for the app port (set `127.0.0.1` behind a proxy) |
+| `ALDINE_DOMAIN` | Domain Caddy serves + provisions TLS for (`tls` profile) |
+| `ALDINE_PUBLIC_URL` | Absolute origin used in OAuth callbacks and reset links — required for SSO and email |
+| `ALDINE_APP_BIND` | Host interface for the app port (set `127.0.0.1` behind a proxy) |
 | `AUTH_ENABLED` | `1` = multi-user login, ownership, sharing. Unset = single-tenant, no login |
-| `PAPYR_SSO_ONLY` | `1` = disable password auth entirely (SSO only) |
+| `ALDINE_SSO_ONLY` | `1` = disable password auth entirely (SSO only) |
 | `GOOGLE_OAUTH_CLIENT_ID/SECRET` | Google SSO |
 | `GITHUB_LOGIN_CLIENT_ID/SECRET` | GitHub SSO (login) |
 | `GITHUB_CLIENT_ID/SECRET` | GitHub **sync** OAuth app (repo import/push/pull) — separate from login |
 | `SMTP_HOST/PORT/USER/PASS/FROM`, `SMTP_SECURE` | Password-reset email via SMTP |
 | `SES_FROM` + `AWS_REGION` | Password-reset email via AWS SES (instead of SMTP) |
-| `PAPYR_RESET_ECHO` | `1` = echo reset tokens in the API response (dev only, never in prod) |
+| `ALDINE_RESET_ECHO` | `1` = echo reset tokens in the API response (dev only, never in prod) |
 | `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OPENAI_API_KEY` | AI error-fix; precedence OpenRouter > OpenAI > Anthropic |
-| `PAPYR_AI_MODEL`, `PAPYR_AI_BASE_URL` | Override AI model / OpenAI-compatible endpoint |
-| `PAPYR_COMPILE_QUOTA_MIN` | Per-user compile minutes per month (blank = uncapped) |
+| `ALDINE_AI_MODEL`, `ALDINE_AI_BASE_URL` | Override AI model / OpenAI-compatible endpoint |
+| `ALDINE_COMPILE_QUOTA_MIN` | Per-user compile minutes per month (blank = uncapped) |
 | `DATABASE_URL` | Postgres datastore (blank = flat JSON files) |
 | `PG_POOL_MAX` | Postgres pool size (default 10) |
 | `REDIS_URL` | Shared rate limits + collab sync across app nodes |
@@ -170,4 +170,4 @@ Everything is env-gated; blank/unset means "off" or the listed default.
 | `RL_LOGIN_BURST`, `RL_REGISTER_BURST`, `RL_AI_BURST`, `RL_AI_REFILL_PER_MIN`, `RL_REF_BURST` | Rate-limit tuning (sane defaults) |
 | `RL_COMPILE_CONCURRENCY` | Max concurrent compiles the app forwards (default 2) |
 | `COMPILE_TIMEOUT_MS`, `MAX_CONCURRENT_COMPILES` | Compiler-container limits (set on the `compiler` service) |
-| `PAPYR_PROJECT` | Compose project name for `backup.sh`/`restore.sh` (default `papyr`) |
+| `ALDINE_PROJECT` | Compose project name for `backup.sh`/`restore.sh` (default `aldine`) |

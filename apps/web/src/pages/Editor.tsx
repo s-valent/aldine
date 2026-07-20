@@ -35,12 +35,12 @@ export default function Editor() {
   const [pdfWidth, setPdfWidth] = useState(() => Math.max(360, Math.round(window.innerWidth * 0.4)));
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [pluginPanels, setPluginPanels] = useState<PluginPanel[]>([]);
-  const [auto, setAuto] = useState(() => localStorage.getItem('papyr.autoTypeset') !== '0');
+  const [auto, setAuto] = useState(() => localStorage.getItem('aldine.autoTypeset') !== '0');
   const [stats, setStats] = useState<{ words: number; selWords: number | null }>({ words: 0, selWords: null });
   const [zoom, setZoom] = useState(1);
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('papyr.spellcheck') === '1');
+  const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('aldine.spellcheck') === '1');
   const [comments, setComments] = useState<Comment[]>([]);
   const [composing, setComposing] = useState<{ from: number; to: number; quote: string } | null>(null);
   const codeRef = useRef<CodePaneHandle>(null);
@@ -120,7 +120,7 @@ export default function Editor() {
   const toggleAuto = () => {
     const next = !auto;
     setAuto(next);
-    localStorage.setItem('papyr.autoTypeset', next ? '1' : '0');
+    localStorage.setItem('aldine.autoTypeset', next ? '1' : '0');
   };
 
   // Cmd+S → typeset, Cmd+K → command palette
@@ -277,7 +277,7 @@ export default function Editor() {
       { id: 'typeset', group: 'Action', title: 'Typeset document', hint: '⌘S', run: doCompile },
       { id: 'auto', group: 'Action', title: auto ? 'Turn auto-typeset off' : 'Turn auto-typeset on', run: toggleAuto },
       { id: 'jump-pdf', group: 'Action', title: 'Jump PDF to cursor', hint: '⌘J', run: () => jumpToPdf() },
-      { id: 'spell', group: 'Action', title: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on', run: () => setSpellcheck((s) => { localStorage.setItem('papyr.spellcheck', s ? '0' : '1'); return !s; }) },
+      { id: 'spell', group: 'Action', title: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on', run: () => setSpellcheck((s) => { localStorage.setItem('aldine.spellcheck', s ? '0' : '1'); return !s; }) },
       { id: 'commit', group: 'Git', title: 'Save a checkpoint…', run: () => { setTab('history'); } },
       { id: 'newbranch', group: 'Git', title: 'New branch…', run: () => { setTab('files'); document.querySelector<HTMLElement>('[data-testid="branch-menu"]')?.click(); } },
     ];

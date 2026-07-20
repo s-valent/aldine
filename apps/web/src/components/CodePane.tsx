@@ -73,7 +73,7 @@ export function latexWordCount(src: string): number {
 }
 
 /** Calm, ink-blue syntax palette that flips with the color scheme via CSS vars. */
-const papyrHighlight = HighlightStyle.define([
+const aldineHighlight = HighlightStyle.define([
   { tag: [t.keyword, t.controlKeyword, t.tagName, t.macroName, t.function(t.variableName)], color: 'var(--syn-command)' },
   { tag: [t.comment, t.lineComment, t.blockComment], color: 'var(--syn-comment)', fontStyle: 'italic' },
   { tag: [t.string, t.attributeValue, t.inserted], color: 'var(--syn-string)' },
@@ -86,7 +86,7 @@ const papyrHighlight = HighlightStyle.define([
   { tag: t.emphasis, fontStyle: 'italic' },
 ]);
 
-const papyrTheme = EditorView.theme({
+const aldineTheme = EditorView.theme({
   '&': { backgroundColor: 'var(--bg-panel)', color: 'var(--text)' },
   '.cm-cursor': { borderLeftColor: 'var(--text)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection) !important' },
@@ -173,7 +173,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       // is the HttpOnly session cookie (sent with the WS handshake and validated
       // server-side); this token is just the non-empty trigger. Harmless when
       // auth is off (no hook → ignored).
-      token: 'papyr-session',
+      token: 'aldine-session',
     });
     const ytext = ydoc.getText('content');
     const user = localUser();
@@ -204,7 +204,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           drawSelection(),
           EditorState.allowMultipleSelections.of(true),
           indentOnInput(),
-          syntaxHighlighting(papyrHighlight),
+          syntaxHighlighting(aldineHighlight),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           bracketMatching(),
           closeBrackets(),
@@ -246,7 +246,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
             }
           }),
           commentField,
-          papyrTheme,
+          aldineTheme,
           EditorView.lineWrapping,
           // browser-native spellcheck on prose (only meaningful for .tex/.md)
           EditorView.contentAttributes.of({

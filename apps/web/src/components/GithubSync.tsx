@@ -11,7 +11,7 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
   const [showPush, setShowPush] = useState(false);
   const [message, setMessage] = useState('');
   const [conflicts, setConflicts] = useState<string[] | null>(null);
-  const [auto, setAuto] = useState(() => localStorage.getItem(`papyr.autopush.${projectId}`) === '1');
+  const [auto, setAuto] = useState(() => localStorage.getItem(`aldine.autopush.${projectId}`) === '1');
   // branches
   const [branchInfo, setBranchInfo] = useState<{ branches: string[]; current: string; default: string } | null>(null);
   const [menu, setMenu] = useState(false);
@@ -75,7 +75,7 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
   const autoRef = useRef(auto); autoRef.current = auto;
   const busyRef = useRef(busy); busyRef.current = busy;
   useEffect(() => {
-    localStorage.setItem(`papyr.autopush.${projectId}`, auto ? '1' : '0');
+    localStorage.setItem(`aldine.autopush.${projectId}`, auto ? '1' : '0');
     if (!auto) return;
     const t = setInterval(() => { if (autoRef.current && !busyRef.current) doPush(undefined, true); }, 20_000);
     return () => clearInterval(t);
@@ -118,7 +118,7 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
       )}
       <button className={`gh-sync__auto ${auto ? 'gh-sync__auto--on' : ''}`} onClick={() => setAuto((v) => !v)} data-testid="github-auto" title="Auto-sync: push local changes to GitHub every 20s">{auto ? '⟳ Auto' : '⟳'}</button>
       <button className="btn btn--small" onClick={pull} disabled={!!busy} data-testid="github-pull-btn" title="Pull from GitHub">{busy === 'pull' ? '…' : 'Pull'}</button>
-      <button className="btn btn--small" onClick={() => { setMessage('Update from Papyr'); setShowPush(true); }} disabled={!!busy} data-testid="github-push-btn" title="Push to GitHub">{busy === 'push' ? '…' : 'Push'}</button>
+      <button className="btn btn--small" onClick={() => { setMessage('Update from Aldine'); setShowPush(true); }} disabled={!!busy} data-testid="github-push-btn" title="Push to GitHub">{busy === 'push' ? '…' : 'Push'}</button>
 
       {showPush && (
         <div className="modal-backdrop" onClick={() => setShowPush(false)}>
@@ -126,10 +126,10 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
             <h2 style={{ marginBottom: 8 }}>Push to GitHub</h2>
             <p className="modal__sub" style={{ marginBottom: 10 }}>{fullName} · {branchInfo?.current}</p>
             <input className="input" style={{ width: '100%' }} value={message} data-testid="push-message" autoFocus
-              onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doPush(message.trim() || 'Update from Papyr')} placeholder="Commit message" />
+              onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doPush(message.trim() || 'Update from Aldine')} placeholder="Commit message" />
             <div className="modal__row" style={{ marginTop: 12 }}>
               <button className="btn" onClick={() => setShowPush(false)}>Cancel</button>
-              <button className="btn btn--primary" onClick={() => doPush(message.trim() || 'Update from Papyr')} data-testid="push-confirm">Commit &amp; push</button>
+              <button className="btn btn--primary" onClick={() => doPush(message.trim() || 'Update from Aldine')} data-testid="push-confirm">Commit &amp; push</button>
             </div>
           </div>
         </div>
@@ -156,7 +156,7 @@ export default function GithubSync({ projectId, fullName, onPulled }: { projectI
             <p className="modal__sub">Your changes and GitHub's have diverged{conflicts.length ? ' in:' : '.'}</p>
             {conflicts.length > 0 && <ul className="conflict__list">{conflicts.map((f) => <li key={f}>{f}</li>)}</ul>}
             <p style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
-              Papyr kept your local version. You can discard your local changes and take GitHub's version, or cancel and reconcile manually.
+              Aldine kept your local version. You can discard your local changes and take GitHub's version, or cancel and reconcile manually.
             </p>
             <div className="modal__row" style={{ marginTop: 12 }}>
               <button className="btn" onClick={() => setConflicts(null)}>Cancel</button>

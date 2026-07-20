@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Papyr plugin host.
+ * Aldine plugin host.
  * Plugins are ES modules served from /plugins/<id>/<entry> exporting:
- *   export default { activate(papyr: PapyrAPI): void }
+ *   export default { activate(aldine: AldineAPI): void }
  * The API is intentionally small and stable; panels render vanilla DOM.
  */
 
@@ -25,7 +25,7 @@ export interface PluginCtx {
   toast(text: string, kind?: 'info' | 'error' | 'ok'): void;
 }
 
-export interface PapyrAPI {
+export interface AldineAPI {
   version: 1;
   project: {
     readonly id: string;
@@ -55,7 +55,7 @@ export function PluginHost({ ctx, onPanels }: Props) {
     let cancelled = false;
     const panels: PluginPanel[] = [];
 
-    const api: PapyrAPI = {
+    const api: AldineAPI = {
       version: 1,
       project: {
         get id() { return ctxRef.current.projectId; },

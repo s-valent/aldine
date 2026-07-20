@@ -15,7 +15,7 @@ const shoot = async (ctx, name, fn) => {
 
 for (const scheme of ['light', 'dark']) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
-  await ctx.addInitScript(() => window.localStorage.setItem('papyr.onboarded', '1'));
+  await ctx.addInitScript(() => window.localStorage.setItem('aldine.onboarded', '1'));
 
   // seed a paper project from the in-repo demo fixture
   const PAPER = new URL('./fixtures/demo-paper/', import.meta.url).pathname;

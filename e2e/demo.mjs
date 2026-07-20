@@ -7,7 +7,7 @@ import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 
 const OUT = new URL('./shots/', import.meta.url).pathname;
-const BASE = process.env.PAPYR_URL || 'http://localhost:5173';
+const BASE = process.env.ALDINE_URL || 'http://localhost:5173';
 const browser = await chromium.launch();
 
 const PAPER = new URL('./fixtures/demo-paper/', import.meta.url).pathname;
@@ -31,7 +31,7 @@ const mkCtx = (record) => browser.newContext({
 // A records; B is the "other author" typing.
 const ctxA = await mkCtx(true);
 const ctxB = await mkCtx(false);
-for (const c of [ctxA, ctxB]) await c.addInitScript(() => window.localStorage.setItem('papyr.onboarded', '1'));
+for (const c of [ctxA, ctxB]) await c.addInitScript(() => window.localStorage.setItem('aldine.onboarded', '1'));
 
 const a = await ctxA.newPage();
 await a.goto(`${BASE}/p/${id}`);

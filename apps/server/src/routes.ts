@@ -37,9 +37,9 @@ function reqUser(req: any): auth.PublicUser | null {
 function oauthProviders(): Array<{ id: string; label: string }> {
   return oauth.configuredProviders().map((p) => ({ id: p.id, label: p.label }));
 }
-/** Public origin for OAuth redirects — PAPYR_PUBLIC_URL, else derived from the request. */
+/** Public origin for OAuth redirects — ALDINE_PUBLIC_URL, else derived from the request. */
 function publicBase(req: FastifyRequest): string {
-  if (process.env.PAPYR_PUBLIC_URL) return process.env.PAPYR_PUBLIC_URL.replace(/\/$/, '');
+  if (process.env.ALDINE_PUBLIC_URL) return process.env.ALDINE_PUBLIC_URL.replace(/\/$/, '');
   const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
   const host = (req.headers['x-forwarded-host'] as string) || req.headers.host;
   return `${proto}://${host}`;
@@ -51,10 +51,10 @@ const lastPushedHead = new Map<string, string>();
 
 /** git internals and compile output are never user-addressable — at any depth. */
 function isHiddenPath(rel: string): boolean {
-  // Check every segment: 'sub/.git/config' and 'paper/.papyr-out/x' must be
+  // Check every segment: 'sub/.git/config' and 'paper/.aldine-out/x' must be
   // caught too, not just a leading '.git'. Matches store.listFiles, which skips
   // these names at every level.
-  return rel.split(/[\\/]/).some((seg) => seg === '.git' || seg.startsWith('.papyr'));
+  return rel.split(/[\\/]/).some((seg) => seg === '.git' || seg.startsWith('.aldine'));
 }
 
 async function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null) {
@@ -75,7 +75,7 @@ async function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null
 }
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/api/health', async () => ({ ok: true, name: 'papyr' }));
+  app.get('/api/health', async () => ({ ok: true, name: 'aldine' }));
 
   // ---------- auth (env-gated) ----------
   app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, passwordAuth: !auth.SSO_ONLY, user: reqUser(req), providers: oauthProviders() }));
@@ -125,7 +125,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // forgot-password: issue a reset token. Emailed if SMTP is configured; otherwise
-  // logged server-side and (when PAPYR_RESET_ECHO=1) returned for self-host relay.
+  // logged server-side and (when ALDINE_RESET_ECHO=1) returned for self-host relay.
   app.post<{ Body: { email: string } }>('/api/auth/reset-request', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
@@ -135,25 +135,25 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Build the reset link from the CONFIGURED public URL only — never the
       // request Host/X-Forwarded-Host, which an attacker controls and could use
       // to redirect the victim's valid token to their own domain (takeover).
-      const base = process.env.PAPYR_PUBLIC_URL?.replace(/\/$/, '');
+      const base = process.env.ALDINE_PUBLIC_URL?.replace(/\/$/, '');
       const link = `${base}/?reset_token=${encodeURIComponent(r.token)}`;
       if (email.emailConfigured() && base) {
         // send in the background so the response time doesn't leak whether the
         // address exists, and a slow SMTP/SES call can't hang the request
         email.sendMail({
           to: r.user.email,
-          subject: 'Reset your Papyr password',
-          text: `Someone requested a password reset for your Papyr account.\n\nOpen this link to set a new password (expires in 1 hour):\n${link}\n\nOr enter this token manually: ${r.token}\n\nIf you didn't request this, you can ignore this email.`,
-          html: `<p>Someone requested a password reset for your Papyr account.</p><p><a href="${link}">Set a new password</a> (expires in 1 hour).</p><p>Or enter this token manually: <code>${r.token}</code></p><p>If you didn't request this, you can ignore this email.</p>`,
-        }).catch((err) => console.error('[papyr] reset email failed:', err?.message || err));
+          subject: 'Reset your Aldine password',
+          text: `Someone requested a password reset for your Aldine account.\n\nOpen this link to set a new password (expires in 1 hour):\n${link}\n\nOr enter this token manually: ${r.token}\n\nIf you didn't request this, you can ignore this email.`,
+          html: `<p>Someone requested a password reset for your Aldine account.</p><p><a href="${link}">Set a new password</a> (expires in 1 hour).</p><p>Or enter this token manually: <code>${r.token}</code></p><p>If you didn't request this, you can ignore this email.</p>`,
+        }).catch((err) => console.error('[aldine] reset email failed:', err?.message || err));
       } else {
-        // no transport, or no PAPYR_PUBLIC_URL to build a trusted link → don't
+        // no transport, or no ALDINE_PUBLIC_URL to build a trusted link → don't
         // email a host-derived (poisonable) link; log the token for manual relay
-        console.log(`[papyr] password reset for ${r.user.email}: token=${r.token} (set PAPYR_PUBLIC_URL + an email transport to send links; relay manually, expires in 1h)`);
+        console.log(`[aldine] password reset for ${r.user.email}: token=${r.token} (set ALDINE_PUBLIC_URL + an email transport to send links; relay manually, expires in 1h)`);
       }
     }
     // never reveal whether the email exists
-    return process.env.PAPYR_RESET_ECHO === '1' && r ? { ok: true, token: r.token } : { ok: true };
+    return process.env.ALDINE_RESET_ECHO === '1' && r ? { ok: true, token: r.token } : { ok: true };
   });
 
   app.post<{ Body: { token: string; newPassword: string } }>('/api/auth/reset', async (req, reply) => {
@@ -170,7 +170,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const provider = auth.AUTH_ENABLED ? oauth.getProvider(req.params.provider) : undefined;
     if (!provider) return reply.code(404).send({ error: 'This sign-in provider is not configured' });
     const state = crypto.randomBytes(12).toString('hex');
-    reply.header('set-cookie', `papyr_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
+    reply.header('set-cookie', `aldine_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
     const redirect = `${publicBase(req)}/api/auth/oauth/${provider.id}/callback`;
     return reply.redirect(provider.authorizeUrl(state, redirect));
   });
@@ -180,13 +180,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const provider = auth.AUTH_ENABLED ? oauth.getProvider(req.params.provider) : undefined;
       if (!provider) return reply.code(404).send({ error: 'This sign-in provider is not configured' });
       const cookies = auth.parseCookies(req.headers.cookie);
-      if (!req.query.code || !req.query.state || req.query.state !== cookies.papyr_oauth_state) {
+      if (!req.query.code || !req.query.state || req.query.state !== cookies.aldine_oauth_state) {
         return reply.code(400).send({ error: 'OAuth state mismatch — please try again' });
       }
       try {
         const profile = await provider.exchange(req.query.code, `${publicBase(req)}/api/auth/oauth/${provider.id}/callback`);
         const user = await auth.findOrCreateOAuth(profile.email, profile.name, provider.id);
-        reply.header('set-cookie', [auth.sessionCookie(await auth.createSession(user.id)), 'papyr_oauth_state=; Path=/; Max-Age=0']);
+        reply.header('set-cookie', [auth.sessionCookie(await auth.createSession(user.id)), 'aldine_oauth_state=; Path=/; Max-Age=0']);
         return reply.redirect('/');
       } catch (err: any) {
         return reply.code(400).send({ error: `${provider.label} sign-in failed: ${err.message}` });
@@ -278,7 +278,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       const meta = await store.createProject(name || 'Imported project', textFiles, reqUser(req)?.id);
       for (const p of binFiles) store.writeFile(meta.id, 'main', p, entries[p]);
-      if (binFiles.length) await gitops.commitAll(meta.id, 'main', 'papyr: import assets').catch(() => {});
+      if (binFiles.length) await gitops.commitAll(meta.id, 'main', 'aldine: import assets').catch(() => {});
       const root = guessRoot(entries);
       if (root) { meta.rootFile = root; await store.writeMeta(meta); }
       return publicMeta(meta);
@@ -380,11 +380,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok: true };
   });
 
-  /** Serve compile artifacts (PDF, synctex) from the branch's .papyr-out. */
+  /** Serve compile artifacts (PDF, synctex) from the branch's .aldine-out. */
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/output', async (req, reply) => {
     const { branch = 'main', path: rel } = req.query;
-    // artifacts live in a .papyr-out dir (at the project root or beside a subdir'd root file)
-    if (!rel || rel.includes('..') || !/(^|\/)\.papyr-out\/[^/]+$/.test(rel)) return reply.code(400).send({ error: 'bad output path' });
+    // artifacts live in a .aldine-out dir (at the project root or beside a subdir'd root file)
+    if (!rel || rel.includes('..') || !/(^|\/)\.aldine-out\/[^/]+$/.test(rel)) return reply.code(400).send({ error: 'bad output path' });
     try {
       const abs = safeJoin(store.branchDir(req.params.id, branch), rel);
       fs.accessSync(abs); // throws → 404 below if the artifact is missing
@@ -476,7 +476,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (!name) return reply.code(400).send({ error: 'name required' });
       // capture latest edits so the new branch starts from what the user sees
       flushBranchDocs(req.params.id, from);
-      await gitops.commitAll(req.params.id, from, 'papyr: checkpoint before branching').catch(() => {});
+      await gitops.commitAll(req.params.id, from, 'aldine: checkpoint before branching').catch(() => {});
       await gitops.createBranch(req.params.id, name, from);
       return { ok: true };
     });
@@ -490,7 +490,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { id: string }; Body: { branch?: string; message?: string; author?: string } }>(
     '/api/projects/:id/commit', async (req) => {
-      const { branch = 'main', message = 'papyr: manual commit', author } = req.body || {};
+      const { branch = 'main', message = 'aldine: manual commit', author } = req.body || {};
       flushBranchDocs(req.params.id, branch);
       return gitops.commitAll(req.params.id, branch, message, author);
     });
@@ -701,21 +701,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!github.oauthEnabled()) return reply.code(404).send({ error: 'GitHub OAuth is not configured' });
     if (auth.AUTH_ENABLED && !reqUser(req)) return reply.code(401).send({ error: 'Sign in required' });
     const state = crypto.randomBytes(12).toString('hex');
-    reply.header('set-cookie', `papyr_gh_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
+    reply.header('set-cookie', `aldine_gh_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
     return reply.redirect(github.connectUrl(state, `${publicBase(req)}/api/github/oauth/callback`));
   });
 
   app.get<{ Querystring: { code?: string; state?: string } }>('/api/github/oauth/callback', async (req, reply) => {
     if (!github.oauthEnabled()) return reply.code(404).send({ error: 'GitHub OAuth is not configured' });
     const cookies = auth.parseCookies(req.headers.cookie);
-    if (!req.query.code || !req.query.state || req.query.state !== cookies.papyr_gh_state) {
+    if (!req.query.code || !req.query.state || req.query.state !== cookies.aldine_gh_state) {
       return reply.code(400).send({ error: 'OAuth state mismatch — please try again' });
     }
     try {
       const token = await github.exchangeCode(req.query.code, `${publicBase(req)}/api/github/oauth/callback`);
       const me = await github.whoami(token);
       await github.setConnection(ghUserId(req), { token, login: me.login, name: me.name });
-      reply.header('set-cookie', 'papyr_gh_state=; Path=/; Max-Age=0');
+      reply.header('set-cookie', 'aldine_gh_state=; Path=/; Max-Age=0');
       return reply.redirect('/?github=connected');
     } catch (err: any) {
       return reply.code(400).send({ error: `GitHub connect failed: ${err.message}` });
@@ -795,7 +795,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string }; Body: { message?: string; auto?: boolean } }>('/api/projects/:id/github/push', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
     flushBranchDocs(req.params.id, 'main'); // capture unsaved editor content before committing
-    const message = (req.body?.message || '').trim() || 'Update from Papyr';
+    const message = (req.body?.message || '').trim() || 'Update from Aldine';
     const commit = await gitops.commitAll(req.params.id, 'main', message, reqUser(req)?.name).catch(() => ({ committed: false, hash: undefined as string | undefined }));
     // HEAD is the commit hash we just made (when we committed), else look it up.
     const head = commit.committed ? commit.hash ?? null : await gitops.headCommit(req.params.id).catch(() => null);

@@ -10,7 +10,7 @@ export interface CompileResult {
   ok: boolean;
   timedOut?: boolean;
   exitCode?: number;
-  pdf: string | null;      // path relative to branch dir (.papyr-out/main.pdf)
+  pdf: string | null;      // path relative to branch dir (.aldine-out/main.pdf)
   pdfUrl: string | null;   // URL the client can fetch
   log: string;
   errors: CompileError[];
@@ -25,7 +25,7 @@ function relProjectDir(projectId: string, branch: string): string {
 
 /**
  * Serialize compiles per project::branch so two clients can't run latexmk in
- * the same .papyr-out dir concurrently (which corrupts aux files / the PDF).
+ * the same .aldine-out dir concurrently (which corrupts aux files / the PDF).
  * A queued request coalesces onto the in-flight one's successor.
  */
 const compileChain = new Map<string, Promise<unknown>>();

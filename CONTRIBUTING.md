@@ -1,6 +1,6 @@
-# Contributing to Papyr
+# Contributing to Aldine
 
-Thanks for your interest! Papyr is a slim, self-hostable LaTeX collaboration
+Thanks for your interest! Aldine is a slim, self-hostable LaTeX collaboration
 platform. This guide gets you productive quickly.
 
 ## Layout
@@ -21,8 +21,8 @@ docs/           Architecture & scaling notes
 ```bash
 npm ci
 # one-time: a compiler on :4020 (docker container sharing ./.data)
-docker build -t papyr-compiler apps/compiler
-docker run -d --name papyr-compiler-dev -p 4020:4020 -v "$PWD/.data:/data" papyr-compiler
+docker build -t aldine-compiler apps/compiler
+docker run -d --name aldine-compiler-dev -p 4020:4020 -v "$PWD/.data:/data" aldine-compiler
 
 # API on :3000, Vite on :5173 (proxies /api, /plugins + /collab to :3000)
 npm run dev -w apps/server
@@ -61,7 +61,7 @@ CI runs the typecheck/build/integration checks on pushes to `main` and on PRs
 ## Releasing
 
 Tag a version and push it — `.github/workflows/release.yml` builds and publishes
-the `papyr-app` and `papyr-compiler` images to GHCR and drafts a GitHub release:
+the `aldine-app` and `aldine-compiler` images to GHCR and drafts a GitHub release:
 
 ```bash
 git tag v0.4.0 && git push origin v0.4.0

@@ -1,6 +1,6 @@
-# Scaling Papyr
+# Scaling Aldine
 
-Papyr is built to run two ways from one codebase:
+Aldine is built to run two ways from one codebase:
 
 - **Solo / self-host** — one box, `docker compose up`, flat-JSON datastore. The
   default, and the thing you give a colleague to run tonight.
@@ -71,9 +71,9 @@ built.
 
 ## Cost & hosting
 
-Compiles (CPU/RAM bursts) dominate resource usage, so if you host Papyr for a
+Compiles (CPU/RAM bursts) dominate resource usage, so if you host Aldine for a
 lab, class, or team, cheap dedicated compute (a Hetzner CCX-class box, EU for
 data residency) goes a lot further than hyperscaler instances. If you need to
 keep a shared box fair, cap compile-minutes per user
-(`PAPYR_COMPILE_QUOTA_MIN`; `/api/usage` reports consumption). See
+(`ALDINE_COMPILE_QUOTA_MIN`; `/api/usage` reports consumption). See
 [../deploy/README.md](../deploy/README.md) for the single-VPS runbook.

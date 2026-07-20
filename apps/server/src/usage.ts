@@ -5,7 +5,7 @@ import { db } from './db/index.js';
  * are the real cost driver (CPU + RAM bursts), so we meter compile-seconds per
  * calendar month rather than seats. Persisted through the DataStore.
  *
- * Off by default: only enforced when PAPYR_COMPILE_QUOTA_MIN (monthly minutes)
+ * Off by default: only enforced when ALDINE_COMPILE_QUOTA_MIN (monthly minutes)
  * is set AND the request is from a signed-in user. Self-host stays unmetered.
  */
 
@@ -16,7 +16,7 @@ function monthKey(now: Date): string {
 
 /** Monthly compile-minutes quota, or 0 when metering is disabled. */
 function quotaSeconds(): number {
-  const min = Number(process.env.PAPYR_COMPILE_QUOTA_MIN || 0);
+  const min = Number(process.env.ALDINE_COMPILE_QUOTA_MIN || 0);
   return Number.isFinite(min) && min > 0 ? min * 60 : 0;
 }
 export function meteringEnabled(): boolean {

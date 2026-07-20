@@ -12,7 +12,7 @@ import { initDb, closeDb } from './db/index.js';
 import { initRateLimit } from './ratelimit.js';
 
 // Never let a stray rejection take down the collaboration server.
-process.on('unhandledRejection', (reason) => { console.error('[papyr] unhandledRejection', reason); captureError(reason); });
+process.on('unhandledRejection', (reason) => { console.error('[aldine] unhandledRejection', reason); captureError(reason); });
 
 // Select and connect the datastore (JSON default, or Postgres via DATABASE_URL) before anything uses it.
 await initDb();
@@ -52,21 +52,21 @@ app.server.on('upgrade', (request, socket, head) => {
   }
 });
 
-console.log(`[papyr] server on :${config.port} — data=${config.dataDir} compiler=${config.compilerUrl}`);
+console.log(`[aldine] server on :${config.port} — data=${config.dataDir} compiler=${config.compilerUrl}`);
 
 let shuttingDown = false;
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[papyr] ${signal} — flushing ${hocuspocus.documents.size} open documents…`);
+  console.log(`[aldine] ${signal} — flushing ${hocuspocus.documents.size} open documents…`);
   try {
     // commit only the branches that actually had open docs (typically a handful),
     // not every project — avoids a SIGTERM fan-out of hundreds of git processes
     const dirty = flushAllDocs();
-    await Promise.allSettled(dirty.map((d) => commitAll(d.projectId, d.branch, 'papyr: autosave on shutdown')));
-    console.log(`[papyr] flushed ${dirty.length} project/branch(es); exiting`);
+    await Promise.allSettled(dirty.map((d) => commitAll(d.projectId, d.branch, 'aldine: autosave on shutdown')));
+    console.log(`[aldine] flushed ${dirty.length} project/branch(es); exiting`);
   } catch (err) {
-    console.error('[papyr] shutdown flush error', err);
+    console.error('[aldine] shutdown flush error', err);
   }
   try { await app.close(); await closeDb(); } catch { /* noop */ }
   process.exit(0);

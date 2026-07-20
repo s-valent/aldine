@@ -1,4 +1,4 @@
-/** Papyr icon set — inline SVG, 1.5px stroke, currentColor. Native-feel replacements for emoji. */
+/** Aldine icon set — inline SVG, 1.5px stroke, currentColor. Native-feel replacements for emoji. */
 import { SVGProps } from 'react';
 
 const base = (props: SVGProps<SVGSVGElement>): SVGProps<SVGSVGElement> => ({

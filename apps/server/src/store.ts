@@ -48,8 +48,8 @@ export async function createProject(name: string, files: Record<string, string> 
   fs.mkdirSync(dir, { recursive: true });
   const g = git(dir);
   await g.init(['--initial-branch=main']);
-  await g.addConfig('user.name', 'Papyr');
-  await g.addConfig('user.email', 'papyr@localhost');
+  await g.addConfig('user.name', 'Aldine');
+  await g.addConfig('user.email', 'aldine@localhost');
 
   const seed = Object.keys(files).length ? files : {
     'main.tex': DEFAULT_MAIN_TEX(name),
@@ -60,7 +60,7 @@ export async function createProject(name: string, files: Record<string, string> 
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, content);
   }
-  fs.writeFileSync(path.join(dir, '.gitignore'), '.papyr-out/\n*.aux\n*.log\n*.out\n*.toc\n*.bbl\n*.bcf\n*.blg\n*.synctex.gz\n*.fls\n*.fdb_latexmk\n*.run.xml\n');
+  fs.writeFileSync(path.join(dir, '.gitignore'), '.aldine-out/\n*.aux\n*.log\n*.out\n*.toc\n*.bbl\n*.bcf\n*.blg\n*.synctex.gz\n*.fls\n*.fdb_latexmk\n*.run.xml\n');
   await g.add(['-A']);
   await g.commit('Initial commit');
 
@@ -86,7 +86,7 @@ export function listFiles(id: string, branch: string): TreeEntry[] {
   const walk = (rel: string) => {
     const abs = path.join(base, rel);
     for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
-      if (e.name === '.git' || e.name.startsWith('.papyr')) continue;
+      if (e.name === '.git' || e.name.startsWith('.aldine')) continue;
       const relPath = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         out.push({ path: relPath, type: 'dir' });

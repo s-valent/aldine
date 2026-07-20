@@ -1,5 +1,9 @@
 # Papyr on AWS (serverless, all-IaC)
 
+> **Note:** the app is named **Aldine**; AWS resource names (cluster `papyr`,
+> ECR `papyr-server`/`papyr-compiler`, SSM `/papyr/*`) keep the legacy prefix
+> to avoid a destroy/recreate of live infrastructure.
+
 Deploys Papyr to `https://papyr.tobiasrahloff.com` on **AWS Fargate** — no servers
 to manage, everything as Terraform. This is the cheapest AWS shape that actually
 fits the app; see [Why this architecture](#why-this-architecture-and-not-lambda).

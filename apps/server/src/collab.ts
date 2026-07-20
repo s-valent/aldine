@@ -40,7 +40,7 @@ const TEXT_KEY = 'content';
 /** Debounced auto-commit per project::branch after edits settle. */
 const scheduleAutoCommit = debouncePerKey(20_000, (key: string) => {
   const [projectId, branch] = key.split('::');
-  commitAll(projectId, branch, 'papyr: autosave').catch((err) => console.error('[collab] autocommit failed', err.message));
+  commitAll(projectId, branch, 'aldine: autosave').catch((err) => console.error('[collab] autocommit failed', err.message));
 });
 
 /** Schedule the same debounced auto-commit for non-collab writes (REST file
@@ -65,7 +65,7 @@ export function untombstone(name: string): void { tombstoned.delete(name); }
 
 /** Ephemeral coordination docs (e.g. the comment-change signal) are never written to disk. */
 function isSignalDoc(filePath: string): boolean {
-  return filePath.startsWith('.papyr/');
+  return filePath.startsWith('.aldine/');
 }
 
 export function writeDocToDisk(name: string, document: Y.Doc): void {
@@ -130,9 +130,9 @@ if (process.env.REDIS_URL) {
         ...(u.protocol === 'rediss:' ? { tls: {} } : {}),
       },
     } as never));
-    console.log('[papyr] collab: redis sync across nodes (requires sticky routing)');
+    console.log('[aldine] collab: redis sync across nodes (requires sticky routing)');
   } catch {
-    console.warn('[papyr] REDIS_URL set but @hocuspocus/extension-redis is not installed — collab is single-node');
+    console.warn('[aldine] REDIS_URL set but @hocuspocus/extension-redis is not installed — collab is single-node');
   }
 }
 

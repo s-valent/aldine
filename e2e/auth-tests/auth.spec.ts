@@ -113,7 +113,7 @@ test.describe('auth', () => {
     const fs = await import('node:fs');
     const os = await import('node:os');
     const path = await import('node:path');
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'papyr-imp-'));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aldine-imp-'));
     fs.writeFileSync(path.join(tmp, 'main.tex'), '\\documentclass{article}\\begin{document}x\\end{document}');
     execSync(`cd ${tmp} && zip -q -r p.zip main.tex`);
     const b64 = fs.readFileSync(path.join(tmp, 'p.zip')).toString('base64');
@@ -159,12 +159,12 @@ test.describe('auth depth', () => {
     await ctx.request.post('/api/auth/register', { data: { email, password: 'password123' } });
     // capture the session cookie, then log out
     const cookies = await ctx.cookies();
-    const session = cookies.find((c) => c.name === 'papyr_session');
+    const session = cookies.find((c) => c.name === 'aldine_session');
     expect(session).toBeTruthy();
     await ctx.request.post('/api/auth/logout');
     // replay the stale cookie in a fresh context → must be rejected (revoked)
     const stale = await browser.newContext();
-    await stale.addCookies([{ name: 'papyr_session', value: session!.value, url: 'http://localhost:3200' }]);
+    await stale.addCookies([{ name: 'aldine_session', value: session!.value, url: 'http://localhost:3200' }]);
     const me = await (await stale.request.get('/api/auth/me')).json();
     expect(me.user).toBeNull();
     await ctx.close(); await stale.close();

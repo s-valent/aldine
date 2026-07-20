@@ -1,6 +1,6 @@
-# Papyr — original build plan (historical)
+# Aldine — original build plan (historical)
 
-> **What is this?** The working plan Papyr was built against. Papyr was built
+> **What is this?** The working plan Aldine was built against. Aldine was built
 > largely by an AI agent (Claude) running in an autonomous
 > plan → implement → test → review loop, directed and reviewed by a human —
 > the commit history tells that story honestly. This file is kept as a
@@ -35,7 +35,7 @@ docker-compose.yml
 │              - plugin registry (manifest.json + ESM entry, served to frontend)
 ├── compiler   TeX Live + latexmk behind tiny HTTP API (POST files -> PDF/log/synctex)
 │              - nonstopmode, restricted shell-escape, timeout, per-project cache dir for speed
-└── (volumes)  papyr-data (projects, yjs), papyr-cache (latex aux)
+└── (volumes)  aldine-data (projects, yjs), aldine-cache (latex aux)
 ```
 
 Frontend: React 18 + Vite + CodeMirror 6 + y-codemirror.next + pdf.js.
@@ -48,7 +48,7 @@ Product-management subagents propose UX improvements each major cycle.
 
 ## Test assets
 Example paper: `e2e/fixtures/demo-paper/` (article class, TikZ, BibTeX)
-— must compile in Papyr.
+— must compile in Aldine.
 
 ## Status log — v0.2 COMPLETE (all acceptance criteria met + verified on Docker)
 - [x] Research (Bibby features, tech stack, Zotero) — 3 agents

@@ -4,10 +4,10 @@ import { defineConfig } from '@playwright/test';
  * E2E suite. Assumes:
  *  - compiler service on :4020 (docker container or `npm run dev:compiler`)
  *  - it starts the app server (:3100), a mock Zotero API (:4919) and Vite preview itself
- * Set PAPYR_URL to test an already-running stack (e.g. docker compose on :8080);
+ * Set ALDINE_URL to test an already-running stack (e.g. docker compose on :8080);
  * webServers are skipped via reuseExistingServer when ports are taken.
  */
-const BASE = process.env.PAPYR_URL || 'http://localhost:3100';
+const BASE = process.env.ALDINE_URL || 'http://localhost:3100';
 
 export default defineConfig({
   testDir: './tests',
@@ -22,7 +22,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     viewport: { width: 1440, height: 900 },
   },
-  webServer: process.env.PAPYR_URL ? undefined : [
+  webServer: process.env.ALDINE_URL ? undefined : [
     {
       command: 'node tests/mock-zotero.mjs',
       port: 4919,
@@ -36,7 +36,7 @@ export default defineConfig({
       cwd: '..',
       port: 3100,
       reuseExistingServer: true,
-      timeout: 240_000,
+      timeout: 600_000,
     },
   ],
 });

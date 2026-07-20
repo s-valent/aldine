@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Papyr is pre-1.0. Only the latest release (and `main`) receives security fixes.
+Aldine is pre-1.0. Only the latest release (and `main`) receives security fixes.
 
 ## Reporting a vulnerability
 
@@ -15,7 +15,7 @@ you in the fix's release notes unless you prefer otherwise.
 
 ## Scope notes for self-hosters
 
-- Papyr's compiler container is sandboxed (no network egress, dropped
+- Aldine's compiler container is sandboxed (no network egress, dropped
   capabilities, CPU/memory/PID limits, restricted shell-escape), but LaTeX is a
   Turing-complete language processing untrusted input — treat the compiler
   container as semi-trusted and keep it isolated as shipped in

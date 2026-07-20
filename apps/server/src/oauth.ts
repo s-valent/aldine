@@ -45,7 +45,7 @@ const github: OAuthProvider = {
     });
     const tok = (await tokRes.json()) as { access_token?: string; error_description?: string };
     if (!tok.access_token) throw new Error(tok.error_description || 'no access token');
-    const headers = { authorization: `Bearer ${tok.access_token}`, accept: 'application/vnd.github+json', 'user-agent': 'papyr' };
+    const headers = { authorization: `Bearer ${tok.access_token}`, accept: 'application/vnd.github+json', 'user-agent': 'aldine' };
     const ghUser = (await (await fetch('https://api.github.com/user', { headers })).json()) as { login?: string; name?: string; email?: string };
     let email = ghUser.email;
     if (!email) {

@@ -1,4 +1,4 @@
-name: papyr
+name: aldine
 
 services:
   app:
@@ -6,10 +6,10 @@ services:
       context: .
       dockerfile: apps/server/Dockerfile
     ports:
-      # bind to all interfaces by default (local dev); set PAPYR_APP_BIND=127.0.0.1
+      # bind to all interfaces by default (local dev); set ALDINE_APP_BIND=127.0.0.1
       # in production so only the Caddy reverse proxy faces the internet.
-      # PAPYR_PORT changes the host port if 8080 is taken.
-      - "${PAPYR_APP_BIND:-0.0.0.0}:${PAPYR_PORT:-8080}:3000"
+      # ALDINE_PORT changes the host port if 8080 is taken.
+      - "${ALDINE_APP_BIND:-0.0.0.0}:${ALDINE_PORT:-8080}:3000"
     environment:
       DATA_DIR: /data
       META_DIR: /secrets
@@ -19,12 +19,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      PAPYR_AI_MODEL: ${PAPYR_AI_MODEL:-}
-      PAPYR_AI_BASE_URL: ${PAPYR_AI_BASE_URL:-}
+      ALDINE_AI_MODEL: ${ALDINE_AI_MODEL:-}
+      ALDINE_AI_BASE_URL: ${ALDINE_AI_BASE_URL:-}
       # Optional multi-user auth. AUTH_ENABLED=1 turns on login + per-project access.
       AUTH_ENABLED: ${AUTH_ENABLED:-}
-      # PAPYR_SSO_ONLY=1 disables password sign-in entirely (SSO only; no SMTP needed).
-      PAPYR_SSO_ONLY: ${PAPYR_SSO_ONLY:-}
+      # ALDINE_SSO_ONLY=1 disables password sign-in entirely (SSO only; no SMTP needed).
+      ALDINE_SSO_ONLY: ${ALDINE_SSO_ONLY:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       # GitHub login (SSO) — separate from GitHub sync below.
@@ -33,7 +33,7 @@ services:
       # GitHub sync (repo import/push/pull) — OAuth app with repo scope.
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-      PAPYR_PUBLIC_URL: ${PAPYR_PUBLIC_URL:-}
+      ALDINE_PUBLIC_URL: ${ALDINE_PUBLIC_URL:-}
       # Optional outbound email for password resets: SMTP (any provider) or AWS
       # SES (SES_FROM + AWS_REGION). Without a transport, reset tokens are
       # logged server-side instead of emailed.
@@ -53,8 +53,8 @@ services:
       # Postgres URL for the horizontally-scalable backend (see `postgres` profile).
       DATABASE_URL: ${DATABASE_URL:-}
     volumes:
-      - papyr-data:/data
-      - papyr-secrets:/secrets
+      - aldine-data:/data
+      - aldine-secrets:/secrets
     depends_on:
       compiler:
         condition: service_healthy
@@ -84,7 +84,7 @@ services:
       retries: 6
       start_period: 20s
     volumes:
-      - papyr-data:/data
+      - aldine-data:/data
     # Hardening: no external egress (internal network), drop all Linux caps,
     # no privilege escalation, bounded CPU/memory/PIDs. Packages are baked into
     # the image at build time, so the compiler never needs the network.
@@ -100,7 +100,7 @@ services:
     init: true # reap orphaned pdflatex/biber children left by killed latexmk runs
     restart: unless-stopped
 
-  # TLS reverse proxy — opt in with `--profile tls` and set PAPYR_DOMAIN.
+  # TLS reverse proxy — opt in with `--profile tls` and set ALDINE_DOMAIN.
   # Caddy auto-provisions HTTPS certificates for the domain.
   caddy:
     image: caddy:2-alpine
@@ -109,7 +109,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      PAPYR_DOMAIN: ${PAPYR_DOMAIN:-localhost}
+      ALDINE_DOMAIN: ${ALDINE_DOMAIN:-localhost}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -131,16 +131,16 @@ services:
       - backend
 
   # Optional Postgres for the scalable datastore. Enable with `--profile postgres`
-  # and set DATABASE_URL=postgres://papyr:papyr@db:5432/papyr in .env.
+  # and set DATABASE_URL=postgres://aldine:aldine@db:5432/aldine in .env.
   db:
     image: postgres:16-alpine
     profiles: ["postgres"]
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-papyr}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-papyr}
-      POSTGRES_DB: ${POSTGRES_DB:-papyr}
+      POSTGRES_USER: ${POSTGRES_USER:-aldine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aldine}
+      POSTGRES_DB: ${POSTGRES_DB:-aldine}
     volumes:
-      - papyr-pg:/var/lib/postgresql/data
+      - aldine-pg:/var/lib/postgresql/data
     restart: unless-stopped
     networks:
       - backend
@@ -151,8 +151,8 @@ networks:
     internal: true   # compiler (and db) have no route to the internet
 
 volumes:
-  papyr-data:
-  papyr-secrets:
-  papyr-pg:
+  aldine-data:
+  aldine-secrets:
+  aldine-pg:
   caddy-data:
   caddy-config:

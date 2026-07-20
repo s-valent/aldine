@@ -1,4 +1,4 @@
-/** Add-a-reference-by-DOI/arXiv plugin. Proves a second plugin extends Papyr. */
+/** Add-a-reference-by-DOI/arXiv plugin. Proves a second plugin extends Aldine. */
 
 const h = (tag, attrs = {}, ...kids) => {
   const el = document.createElement(tag);
@@ -13,8 +13,8 @@ const h = (tag, attrs = {}, ...kids) => {
 };
 
 export default {
-  activate(papyr) {
-    papyr.ui.registerSidebarPanel({
+  activate(aldine) {
+    aldine.ui.registerSidebarPanel({
       id: 'references',
       title: 'Cite',
       render(root) {
@@ -29,20 +29,20 @@ export default {
           if (!q || busy) return;
           busy = true; draw();
           try {
-            const res = await papyr.fetch(`/api/projects/${papyr.project.id}/references/add`, {
+            const res = await aldine.fetch(`/api/projects/${aldine.project.id}/references/add`, {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ query: q, branch: papyr.project.branch }),
+              body: JSON.stringify({ query: q, branch: aldine.project.branch }),
             });
             const body = await res.json();
             if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-            await papyr.project.refreshFiles();
+            await aldine.project.refreshFiles();
             if (body.key) {
-              papyr.editor.insertAtCursor(`\\cite{${body.key}}`);
-              papyr.toast(body.duplicate ? `Already in bibliography — inserted \\cite{${body.key}}` : `Added ${body.key} and inserted citation`, 'ok');
+              aldine.editor.insertAtCursor(`\\cite{${body.key}}`);
+              aldine.toast(body.duplicate ? `Already in bibliography — inserted \\cite{${body.key}}` : `Added ${body.key} and inserted citation`, 'ok');
             }
           } catch (err) {
-            papyr.toast(`${label || 'Lookup'} failed: ${err.message}`, 'error');
+            aldine.toast(`${label || 'Lookup'} failed: ${err.message}`, 'error');
           }
           busy = false; draw();
         };
@@ -55,7 +55,7 @@ export default {
           if (q.length < 3) { results = []; searching = false; draw(); return; }
           const seq = ++searchSeq;
           searching = true; draw();
-          papyr.fetch(`/api/references/search?q=${encodeURIComponent(q)}`)
+          aldine.fetch(`/api/references/search?q=${encodeURIComponent(q)}`)
             .then((r) => r.json())
             .then((body) => {
               if (seq !== searchSeq) return;

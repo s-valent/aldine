@@ -1,6 +1,6 @@
-# Papyr public demo box
+# Aldine public demo box
 
-A throwaway ~€4/mo Hetzner server that runs the full Papyr stack with **auth
+A throwaway ~€4/mo Hetzner server that runs the full Aldine stack with **auth
 off** and a **nightly wipe** (volumes destroyed at 04:00 UTC). Point launch
 traffic at it; keep nothing on it.
 
@@ -10,7 +10,7 @@ traffic at it; keep nothing on it.
 cd deploy/demo
 export HCLOUD_TOKEN=...          # Hetzner Cloud API token (create in the console)
 terraform init
-terraform apply -var demo_domain=demo.papyr.example.com
+terraform apply -var demo_domain=demo.aldine.example.com
 # → prints the server IP
 ```
 

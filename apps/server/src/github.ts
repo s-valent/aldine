@@ -33,7 +33,7 @@ async function api(token: string, path: string, init: RequestInit = {}): Promise
     headers: {
       authorization: `Bearer ${token}`,
       accept: 'application/vnd.github+json',
-      'user-agent': 'papyr',
+      'user-agent': 'aldine',
       'x-github-api-version': '2022-11-28',
       ...(init.body ? { 'content-type': 'application/json' } : {}),
       ...(init.headers || {}),

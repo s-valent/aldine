@@ -9,8 +9,8 @@ test.describe('real-time collaboration', () => {
     try {
       const a = await ctxA.newPage();
       const b = await ctxB.newPage();
-      await a.addInitScript(() => { localStorage.setItem('papyr.name', 'Ada'); localStorage.setItem('papyr.color', '#e8554d'); });
-      await b.addInitScript(() => { localStorage.setItem('papyr.name', 'Bob'); localStorage.setItem('papyr.color', '#2e933c'); });
+      await a.addInitScript(() => { localStorage.setItem('aldine.name', 'Ada'); localStorage.setItem('aldine.color', '#e8554d'); });
+      await b.addInitScript(() => { localStorage.setItem('aldine.name', 'Bob'); localStorage.setItem('aldine.color', '#2e933c'); });
 
       await openProject(a, id);
       await openProject(b, id);

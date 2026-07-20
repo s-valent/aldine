@@ -1,5 +1,5 @@
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'; import http from 'node:http'; import { execSync } from 'node:child_process';
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(),'papyr-gh-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(),'aldine-gh-'));
 process.env.DATA_DIR = path.join(tmp,'data'); process.env.META_DIR = path.join(tmp,'secrets');
 
 // a bare repo with content = the "GitHub repo"
@@ -42,11 +42,11 @@ console.assert(J(r).github?.fullName==='octocat/hello', 'meta has github link');
 console.assert(fs.existsSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex')),'imported main.tex present');
 
 // edit + push
-fs.writeFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'\\documentclass{article}\\begin{document}EDITED IN PAPYR\\end{document}\n');
+fs.writeFileSync(path.join(process.env.DATA_DIR,'projects',pid,'main.tex'),'\\documentclass{article}\\begin{document}EDITED IN ALDINE\\end{document}\n');
 r = await app.inject({method:'POST',url:`/api/projects/${pid}/github/push`});
 console.assert(r.statusCode===200, 'push status '+r.body);
 const onRemote = execSync(`git --git-dir="${bare}" show main:main.tex`).toString();
-console.assert(onRemote.includes('EDITED IN PAPYR'),'push reached the remote');
+console.assert(onRemote.includes('EDITED IN ALDINE'),'push reached the remote');
 
 // external change on remote → status behind, pull catches up
 execSync(`cd "${seed}" && git pull -q && printf 'EXTERNAL\\n' >> main.tex && git commit -qam ext && git push -q`);

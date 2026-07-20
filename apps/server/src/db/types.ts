@@ -1,6 +1,6 @@
 /**
  * Shared persistence types + the DataStore interface. This is the seam that
- * lets Papyr run on flat JSON files (slim self-host default) or Postgres
+ * lets Aldine run on flat JSON files (slim self-host default) or Postgres
  * (horizontally-scalable cloud) without the rest of the code knowing which.
  *
  * Only relational/metadata state lives here. Project file contents stay in git

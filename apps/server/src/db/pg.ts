@@ -48,7 +48,7 @@ export class PgStore implements DataStore {
       try { await this.pool.query('SELECT 1'); break; }
       catch (err) {
         if (attempt >= 30) throw err;
-        console.log(`[papyr] waiting for postgres (attempt ${attempt})…`);
+        console.log(`[aldine] waiting for postgres (attempt ${attempt})…`);
         await new Promise((r) => setTimeout(r, 1000));
       }
     }

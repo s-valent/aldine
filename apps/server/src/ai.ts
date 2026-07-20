@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
  * AI error-fix helper. Bring-your-own key, server-side only (never reaches the
  * browser). Two providers, auto-detected:
  *   - OpenRouter / any OpenAI-compatible endpoint  (OPENROUTER_API_KEY, or
- *     OPENAI_API_KEY + PAPYR_AI_BASE_URL)  — chat-completions format
+ *     OPENAI_API_KEY + ALDINE_AI_BASE_URL)  — chat-completions format
  *   - Anthropic Messages API                        (ANTHROPIC_API_KEY)
  * Model and endpoint are env-configurable so it can point at a gateway or mock.
  */
@@ -23,7 +23,7 @@ export function aiConfigured(): boolean {
 }
 
 function model(): string {
-  if (process.env.PAPYR_AI_MODEL) return process.env.PAPYR_AI_MODEL;
+  if (process.env.ALDINE_AI_MODEL) return process.env.ALDINE_AI_MODEL;
   const p = provider();
   if (p === 'openrouter') return 'anthropic/claude-opus-4.8';
   if (p === 'openai') return 'gpt-4o';
@@ -131,13 +131,13 @@ async function diagnoseAnthropic(input: DiagnoseInput): Promise<AiResult> {
 export async function diagnose(input: DiagnoseInput): Promise<AiResult> {
   const p = provider();
   if (p === 'openrouter') {
-    return diagnoseOpenAICompatible(input, process.env.PAPYR_AI_BASE_URL || 'https://openrouter.ai/api/v1', process.env.OPENROUTER_API_KEY!, {
-      'HTTP-Referer': 'https://github.com/papyr',
-      'X-Title': 'Papyr',
+    return diagnoseOpenAICompatible(input, process.env.ALDINE_AI_BASE_URL || 'https://openrouter.ai/api/v1', process.env.OPENROUTER_API_KEY!, {
+      'HTTP-Referer': 'https://github.com/aldine',
+      'X-Title': 'Aldine',
     });
   }
   if (p === 'openai') {
-    return diagnoseOpenAICompatible(input, process.env.PAPYR_AI_BASE_URL || 'https://api.openai.com/v1', process.env.OPENAI_API_KEY!);
+    return diagnoseOpenAICompatible(input, process.env.ALDINE_AI_BASE_URL || 'https://api.openai.com/v1', process.env.OPENAI_API_KEY!);
   }
   return diagnoseAnthropic(input);
 }

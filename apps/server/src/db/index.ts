@@ -13,7 +13,7 @@ export async function initDb(): Promise<DataStore> {
   const url = process.env.DATABASE_URL;
   store = url ? new PgStore(url) : new JsonStore(config.metaRoot);
   await store.init();
-  console.log(`[papyr] datastore: ${url ? 'postgres' : 'json'}`);
+  console.log(`[aldine] datastore: ${url ? 'postgres' : 'json'}`);
   return store;
 }
 

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Snapshot Papyr's data + secrets volumes to a single tarball.
+# Snapshot Aldine's data + secrets volumes to a single tarball.
 # Usage: deploy/backup.sh [output.tar.gz]   (run from anywhere; needs docker)
 set -euo pipefail
 
-PROJECT="${PAPYR_PROJECT:-papyr}"
-OUT="${1:-papyr-backup-$(date +%Y%m%d-%H%M%S).tar.gz}"
+PROJECT="${ALDINE_PROJECT:-aldine}"
+OUT="${1:-aldine-backup-$(date +%Y%m%d-%H%M%S).tar.gz}"
 OUT_DIR="$(cd "$(dirname "$OUT")" 2>/dev/null && pwd || pwd)"
 OUT_FILE="$(basename "$OUT")"
 
 # Volumes are created as <project>_<name> by docker compose.
-DATA_VOL="${PROJECT}_papyr-data"
-SECRETS_VOL="${PROJECT}_papyr-secrets"
+DATA_VOL="${PROJECT}_aldine-data"
+SECRETS_VOL="${PROJECT}_aldine-secrets"
 
 for v in "$DATA_VOL" "$SECRETS_VOL"; do
   if ! docker volume inspect "$v" >/dev/null 2>&1; then
-    echo "error: volume '$v' not found (set PAPYR_PROJECT if your compose project name differs)" >&2
+    echo "error: volume '$v' not found (set ALDINE_PROJECT if your compose project name differs)" >&2
     exit 1
   fi
 done

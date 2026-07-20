@@ -87,7 +87,7 @@ export async function syncProject(projectId: string, branch = 'main', force = fa
   refreshBranchDocsFromDisk(projectId, branch);
   const updated: ProjectMeta = { ...meta, zotero: { ...z, lastVersion: result.version, lastSyncedAt: new Date().toISOString() } };
   await writeMeta(updated);
-  await commitAll(projectId, branch, `papyr: sync Zotero library into ${z.bibFile}`).catch(() => {});
+  await commitAll(projectId, branch, `aldine: sync Zotero library into ${z.bibFile}`).catch(() => {});
   const itemCount = (result.bib.match(/^@/gm) || []).length;
   return { synced: true, bibFile: z.bibFile, itemCount };
 }

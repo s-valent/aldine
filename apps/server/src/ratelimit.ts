@@ -17,11 +17,11 @@ export async function initRateLimit(): Promise<void> {
     const mod = await import('ioredis');
     const IORedis = ((mod as any).default ?? (mod as any).Redis) as new (url: string, opts?: object) => any;
     const client = new IORedis(url, { maxRetriesPerRequest: 2 });
-    client.on('error', (e: Error) => console.error('[papyr] redis error:', e.message));
+    client.on('error', (e: Error) => console.error('[aldine] redis error:', e.message));
     redis = client as unknown as typeof redis;
-    console.log('[papyr] rate limiting: redis (shared across nodes)');
+    console.log('[aldine] rate limiting: redis (shared across nodes)');
   } catch {
-    console.warn('[papyr] REDIS_URL is set but ioredis is not installed — using in-memory rate limiting');
+    console.warn('[aldine] REDIS_URL is set but ioredis is not installed — using in-memory rate limiting');
   }
 }
 

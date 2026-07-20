@@ -13,7 +13,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What would you like Papyr to do? Sketches, examples, or links to how other tools do it are welcome.
+      description: What would you like Aldine to do? Sketches, examples, or links to how other tools do it are welcome.
     validations:
       required: true
   - type: textarea

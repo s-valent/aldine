@@ -1,4 +1,4 @@
-# Throwaway public demo box for Papyr (~€6/mo Hetzner cax11).
+# Throwaway public demo box for Aldine (~€6/mo Hetzner cax11).
 #
 # Design: auth OFF (visitors get the full editor instantly), TLS via Caddy,
 # and a nightly wipe (volumes destroyed + stack recreated at 04:00 UTC) so
@@ -6,7 +6,7 @@
 #
 #   export HCLOUD_TOKEN=...           # Hetzner Cloud API token (project-scoped)
 #   terraform init && terraform apply \
-#     -var demo_domain=demo.papyr.example.com -var ssh_public_key=~/.ssh/id_ed25519.pub
+#     -var demo_domain=demo.aldine.example.com -var ssh_public_key=~/.ssh/id_ed25519.pub
 #   # then point an A record for demo_domain at the printed IP; Caddy
 #   # provisions the certificate on first request.
 
@@ -22,12 +22,12 @@ terraform {
 provider "hcloud" {}
 
 resource "hcloud_ssh_key" "demo" {
-  name       = "papyr-demo"
+  name       = "aldine-demo"
   public_key = file(pathexpand(var.ssh_public_key))
 }
 
 resource "hcloud_firewall" "demo" {
-  name = "papyr-demo"
+  name = "aldine-demo"
   rule {
     direction  = "in"
     protocol   = "tcp"
@@ -49,7 +49,7 @@ resource "hcloud_firewall" "demo" {
 }
 
 resource "hcloud_server" "demo" {
-  name         = "papyr-demo"
+  name         = "aldine-demo"
   server_type  = var.server_type
   image        = "ubuntu-24.04"
   location     = var.location
