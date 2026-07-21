@@ -31,7 +31,10 @@ const mkCtx = (record) => browser.newContext({
 // A records; B is the "other author" typing.
 const ctxA = await mkCtx(true);
 const ctxB = await mkCtx(false);
-for (const c of [ctxA, ctxB]) await c.addInitScript(() => window.localStorage.setItem('aldine.onboarded', '1'));
+for (const c of [ctxA, ctxB]) await c.addInitScript(() => {
+  window.localStorage.setItem('aldine.onboarded', '1');
+  window.localStorage.setItem('aldine.theme', 'dark');
+});
 
 const a = await ctxA.newPage();
 await a.goto(`${BASE}/p/${id}`);

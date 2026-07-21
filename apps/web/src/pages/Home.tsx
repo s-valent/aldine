@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast';
 import { useAuth } from '../components/Auth';
 import { IconDoc, IconLink, IconX } from '../components/Icons';
 import AccountSettings from '../components/AccountSettings';
+import { getTheme, toggleTheme } from '../theme';
 import GithubImport from '../components/GithubImport';
 import Onboarding from '../components/Onboarding';
 import { friendlyDate } from '../util/dates';
@@ -12,6 +13,7 @@ import { friendlyDate } from '../util/dates';
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [themeChoice, setThemeChoice] = useState(getTheme());
   const [newName, setNewName] = useState('');
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [template, setTemplate] = useState('article');
@@ -89,6 +91,15 @@ export default function Home() {
             <p className="home__tag">Write LaTeX together. Fast, versioned, yours.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              className="btn"
+              data-testid="theme-toggle"
+              title="Switch light/dark theme"
+              aria-label="Switch light/dark theme"
+              onClick={() => setThemeChoice(toggleTheme())}
+            >
+              {themeChoice === 'dark' ? '☀︎' : '☾'}
+            </button>
             {authEnabled && user && (
               <span className="user-chip">
                 <button className="user-chip__name" data-testid="user-name" onClick={() => setShowAccount(true)} title="Account settings">{user.name}</button>

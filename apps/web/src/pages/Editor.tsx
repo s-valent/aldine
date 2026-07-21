@@ -17,6 +17,7 @@ import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras'
 import { useCommentSignal } from '../editor/commentSignal';
 import GithubSync from '../components/GithubSync';
 import CommentComposer from '../components/CommentComposer';
+import { toggleTheme } from '../theme';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
 
@@ -278,6 +279,7 @@ export default function Editor() {
       { id: 'auto', group: 'Action', title: auto ? 'Turn auto-typeset off' : 'Turn auto-typeset on', run: toggleAuto },
       { id: 'jump-pdf', group: 'Action', title: 'Jump PDF to cursor', hint: '⌘J', run: () => jumpToPdf() },
       { id: 'spell', group: 'Action', title: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on', run: () => setSpellcheck((s) => { localStorage.setItem('aldine.spellcheck', s ? '0' : '1'); return !s; }) },
+      { id: 'theme', group: 'View', title: 'Toggle light/dark theme', run: () => { toggleTheme(); } },
       { id: 'commit', group: 'Git', title: 'Save a checkpoint…', run: () => { setTab('history'); } },
       { id: 'newbranch', group: 'Git', title: 'New branch…', run: () => { setTab('files'); document.querySelector<HTMLElement>('[data-testid="branch-menu"]')?.click(); } },
     ];

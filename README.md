@@ -3,7 +3,7 @@
 **Write LaTeX together. Fast, versioned, yours.**
 
 [![CI](https://github.com/trahloff/Aldine/actions/workflows/ci.yml/badge.svg)](https://github.com/trahloff/Aldine/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Aldine is a slim, self-hosted, open-source LaTeX collaboration platform — an
@@ -22,7 +22,7 @@ nothing to babysit.
   <img alt="Aldine editor: LaTeX source on the left, live PDF on the right, collaborator cursors visible" src="e2e/shots/editor-light.png">
 </picture>
 
-Live collaboration, a recompile, and a SyncTeX jump — one real, unedited recording:
+Live collaboration, a recompile, and a SyncTeX jump — one real recording (compile wait trimmed):
 
 ![A collaborator's edits stream in live, the PDF recompiles in about two seconds, and double-clicking the PDF jumps the editor to the source line](e2e/shots/demo.gif)
 
@@ -116,7 +116,7 @@ That's it. Projects live in the `aldine-data` volume.
 | Templates gallery | 4 built-in | Huge community gallery — **they win** | CTAN / your own |
 | Rich-text / visual editing | ❌ — **they win** | ✅ | ❌ |
 | Maturity | Young (v0.x, 2026) — **they win** | A decade in production | Very mature |
-| License | MIT | AGPL | MIT/varies |
+| License | AGPL-3.0 | AGPL | MIT/varies |
 
 If Overleaf CE fits you, use it — it's good software. Aldine exists for people
 who want track changes, git, and Zotero without paid tiers, in a deployment
@@ -253,5 +253,7 @@ original build plan is preserved in [docs/PLAN.md](docs/PLAN.md).
 
 ## License
 
-[MIT](LICENSE). Overleaf is a trademark of its owners; Aldine is an
-independent project, not affiliated with or endorsed by Overleaf.
+[AGPL-3.0](LICENSE) — self-host freely; if you offer a modified Aldine as a
+service, share your changes. Third-party plugins interact with Aldine over its
+plugin API and may use any license. Overleaf is a trademark of its owners;
+Aldine is an independent project, not affiliated with or endorsed by Overleaf.
