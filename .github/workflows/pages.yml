@@ -1,0 +1,38 @@
+# Publishes the aldine.dev landing page (site/) via GitHub Pages.
+# The demo GIF is pulled from e2e/shots at deploy time so it is never duplicated.
+name: Landing page
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "e2e/shots/demo.gif", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site
+        run: |
+          mkdir -p _site/assets
+          cp -r site/. _site/
+          cp e2e/shots/demo.gif _site/assets/demo.gif
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
