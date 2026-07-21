@@ -3,7 +3,8 @@
 const HINTS: Array<{ re: RegExp; hint: string }> = [
   { re: /Undefined control sequence/i, hint: 'A command isn’t defined — check its spelling, or add the \\usepackage that provides it.' },
   { re: /Missing \$ inserted/i, hint: 'Math content outside math mode — wrap symbols like _ ^ \\alpha in $…$.' },
-  { re: /File `?([^']+?)\.sty'? not found/i, hint: 'A package is missing from the TeX installation, or its name is misspelled in \\usepackage.' },
+  { re: /File `?([^']+?)\.sty'? not found/i, hint: 'The package “$1” isn’t in this server’s TeX Live image (or is misspelled in \\usepackage). Self-hosting? Rebuild with ALDINE_TEXLIVE_SCHEME=full to include all of CTAN.' },
+  { re: /File `?([^']+?)\.cls'? not found/i, hint: 'The document class “$1” isn’t in this server’s TeX Live image — upload the .cls into the project, or rebuild with ALDINE_TEXLIVE_SCHEME=full to include all of CTAN.' },
   { re: /File `?([^']+?)'? not found/i, hint: 'The file isn’t in the project — check the path in \\input, \\include, or \\includegraphics.' },
   { re: /Environment .* undefined/i, hint: 'The \\begin{…} environment isn’t defined — load the package that provides it.' },
   { re: /\\begin\{.*\} on input line .* ended by \\end\{.*\}/i, hint: 'Mismatched \\begin/\\end pair — every \\begin{x} must close with \\end{x}.' },
@@ -19,6 +20,9 @@ const HINTS: Array<{ re: RegExp; hint: string }> = [
 ];
 
 export function hintFor(message: string): string | null {
-  for (const { re, hint } of HINTS) if (re.test(message)) return hint;
+  for (const { re, hint } of HINTS) {
+    const m = re.exec(message);
+    if (m) return hint.replace(/\$(\d)/g, (_, i) => m[Number(i)] ?? '');
+  }
   return null;
 }

@@ -101,6 +101,9 @@ That's it. Projects live in the `aldine-data` volume.
   `curl localhost:8080/api/health` returns `{"ok":true}`.
 - **Port 8080 taken?** `ALDINE_PORT=18080 docker compose up -d` and open
   http://localhost:18080.
+- **Need packages beyond the curated set?** Build with all of CTAN
+  preinstalled (~9 GB on disk): `ALDINE_TEXLIVE_SCHEME=full docker compose up
+  -d --build`.
 
 ## How Aldine compares
 
@@ -114,6 +117,7 @@ That's it. Projects live in the `aldine-data` volume.
 | Zotero | Whole library **or one collection**, free | Premium, whole library | Via Better BibTeX, manual |
 | Warm recompile | ~2s (persistent latexmk cache) | Comparable | Fastest (local) |
 | Templates gallery | 4 built-in | Huge community gallery — **they win** | CTAN / your own |
+| Package coverage | Curated set, or **all of CTAN** (`ALDINE_TEXLIVE_SCHEME=full`) | All of TeX Live | Whatever you install |
 | Rich-text / visual editing | ❌ — **they win** | ✅ | ❌ |
 | Maturity | Young (v0.x, 2026) — **they win** | A decade in production | Very mature |
 | License | AGPL-3.0 | AGPL | MIT/varies |

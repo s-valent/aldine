@@ -6,6 +6,11 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `ALDINE_TEXLIVE_SCHEME=full` build option: compiler image with **all of
+  CTAN** preinstalled (scheme-full, ~9 GB on disk) instead of the curated medium set.
+  Missing-package compile errors now name the package and point at the option.
+
 ### Changed
 - Relicensed from MIT to AGPL-3.0 (pre-launch, sole-author): self-hosting is
   unaffected; hosted derivatives must share their modifications. Plugins are

@@ -171,3 +171,4 @@ Everything is env-gated; blank/unset means "off" or the listed default.
 | `RL_COMPILE_CONCURRENCY` | Max concurrent compiles the app forwards (default 2) |
 | `COMPILE_TIMEOUT_MS`, `MAX_CONCURRENT_COMPILES` | Compiler-container limits (set on the `compiler` service) |
 | `ALDINE_PROJECT` | Compose project name for `backup.sh`/`restore.sh` (default `aldine`) |
+| `ALDINE_TEXLIVE_SCHEME` | Compiler image build: `medium` (default, curated set) or `full` (all of CTAN, ~9 GB on disk) |

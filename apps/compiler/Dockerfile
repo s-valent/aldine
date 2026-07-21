@@ -1,21 +1,37 @@
-# Pinned by digest so tlmgr revisions are reproducible (a floating tag makes the
-# snapshot-repository date below drift out of sync and the build fail). The
-# digest must be OLDER than the snapshot date, never newer.
-FROM texlive/texlive:latest-medium@sha256:0a5aa82d0d9d6e3b3a25f87e221ef61d7c077e83639ab5065cf298b1a01ec00c
+# Two selectable TeX Live schemes (build arg TEXLIVE_SCHEME=medium|full):
+#
+#   medium (default) — ~1 GB of packages plus a pinned set of extras real
+#     papers commonly need. The slim self-host default.
+#   full — everything on CTAN preinstalled (~9 GB on disk). Choose this when your
+#     documents need packages beyond the pinned set:
+#       ALDINE_TEXLIVE_SCHEME=full docker compose up -d --build
+#
+# The medium base is pinned by digest so tlmgr revisions are reproducible (a
+# floating tag makes the snapshot-repository date below drift out of sync and
+# the build fail). The digest must be OLDER than the snapshot date, never
+# newer. The full base needs no tlmgr at build time (nothing to install), so
+# it can float and mirror skew cannot bite.
+ARG TEXLIVE_SCHEME=medium
 
-# Node.js for the compile service wrapper
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*
+FROM texlive/texlive:latest-medium@sha256:0a5aa82d0d9d6e3b3a25f87e221ef61d7c077e83639ab5065cf298b1a01ec00c AS texlive-medium
 
 # Packages beyond scheme-medium that real papers commonly need
-# (newtx fonts, cleveref, etc. — keeps the image ~1GB instead of full's ~3GB).
-# A dated tlnet snapshot (not a random CTAN mirror) because live mirrors
-# regularly lag the texlive image's revisions, which makes `tlmgr install` fail
-# with "remote database is older than the local installation". Bump the date
-# together with the base-image digest.
+# (newtx fonts, cleveref, etc.). A dated tlnet snapshot (not a random CTAN
+# mirror) because live mirrors regularly lag the texlive image's revisions,
+# which makes `tlmgr install` fail with "remote database is older than the
+# local installation". Bump the date together with the base-image digest.
 RUN tlmgr option repository https://texlive.info/tlnet-archive/2026/07/18/tlnet/ \
     && tlmgr update --self \
     && tlmgr install newtx txfonts fontaxes lastpage titlesec xstring fancyhdr cleveref \
        enumitem wrapfig threeparttable placeins multirow doclicense algorithmicx xurl sttools acro translations
+
+FROM texlive/texlive:latest-full AS texlive-full
+# scheme-full already contains every CTAN package — nothing to install.
+
+FROM texlive-${TEXLIVE_SCHEME} AS base
+
+# Node.js for the compile service wrapper
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*
 
 # Warm biber's PAR self-extraction cache at build time. Cold extraction takes
 # ~90s, which would blow the compile timeout on a user's very first biblatex
