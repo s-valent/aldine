@@ -6,6 +6,11 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Relicensed from MIT to AGPL-3.0 (pre-launch, sole-author): self-hosting is
+  unaffected; hosted derivatives must share their modifications. Plugins are
+  separate works and may use any license.
+
 ## [0.1.0] — 2026-07-19
 
 First public release. Everything below is new.
