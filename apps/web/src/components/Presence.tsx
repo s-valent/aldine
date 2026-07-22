@@ -5,7 +5,7 @@ export default function Presence({ users }: { users: PresenceUser[] }) {
   return (
     <div className="presence" title={users.map((u) => u.name).join(', ')} data-testid="presence">
       {users.slice(0, 5).map((u, i) => (
-        <span key={i} className="presence__avatar" style={{ background: u.color }}>
+        <span key={i} className="presence__avatar" title={u.name} aria-label={u.name} style={{ background: u.color }}>
           {u.name.trim().slice(0, 1).toUpperCase()}
         </span>
       ))}

@@ -34,6 +34,19 @@ function reqUser(req: any): auth.PublicUser | null {
   return req._user ?? null;
 }
 
+/** Validate an email/password body before it reaches auth (avoids leaking
+ *  internal TypeErrors on malformed requests, and caps lengths). Returns an
+ *  error message, or null when the shape is acceptable. */
+function badCredentials(body: { email?: unknown; password?: unknown } | undefined): string | null {
+  const email = body?.email, password = body?.password;
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
+    return 'Email and password are required';
+  }
+  if (email.length > 254) return 'Email is too long';
+  if (password.length > 1024) return 'Password is too long';
+  return null;
+}
+
 function oauthProviders(): Array<{ id: string; label: string }> {
   return oauth.configuredProviders().map((p) => ({ id: p.id, label: p.label }));
 }
@@ -87,6 +100,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!(await registerLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
+    const bad = badCredentials(req.body);
+    if (bad) return reply.code(400).send({ error: bad });
     try {
       const user = await auth.register(req.body.email, req.body.password, req.body.name);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
@@ -98,6 +113,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!(await loginLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
+    if (badCredentials(req.body)) return reply.code(400).send({ error: 'Email and password are required' });
     try {
       const user = await auth.login(req.body.email, req.body.password);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
@@ -298,10 +314,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch<{ Params: { id: string }; Body: Partial<Pick<store.ProjectMeta, 'name' | 'rootFile' | 'engine'>> }>(
-    '/api/projects/:id', async (req) => {
+    '/api/projects/:id', async (req, reply) => {
       const meta = await store.readMeta(req.params.id);
       const { name, rootFile, engine } = req.body || {};
-      if (name) meta.name = name;
+      if (name !== undefined) {
+        const trimmed = String(name).trim();
+        if (!trimmed) return reply.code(400).send({ error: 'Project name cannot be empty' });
+        if (trimmed.length > 200) return reply.code(400).send({ error: 'Project name is too long (max 200 characters)' });
+        meta.name = trimmed;
+      }
       if (rootFile) meta.rootFile = rootFile;
       if (engine) meta.engine = engine;
       await store.writeMeta(meta);
@@ -317,10 +338,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- files ----------
-  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/files', async (req) => {
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/files', async (req, reply) => {
     const branch = req.query.branch || 'main';
-    await gitops.ensureWorktree(req.params.id, branch);
-    return store.listFiles(req.params.id, branch);
+    try {
+      await gitops.ensureWorktree(req.params.id, branch);
+      return store.listFiles(req.params.id, branch);
+    } catch {
+      return reply.code(404).send({ error: 'Project or branch not found' });
+    }
   });
 
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/file', async (req, reply) => {
@@ -346,13 +371,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.put<{ Params: { id: string }; Body: { branch?: string; path: string; content?: string; encoding?: 'utf8' | 'base64' } }>(
+  app.put<{ Params: { id: string }; Body: { branch?: string; path: string; content?: string; encoding?: 'utf8' | 'base64'; createOnly?: boolean } }>(
     '/api/projects/:id/file', async (req, reply) => {
-      const { branch = 'main', path: rel, content = '', encoding = 'utf8' } = req.body || {};
+      const { branch = 'main', path: rel, content = '', encoding = 'utf8', createOnly = false } = req.body || {};
       if (!rel) return reply.code(400).send({ error: 'path required' });
-      if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
+      if (isHiddenPath(rel) || rel.includes('..')) return reply.code(403).send({ error: 'Invalid file path' });
       await gitops.ensureWorktree(req.params.id, branch);
-      store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
+      // createOnly (new-file flow): never clobber an existing file with empty content
+      if (createOnly && store.fileExists(req.params.id, branch, rel)) {
+        return reply.code(409).send({ error: 'A file with that name already exists' });
+      }
+      try {
+        store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
+      } catch {
+        return reply.code(400).send({ error: 'Could not write that file path' });
+      }
       refreshBranchDocsFromDisk(req.params.id, branch);
       scheduleCommit(req.params.id, branch); // non-collab write → still reach git history
       return { ok: true };
@@ -363,6 +396,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const { branch = 'main', from, to } = req.body || {};
       if (!from || !to) return reply.code(400).send({ error: 'from/to required' });
       if (isHiddenPath(from) || isHiddenPath(to)) return reply.code(403).send({ error: 'forbidden path' });
+      if (from === to) return { ok: true };
+      // never overwrite an existing file — that would destroy both it and the source
+      if (store.fileExists(req.params.id, branch, to)) {
+        return reply.code(409).send({ error: `A file named "${to}" already exists` });
+      }
       // evict the source doc first so its final store can't recreate the old file
       evictDoc(req.params.id, branch, from);
       store.renameFile(req.params.id, branch, from, to);
@@ -377,7 +415,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     evictDoc(req.params.id, branch, rel); // prevent resurrection via pending store
     store.deleteFile(req.params.id, branch, rel);
     scheduleCommit(req.params.id, branch);
-    return { ok: true };
+    // If the typeset root was deleted, re-point it at another .tex so the next
+    // compile doesn't fail with "root file not found".
+    let newRoot: string | undefined;
+    try {
+      const meta = await store.readMeta(req.params.id);
+      if (meta.rootFile === rel) {
+        const tex = store.listFiles(req.params.id, branch).find((f) => f.type === 'file' && f.path.endsWith('.tex'));
+        if (tex) { meta.rootFile = tex.path; await store.writeMeta(meta); newRoot = tex.path; }
+      }
+    } catch { /* meta unreadable — leave as-is */ }
+    return { ok: true, ...(newRoot ? { newRoot } : {}) };
   });
 
   /** Serve compile artifacts (PDF, synctex) from the branch's .aldine-out. */
@@ -474,17 +522,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/branches', async (req, reply) => {
       const { name, from = 'main' } = req.body || {};
       if (!name) return reply.code(400).send({ error: 'name required' });
+      if (!BRANCH_RE.test(name) || name.includes('..') || /^(refs|heads|remotes)\//.test(name) || /^-/.test(name)) {
+        return reply.code(400).send({ error: 'Invalid branch name' });
+      }
       // capture latest edits so the new branch starts from what the user sees
       flushBranchDocs(req.params.id, from);
       await gitops.commitAll(req.params.id, from, 'aldine: checkpoint before branching').catch(() => {});
-      await gitops.createBranch(req.params.id, name, from);
+      try {
+        await gitops.createBranch(req.params.id, name, from);
+      } catch (err) {
+        return reply.code(409).send({ error: `Could not create branch: ${(err as Error).message}` });
+      }
       return { ok: true };
     });
 
   app.delete<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/branches', async (req, reply) => {
     const { name } = req.query;
     if (!name) return reply.code(400).send({ error: 'name required' });
-    await gitops.deleteBranch(req.params.id, name);
+    if (name === 'main') return reply.code(400).send({ error: 'Cannot delete the main branch' });
+    try {
+      await gitops.deleteBranch(req.params.id, name);
+    } catch (err) {
+      return reply.code(409).send({ error: `Could not delete branch: ${(err as Error).message}` });
+    }
     return { ok: true };
   });
 
@@ -632,8 +692,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/comments', async (req, reply) => {
       const b = req.body || ({} as any);
       if (!b.file || !b.anchor) return reply.code(400).send({ error: 'file and anchor required' });
+      const branch = b.branch || 'main';
+      // the anchor must point at a real span in a real file
+      if (!store.fileExists(req.params.id, branch, b.file)) return reply.code(404).send({ error: 'File not found' });
+      const { from, to } = b.anchor;
+      if (typeof from !== 'number' || typeof to !== 'number' || from < 0 || to <= from) {
+        return reply.code(400).send({ error: 'Invalid comment anchor' });
+      }
+      if (typeof b.body === 'string' && b.body.length > 5000) return reply.code(400).send({ error: 'Comment is too long (max 5000 characters)' });
+      if (typeof b.suggestion === 'string' && b.suggestion.length > 20000) return reply.code(400).send({ error: 'Suggestion is too long' });
       return comments.addComment(req.params.id, {
-        branch: b.branch || 'main',
+        branch,
         file: b.file,
         anchor: b.anchor,
         author: reqUser(req)?.name || b.author || 'Anonymous',

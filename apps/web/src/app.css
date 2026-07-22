@@ -773,3 +773,54 @@
 .history__item:hover { background: var(--bg-hover); }
 .history__msg { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history__meta { font-size: 11px; color: var(--text-2); }
+
+/* segmented control (Source | Visual) */
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg-inset); }
+.seg__btn { border: 0; background: transparent; color: var(--text-2); font: 600 12.5px var(--font-ui); padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+.seg__btn:hover { color: var(--text); }
+.seg__btn--active { background: var(--bg-panel); color: var(--text); box-shadow: var(--shadow-card); }
+
+/* visual-mode formatting toolbar */
+.fmt { display: inline-flex; gap: 2px; margin-left: 10px; align-items: center; }
+.fmt__btn { border: 1px solid transparent; background: transparent; color: var(--text-2); font: 600 12.5px var(--font-ui); width: 26px; height: 22px; border-radius: 6px; cursor: pointer; }
+.fmt__btn:hover { background: var(--bg-hover); color: var(--text); }
+.fmt__btn--b { font-weight: 800; }
+.fmt__btn--i { font-style: italic; font-family: var(--font-serif); }
+.fmt__select { border: 1px solid transparent; background: transparent; color: var(--text-2); font: 600 12px var(--font-ui); border-radius: 6px; cursor: pointer; }
+.fmt__select:hover { background: var(--bg-hover); color: var(--text); }
+
+/* MathLive popover */
+.vis-math-popover { z-index: 60; background: var(--bg-panel); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-pop); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 300px; }
+.vis-math-popover math-field { font-size: 18px; border: 1px solid var(--hairline); border-radius: 6px; padding: 4px 8px; background: var(--bg-inset); color: var(--text); }
+.vis-math-popover__bar { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* 404 */
+.notfound { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+.notfound h1 { font-size: 22px; font-weight: 600; }
+.notfound p { color: var(--text-2); }
+
+/* --- a11y & responsive polish (QA deferred batch) --- */
+/* Import-ZIP label acts as a button; expose it to AT */
+.home__bar label.btn, .empty label.btn { position: relative; }
+
+/* light-theme line numbers: lift contrast to meet WCAG */
+:root:not([data-theme="dark"]) .code-pane .cm-gutters { color: #6b6b70; }
+
+/* sidebar tabs: single scrollable row instead of an uneven wrap */
+.sidebar__tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.sidebar__tabs::-webkit-scrollbar { display: none; }
+.sidebar__tab { flex: 0 0 auto; }
+
+/* responsive: below 900px let the editor stack usably; hide the fixed PDF pane
+   split and let panes flow, and allow the sidebar to collapse */
+@media (max-width: 900px) {
+  .editor-shell .resizer { display: none; }
+  .toolbar { flex-wrap: wrap; height: auto; row-gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+  .toolbar__name { max-width: 40vw; }
+}
+@media (max-width: 640px) {
+  .home__bar { flex-direction: column; align-items: stretch; gap: 12px; }
+  .home__bar > div:last-child { flex-wrap: wrap; }
+  .split-pdf, .pdf-pane { display: none; }
+  .sidebar { position: absolute; z-index: 30; height: 100%; box-shadow: var(--shadow-pop); }
+}

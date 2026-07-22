@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars, Decoration, DecorationSet } from '@codemirror/view';
-import { EditorState, StateField, StateEffect } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, Compartment } from '@codemirror/state';
 import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
@@ -12,19 +12,49 @@ import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { localUser } from '../api';
 import { citeCompletionSource, refCompletionSource, citeHoverTooltip, warmBib } from '../editor/latexExtras';
+import { setComments, CommentRange } from '../editor/commentsEffect';
+import { visualExtensions, type VisualDeps } from '../editor/visual';
+import { toggleStyle, setSectionLevel, toggleItemize } from '../editor/visual/commands';
+import { documentOutline, OutlineEntry } from '../editor/visual/outline';
 import type { PresenceUser } from './Presence';
+import type { Text } from '@codemirror/state';
+
+export type EditorMode = 'source' | 'visual';
+
+/**
+ * Re-anchor a comment by its stored quote when its saved offset has drifted
+ * (edits above it made while it wasn't being live-tracked — reload, another
+ * user's edits). Uses the occurrence of the quote nearest the saved offset;
+ * falls back to the clamped saved offset when the quote can't be found.
+ */
+function reanchor(doc: Text, r: CommentRange): CommentRange {
+  const len = doc.length;
+  const from = Math.min(Math.max(0, r.from), len);
+  const to = Math.min(Math.max(from, r.to), len);
+  if (!r.quote) return { ...r, from, to };
+  if (doc.sliceString(from, to) === r.quote) return { ...r, from, to }; // still exact
+  const text = doc.toString();
+  let best = -1, bestDist = Infinity;
+  for (let i = text.indexOf(r.quote); i !== -1; i = text.indexOf(r.quote, i + 1)) {
+    const d = Math.abs(i - r.from);
+    if (d < bestDist) { best = i; bestDist = d; }
+  }
+  if (best === -1) return { ...r, from, to }; // quote gone — keep clamped offset
+  return { ...r, from: best, to: best + r.quote.length };
+}
 
 export interface CodePaneHandle {
   gotoLine(line: number): void;
   insertAtCursor(text: string): void;
   currentLine(): number | null;
   getSelection(): { from: number; to: number; quote: string } | null;
-  setCommentRanges(ranges: Array<{ id: string; from: number; to: number; resolved: boolean }>): void;
+  setCommentRanges(ranges: CommentRange[]): void;
   revealPos(pos: number): void;
+  format(action: 'bold' | 'italic' | 'list' | { section: 1 | 2 | 3 | 4 }): void;
+  getOutline(): OutlineEntry[];
 }
 
 /** Comment highlight decorations, updatable via an effect and tracking edits. */
-const setComments = StateEffect.define<Array<{ from: number; to: number; resolved: boolean }>>();
 const commentMark = Decoration.mark({ class: 'cm-comment-range' });
 const commentResolvedMark = Decoration.mark({ class: 'cm-comment-range cm-comment-resolved' });
 const commentField = StateField.define<DecorationSet>({
@@ -58,6 +88,7 @@ interface Props {
   onStats?(stats: { words: number; selWords: number | null }): void;
   onJumpToPdf?(): void;
   spellcheck?: boolean;
+  mode?: EditorMode;
 }
 
 /** Approximate word count for LaTeX prose: strips comments, commands, math. */
@@ -110,11 +141,23 @@ const aldineTheme = EditorView.theme({
   '.cm-panels': { backgroundColor: 'var(--bg-inset)', color: 'var(--text)', borderColor: 'var(--hairline)' },
 });
 
-const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf, spellcheck = false }, ref) {
+/** Spellcheck is presentation config, swapped at runtime via a Compartment. */
+function spellcheckAttrs(spellcheck: boolean, filePath: string) {
+  return EditorView.contentAttributes.of({
+    spellcheck: spellcheck && /\.(tex|md|txt)$/i.test(filePath) ? 'true' : 'false',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+  });
+}
+
+const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf, spellcheck = false, mode = 'source' }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const cbRef = useRef({ onDocChanged, onStats, onSave, onJumpToPdf });
   cbRef.current = { onDocChanged, onStats, onSave, onJumpToPdf };
+  // Per-mount reconfiguration handles: compartments + the deps visualExtensions needs.
+  const reconfRef = useRef<{ modeComp: Compartment; spellComp: Compartment; deps: VisualDeps } | null>(null);
+  const lastCommentRanges = useRef<CommentRange[]>([]);
 
   useImperativeHandle(ref, () => ({
     gotoLine(line: number) {
@@ -144,9 +187,10 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       return { from: sel.from, to: sel.to, quote: view.state.sliceDoc(sel.from, sel.to) };
     },
     setCommentRanges(ranges) {
+      lastCommentRanges.current = ranges; // remember for a re-apply once the doc syncs
       const view = viewRef.current;
       if (!view) return;
-      view.dispatch({ effects: setComments.of(ranges.map((r) => ({ from: r.from, to: r.to, resolved: r.resolved }))) });
+      view.dispatch({ effects: setComments.of(ranges.map((r) => reanchor(view.state.doc, r))) });
     },
     revealPos(pos) {
       const view = viewRef.current;
@@ -154,6 +198,19 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       const p = Math.min(Math.max(0, pos), view.state.doc.length);
       view.dispatch({ selection: { anchor: p }, effects: EditorView.scrollIntoView(p, { y: 'center' }) });
       view.focus();
+    },
+    format(action) {
+      const view = viewRef.current;
+      if (!view) return;
+      if (action === 'bold') toggleStyle('bold')(view);
+      else if (action === 'italic') toggleStyle('italic')(view);
+      else if (action === 'list') toggleItemize(view);
+      else setSectionLevel(action.section)(view);
+      view.focus();
+    },
+    getOutline() {
+      const view = viewRef.current;
+      return view ? documentOutline(view.state) : [];
     },
   }), []);
 
@@ -180,6 +237,9 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
     provider.setAwarenessField('user', { name: user.name, color: user.color, colorLight: user.color + '55' });
 
     const awareness = provider.awareness!;
+    const modeComp = new Compartment();
+    const spellComp = new Compartment();
+    const deps: VisualDeps = { projectId, branch, ydoc, awareness };
     const reportUsers = () => {
       // key by Yjs clientID so two collaborators with the same display name stay distinct
       const byClient = new Map<number, PresenceUser>();
@@ -229,6 +289,8 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
             indentWithTab,
             { key: 'Mod-s', run: () => { cbRef.current.onSave(); return true; } },
             { key: 'Mod-j', run: () => { cbRef.current.onJumpToPdf?.(); return true; } },
+            { key: 'Mod-b', run: toggleStyle('bold') },
+            { key: 'Mod-i', run: toggleStyle('italic') },
           ]),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) cbRef.current.onDocChanged?.();
@@ -249,19 +311,22 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           aldineTheme,
           EditorView.lineWrapping,
           // browser-native spellcheck on prose (only meaningful for .tex/.md)
-          EditorView.contentAttributes.of({
-            spellcheck: spellcheck && /\.(tex|md|txt)$/i.test(filePath) ? 'true' : 'false',
-            autocorrect: 'off',
-            autocapitalize: 'off',
-          }),
+          spellComp.of(spellcheckAttrs(spellcheck, filePath)),
+          modeComp.of(mode === 'visual' ? visualExtensions(deps) : []),
           yCollab(ytext, provider.awareness),
         ],
       }),
     });
     viewRef.current = view;
+    reconfRef.current = { modeComp, spellComp, deps };
 
     const initialStats = () => {
       cbRef.current.onStats?.({ words: latexWordCount(view.state.doc.toString()), selWords: null });
+      // Re-anchor comments against the now-populated doc: a push that arrived
+      // before the Yjs sync ran against an empty document.
+      if (lastCommentRanges.current.length) {
+        view.dispatch({ effects: setComments.of(lastCommentRanges.current.map((r) => reanchor(view.state.doc, r))) });
+      }
     };
     provider.on('synced', initialStats);
 
@@ -273,8 +338,22 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       provider.destroy();
       ydoc.destroy();
       viewRef.current = null;
+      reconfRef.current = null;
     };
   }, [projectId, branch, filePath]);
+
+  // Mode and spellcheck are presentation-only: swap them at runtime through
+  // compartments so the Yjs doc, collab socket, scroll, and cursor survive.
+  useEffect(() => {
+    const view = viewRef.current, rc = reconfRef.current;
+    if (!view || !rc) return;
+    view.dispatch({ effects: rc.modeComp.reconfigure(mode === 'visual' ? visualExtensions(rc.deps) : []) });
+  }, [mode]);
+  useEffect(() => {
+    const view = viewRef.current, rc = reconfRef.current;
+    if (!view || !rc) return;
+    view.dispatch({ effects: rc.spellComp.reconfigure(spellcheckAttrs(spellcheck, filePath)) });
+  }, [spellcheck, filePath]);
 
   return <div ref={hostRef} className="code-pane" data-testid="code-pane" />;
 });

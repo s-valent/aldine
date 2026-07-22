@@ -92,6 +92,12 @@ test.describe('DOI / arXiv citation (references plugin)', () => {
       const bib = await request.get(`/api/projects/${id}/bib?branch=main`);
       const entries = await bib.json();
       expect(entries.some((e: { key: string }) => e.key === 'doe2020')).toBeTruthy();
+      // the &amp; from upstream must be decoded + LaTeX-escaped (compile-safe),
+      // never a bare & (an alignment tab that breaks the whole document)
+      const raw = await (await request.get(`/api/projects/${id}/file?branch=main&path=references.bib`)).text();
+      expect(raw).toContain('\\&');
+      expect(raw).not.toMatch(/(?<!\\)&/);
+      expect(raw).not.toContain('&amp;');
     } finally {
       await cleanup(request, id);
     }

@@ -94,7 +94,8 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
         setRendered(true);
         scroller.scrollTop = prevScroll;
       } catch (err) {
-        console.error('[pdf] render failed', err);
+        // a superseded render (fast retyping) cancels itself — that's expected, not an error
+        if ((err as { name?: string })?.name !== 'RenderingCancelledException') console.error('[pdf] render failed', err);
       }
     })();
     // Invalidate any in-flight render (so its guarded loop bails before touching

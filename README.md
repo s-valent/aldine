@@ -50,8 +50,15 @@ Live collaboration, a recompile, and a SyncTeX jump — one real recording (comp
   autocomplete.
 
 <details>
-<summary><strong>Everything else</strong> — review mode, AI error fix, SyncTeX, plugins, auth, scaling…</summary>
+<summary><strong>Everything else</strong> — visual editor, review mode, AI error fix, SyncTeX, plugins, auth, scaling…</summary>
 
+- **Visual editing mode** (experimental) — LaTeX renders as formatted text
+  while the source stays authoritative and **byte-stable** (it never rewrites
+  source you didn't deliberately edit). WYSIWYG math (click an equation to edit
+  it in a MathLive popover), editable tables, inline tracked changes from review
+  suggestions, paste-rich-text-to-LaTeX, image-previewing figure chips, and an
+  outline. Cursor-reveal shows raw source under the caret — including a remote
+  collaborator's. Enable it in the command palette (⌘K), off by default.
 - **Review mode** — select text and leave an anchored, threaded comment;
   optionally attach a suggested replacement the author accepts with one click.
   Comments highlight in the editor, resolve/reopen, and track edits.
@@ -118,7 +125,7 @@ That's it. Projects live in the `aldine-data` volume.
 | Warm recompile | ~2s (persistent latexmk cache) | Comparable | Fastest (local) |
 | Templates gallery | 4 built-in | Huge community gallery — **they win** | CTAN / your own |
 | Package coverage | Curated set, or **all of CTAN** (`ALDINE_TEXLIVE_SCHEME=full`) | All of TeX Live | Whatever you install |
-| Rich-text / visual editing | ❌ — **they win** | ✅ | ❌ |
+| Rich-text / visual editing | ✅ experimental — byte-stable, WYSIWYG math, editable tables, tracked changes | ✅ (rewrites your source) | ❌ |
 | Maturity | Young (v0.x, 2026) — **they win** | A decade in production | Very mature |
 | License | AGPL-3.0 | AGPL | MIT/varies |
 

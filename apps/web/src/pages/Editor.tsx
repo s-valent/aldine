@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, CompileResult, ProjectDetail, TreeEntry, Comment, localUser } from '../api';
 import { useToast } from '../components/Toast';
 import FileTree from '../components/FileTree';
-import CodePane, { CodePaneHandle } from '../components/CodePane';
+import CodePane, { CodePaneHandle, EditorMode } from '../components/CodePane';
 import PdfPane, { PdfPaneHandle } from '../components/PdfPane';
 import BranchMenu from '../components/BranchMenu';
 import HistoryPanel from '../components/HistoryPanel';
@@ -17,6 +17,8 @@ import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras'
 import { useCommentSignal } from '../editor/commentSignal';
 import GithubSync from '../components/GithubSync';
 import CommentComposer from '../components/CommentComposer';
+import Modal from '../components/Modal';
+import FormatToolbar from '../components/FormatToolbar';
 import { toggleTheme } from '../theme';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
@@ -38,10 +40,25 @@ export default function Editor() {
   const [pluginPanels, setPluginPanels] = useState<PluginPanel[]>([]);
   const [auto, setAuto] = useState(() => localStorage.getItem('aldine.autoTypeset') !== '0');
   const [stats, setStats] = useState<{ words: number; selWords: number | null }>({ words: 0, selWords: null });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoomState] = useState(() => {
+    const z = Number(localStorage.getItem('aldine.pdfZoom'));
+    return z >= 0.5 && z <= 3 ? z : 1;
+  });
+  const setZoom = useCallback((v: number | ((z: number) => number)) => {
+    setZoomState((prev) => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      localStorage.setItem('aldine.pdfZoom', String(next));
+      return next;
+    });
+  }, []);
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('aldine.spellcheck') === '1');
+  // Visual mode is gated by an experimental flag until it graduates.
+  const visualEnabled = localStorage.getItem('aldine.experimental.visualEditor') === '1';
+  const [mode, setMode] = useState<EditorMode>(() =>
+    visualEnabled && localStorage.getItem('aldine.editorMode') === 'visual' ? 'visual' : 'source');
+  const switchMode = (m: EditorMode) => { localStorage.setItem('aldine.editorMode', m); setMode(m); };
   const [comments, setComments] = useState<Comment[]>([]);
   const [composing, setComposing] = useState<{ from: number; to: number; quote: string } | null>(null);
   const codeRef = useRef<CodePaneHandle>(null);
@@ -172,7 +189,7 @@ export default function Editor() {
     if (!activeFile) return;
     const ranges = comments
       .filter((c) => c.file === activeFile)
-      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved }));
+      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved, suggestion: c.suggestion, quote: c.anchor.quote }));
     requestAnimationFrame(() => codeRef.current?.setCommentRanges(ranges));
   }, [comments, activeFile]);
 
@@ -232,6 +249,20 @@ export default function Editor() {
     }
   }, [id, branch, loadComments, toast]);
 
+  // visual-mode suggestion widgets dispatch accept/dismiss as window events
+  useEffect(() => {
+    const onAction = (e: Event) => {
+      const { id: cid, action } = (e as CustomEvent<{ id: string; action: 'accept' | 'resolve' }>).detail;
+      const c = comments.find((x) => x.id === cid);
+      if (!c) return;
+      if (action === 'accept') acceptSuggestion(c);
+      else api.resolveComment(id, c.id, true).then(() => { loadComments(); bumpComments(); });
+    };
+    window.addEventListener('aldine:suggestion', onAction);
+    return () => window.removeEventListener('aldine:suggestion', onAction);
+  }, [comments, id, acceptSuggestion, loadComments, bumpComments]);
+
+
   // Inverse SyncTeX: double-click in the PDF → open the source file at that line.
   const onPdfInverse = useCallback(async (page: number, x: number, y: number) => {
     try {
@@ -280,6 +311,9 @@ export default function Editor() {
       { id: 'jump-pdf', group: 'Action', title: 'Jump PDF to cursor', hint: '⌘J', run: () => jumpToPdf() },
       { id: 'spell', group: 'Action', title: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on', run: () => setSpellcheck((s) => { localStorage.setItem('aldine.spellcheck', s ? '0' : '1'); return !s; }) },
       { id: 'theme', group: 'View', title: 'Toggle light/dark theme', run: () => { toggleTheme(); } },
+      ...(visualEnabled
+        ? [{ id: 'mode', group: 'View', title: mode === 'visual' ? 'Switch to Source editing' : 'Switch to Visual editing', run: () => switchMode(mode === 'visual' ? 'source' : 'visual') }]
+        : [{ id: 'experimental-visual', group: 'View', title: 'Enable experimental Visual editor', run: () => { localStorage.setItem('aldine.experimental.visualEditor', '1'); location.reload(); } }]),
       { id: 'commit', group: 'Git', title: 'Save a checkpoint…', run: () => { setTab('history'); } },
       { id: 'newbranch', group: 'Git', title: 'New branch…', run: () => { setTab('files'); document.querySelector<HTMLElement>('[data-testid="branch-menu"]')?.click(); } },
     ];
@@ -346,6 +380,12 @@ export default function Editor() {
           onSwitch={switchBranch}
           onChanged={() => { loadProject(); loadFiles(); }}
         />
+        {visualEnabled && (
+          <div className="seg" role="tablist" aria-label="Editing mode" data-testid="mode-toggle">
+            <button role="tab" aria-selected={mode === 'source'} className={`seg__btn ${mode === 'source' ? 'seg__btn--active' : ''}`} onClick={() => switchMode('source')}>Source</button>
+            <button role="tab" aria-selected={mode === 'visual'} className={`seg__btn ${mode === 'visual' ? 'seg__btn--active' : ''}`} onClick={() => switchMode('visual')}>Visual</button>
+          </div>
+        )}
         <div className="toolbar__spacer" />
         {project.github && (
           <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
@@ -389,7 +429,16 @@ export default function Editor() {
                 projectId={id}
                 branch={branch}
                 onOpen={setActiveFile}
-                onCreate={async (path) => { await api.writeFile(id, branch, path, ''); await loadFiles(); setActiveFile(path); }}
+                onCreate={async (path) => {
+                  try {
+                    await api.createFile(id, branch, path);
+                    await loadFiles();
+                    setActiveFile(path);
+                  } catch (err: any) {
+                    if (/already exists/i.test(err?.message)) { toast(`"${path}" already exists`, 'error'); setActiveFile(path); }
+                    else toast(`Could not create file: ${err.message}`, 'error');
+                  }
+                }}
                 onUploaded={async (paths) => {
                   await loadFiles();
                   toast(paths.length === 1 ? `Uploaded ${paths[0]}` : `Uploaded ${paths.length} files`, 'ok');
@@ -400,9 +449,13 @@ export default function Editor() {
                   if (activeFile === path) setActiveFile(null);
                 }}
                 onRename={async (from, to) => {
-                  await api.renameFile(id, branch, from, to);
-                  await loadFiles();
-                  if (activeFile === from) setActiveFile(to);
+                  try {
+                    await api.renameFile(id, branch, from, to);
+                    await loadFiles();
+                    if (activeFile === from) setActiveFile(to);
+                  } catch (err: any) {
+                    toast(/already exists/i.test(err?.message) ? `"${to}" already exists` : `Could not rename: ${err.message}`, 'error');
+                  }
                 }}
                 onSetRoot={async (path) => {
                   await api.patchProject(id, { rootFile: path });
@@ -418,7 +471,7 @@ export default function Editor() {
                 activeFile={activeFile}
                 onReveal={revealComment}
                 onResolve={async (c, resolved) => { await api.resolveComment(id, c.id, resolved); await loadComments(); bumpComments(); }}
-                onDelete={async (c) => { await api.deleteComment(id, c.id); await loadComments(); bumpComments(); }}
+                onDelete={async (c) => { if (!window.confirm('Delete this comment thread?')) return; await api.deleteComment(id, c.id); await loadComments(); bumpComments(); }}
                 onReply={async (c, body) => { await api.replyComment(id, c.id, body, localUser().name); await loadComments(); bumpComments(); }}
                 onAccept={acceptSuggestion}
               />
@@ -434,6 +487,7 @@ export default function Editor() {
             <>
               <div className="pane__header">
                 <span className="statusbar__file">{activeFile}</span>
+                {visualEnabled && mode === 'visual' && <FormatToolbar target={codeRef} />}
                 <span className="toolbar__spacer" />
                 <span className="pdf-status" data-testid="word-count">
                   {stats.selWords != null
@@ -442,7 +496,7 @@ export default function Editor() {
                 </span>
               </div>
               <CodePane
-                key={`${id}::${branch}::${activeFile}::${spellcheck}`}
+                key={`${id}::${branch}::${activeFile}`}
                 ref={codeRef}
                 projectId={id}
                 branch={branch}
@@ -453,6 +507,7 @@ export default function Editor() {
                 onStats={setStats}
                 onJumpToPdf={jumpToPdf}
                 spellcheck={spellcheck}
+                mode={mode}
               />
             </>
           ) : (
@@ -479,7 +534,11 @@ export default function Editor() {
               })}
               {errors.length === 0 && (
                 <div className="errors__row" style={{ cursor: 'default' }}>
-                  <span className="errors__msg">Typesetting failed — open the log for details.</span>
+                  <span className="errors__msg">
+                    {compile.result?.timedOut
+                      ? 'Typesetting timed out — the document took too long (a possible infinite loop, or it needs a bigger compile budget). Open the log for details.'
+                      : 'Typesetting failed — open the log for details.'}
+                  </span>
                 </div>
               )}
             </div>
@@ -514,7 +573,7 @@ export default function Editor() {
             <span className="toolbar__spacer" />
             <div className="zoom" data-testid="zoom-controls">
               <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))} title="Zoom out" aria-label="Zoom out">−</button>
-              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width">{Math.round(zoom * 100)}%</button>
+              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width" aria-label={`PDF zoom ${Math.round(zoom * 100)}%, click to reset`}>{Math.round(zoom * 100)}%</button>
               <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))} title="Zoom in" aria-label="Zoom in">+</button>
             </div>
             <button
@@ -538,15 +597,15 @@ export default function Editor() {
       )}
 
       {showLog && compile.result && (
-        <div className="modal-backdrop" onClick={() => setShowLog(false)}>
-          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+        <Modal onClose={() => setShowLog(false)} label="Typesetting log" wide>
+          <div>
             <h2>Typesetting log</h2>
             <pre className="logview" data-testid="log-view">{compile.result.log || '(no log)'}</pre>
             <div className="modal__row">
               <button className="btn" onClick={() => setShowLog(false)}>Close</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

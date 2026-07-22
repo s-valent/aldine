@@ -148,7 +148,10 @@ async function compileInner(body) {
   ];
   const base = path.basename(rootFile).replace(/\.tex$/, '');
   const rel = (f) => path.join(rootDir, OUT_SUBDIR, f); // path relative to the project dir
-  const pdfPath = path.join(absDir, rootDir, OUT_SUBDIR, `${base}.pdf`);
+  const outAbs = path.join(absDir, rootDir, OUT_SUBDIR);
+  const pdfPath = path.join(outAbs, `${base}.pdf`);
+  const logPath = path.join(outAbs, `${base}.log`);
+  const readLog = (fallback) => { try { return fs.readFileSync(logPath, 'utf8'); } catch { return fallback; } };
 
   // First pass without -g: latexmk skips work that is already up to date, so an
   // unchanged document "recompiles" in ~a second instead of a full rebuild.
@@ -160,10 +163,18 @@ async function compileInner(body) {
     // output dir / stale state) — force a real rebuild.
     ({ code, out, timedOut } = await run('latexmk', mkArgs(true), runOpts, TIMEOUT_MS));
   }
+  // Stale-aux recovery: if the package set changed (e.g. dropping biblatex),
+  // leftover .aux/.bcf artifacts make an otherwise-valid document fail with an
+  // undefined-control-sequence in the .aux (\abx@aux@…, \bibcite, …). Wipe the
+  // regenerable aux files once and rebuild — the .aux is not source of truth.
+  if (code !== 0 && !timedOut && /(\\abx@aux@|\\bibcite|\\@writefile|undefined)/i.test(readLog(out)) && /\.(aux|bcf)\b/i.test(readLog(out))) {
+    for (const ext of ['aux', 'bcf', 'bbl', 'blg', 'run.xml', 'toc', 'out', 'fls', 'fdb_latexmk']) {
+      try { fs.rmSync(path.join(outAbs, `${base}.${ext}`), { force: true }); } catch { /* best effort */ }
+    }
+    ({ code, out, timedOut } = await run('latexmk', mkArgs(true), runOpts, TIMEOUT_MS));
+  }
   const durationMs = Date.now() - t0;
-  const logPath = path.join(absDir, rootDir, OUT_SUBDIR, `${base}.log`);
-  let log = '';
-  try { log = fs.readFileSync(logPath, 'utf8'); } catch { log = out; }
+  let log = readLog(out);
   const errors = parseLog(log);
   const ok = code === 0 && fs.existsSync(pdfPath);
   return {

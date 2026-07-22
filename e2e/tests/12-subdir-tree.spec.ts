@@ -69,3 +69,36 @@ test.describe('file tree clutter', () => {
     } finally { await cleanup(request, id); }
   });
 });
+
+test.describe('file guards (QA regressions)', () => {
+  test('create/rename onto an existing name never destroys the file', async ({ request }) => {
+    const id = await createProject(request, 'Guards');
+    try {
+      const before = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(before.length).toBeGreaterThan(0);
+      // createOnly onto an existing file → 409, file untouched
+      const c = await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: '', createOnly: true } });
+      expect(c.status()).toBe(409);
+      // rename onto an existing file → 409, both files untouched
+      const r = await request.post(`/api/projects/${id}/file/rename`, { data: { branch: 'main', from: 'references.bib', to: 'main.tex' } });
+      expect(r.status()).toBe(409);
+      const after = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(after).toBe(before);
+      const bib = await request.get(`/api/projects/${id}/file?branch=main&path=references.bib`);
+      expect(bib.ok()).toBeTruthy();
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('deleting the typeset root reassigns rootFile to another .tex', async ({ request }) => {
+    const id = await createProject(request, 'Root Reassign');
+    try {
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'other.tex', content: '\\documentclass{article}\\begin{document}y\\end{document}\n' } });
+      const del = await request.delete(`/api/projects/${id}/file?branch=main&path=main.tex`);
+      expect((await del.json()).newRoot).toBe('other.tex');
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+});

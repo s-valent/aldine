@@ -10,6 +10,34 @@ const DOI_BASE = process.env.DOI_API_BASE || 'https://doi.org';
 const ARXIV_BASE = process.env.ARXIV_API_BASE || 'https://export.arxiv.org';
 const OPENALEX_BASE = process.env.OPENALEX_API_BASE || 'https://api.openalex.org';
 
+/** Decode the HTML entities upstream metadata (CrossRef, arXiv, OpenAlex) ships. */
+function unescapeHtml(s: string): string {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0*39;|&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)));
+}
+
+/** Escape LaTeX specials that would break a compile, skipping already-escaped ones. */
+function latexEscape(s: string): string {
+  return s.replace(/(\\?)([&%$#_])/g, (_, bs, ch) => (bs ? bs + ch : `\\${ch}`));
+}
+
+/** A field value built from upstream metadata: HTML-decode, then LaTeX-escape. */
+function bibField(s: string): string {
+  return latexEscape(unescapeHtml(s));
+}
+
+/**
+ * Sanitize a raw BibTeX blob (e.g. CrossRef via doi.org): decode HTML entities
+ * and escape bare & / % inside brace-delimited values so the entry compiles.
+ * A bare `&` is read by LaTeX as an alignment tab — the classic broken-.bib bug.
+ */
+function sanitizeBibtex(bib: string): string {
+  return unescapeHtml(bib).replace(/(\\?)([&%])/g, (_, bs, ch) => (bs ? bs + ch : `\\${ch}`));
+}
+
 export interface SearchHit { id: string; doi: string | null; title: string; authors: string; year: number | null; venue: string }
 
 /** Full-text search across OpenAlex (250M+ works, no key). */
@@ -52,9 +80,9 @@ async function fetchOpenAlex(id: string): Promise<string | null> {
   const first = authorships[0]?.author?.display_name?.split(' ').pop()?.toLowerCase().replace(/[^a-z]/g, '') || 'anon';
   const venue = (w.primary_location as { source?: { display_name?: string } } | undefined)?.source?.display_name || '';
   return `@article{${first}${year},
-  title   = {${title}},
-  author  = {${authorField}},
-  year    = {${year}},${venue ? `\n  journaltitle = {${venue}},` : ''}
+  title   = {${bibField(title)}},
+  author  = {${bibField(authorField)}},
+  year    = {${year}},${venue ? `\n  journaltitle = {${bibField(venue)}},` : ''}
   url     = {${w.id}},
 }`;
 }
@@ -103,7 +131,7 @@ async function fetchDoi(doi: string): Promise<string | null> {
   });
   if (!res.ok) throw new Error(`DOI lookup failed (HTTP ${res.status})`);
   const bib = (await readCapped(res)).trim();
-  return bib.startsWith('@') ? bib : null;
+  return bib.startsWith('@') ? sanitizeBibtex(bib) : null;
 }
 
 async function fetchArxiv(id: string): Promise<string | null> {
@@ -127,8 +155,8 @@ async function fetchArxiv(id: string): Promise<string | null> {
   const first = authors[0]?.split(' ').pop()?.toLowerCase().replace(/[^a-z]/g, '') || 'anon';
   const key = `${first}${year}`;
   return `@article{${key},
-  title        = {${title}},
-  author       = {${authorField}},
+  title        = {${bibField(title)}},
+  author       = {${bibField(authorField)}},
   year         = {${year}},
   eprint       = {${id}},
   archivePrefix = {arXiv},
