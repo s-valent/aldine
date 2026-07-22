@@ -6,8 +6,9 @@ import { EditorView } from '@codemirror/view';
  * light/dark just work.
  */
 export const visualTheme = EditorView.theme({
-  '&': { fontFamily: 'var(--font-serif)', fontSize: '16px' },
-  '.cm-content': { maxWidth: '46em', margin: '0 auto', padding: '24px 32px', lineHeight: '1.65' },
+  // &.cm-editor beats app.css's .code-pane .cm-scroller mono rule on specificity
+  '&.cm-editor .cm-scroller': { fontFamily: 'var(--font-serif)', fontSize: '16px', lineHeight: '1.65' },
+  '.cm-content': { maxWidth: '46em', margin: '0 auto', padding: '24px 32px' },
   '.cm-gutters': { display: 'none' },
   '.cm-activeLine': { backgroundColor: 'transparent' },
 
