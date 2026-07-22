@@ -438,9 +438,13 @@ export default function Editor() {
                   if (activeFile === path) setActiveFile(null);
                 }}
                 onRename={async (from, to) => {
-                  await api.renameFile(id, branch, from, to);
-                  await loadFiles();
-                  if (activeFile === from) setActiveFile(to);
+                  try {
+                    await api.renameFile(id, branch, from, to);
+                    await loadFiles();
+                    if (activeFile === from) setActiveFile(to);
+                  } catch (err: any) {
+                    toast(/already exists/i.test(err?.message) ? `"${to}" already exists` : `Could not rename: ${err.message}`, 'error');
+                  }
                 }}
                 onSetRoot={async (path) => {
                   await api.patchProject(id, { rootFile: path });

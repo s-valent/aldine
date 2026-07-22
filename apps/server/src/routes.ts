@@ -333,10 +333,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- files ----------
-  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/files', async (req) => {
+  app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/files', async (req, reply) => {
     const branch = req.query.branch || 'main';
-    await gitops.ensureWorktree(req.params.id, branch);
-    return store.listFiles(req.params.id, branch);
+    try {
+      await gitops.ensureWorktree(req.params.id, branch);
+      return store.listFiles(req.params.id, branch);
+    } catch {
+      return reply.code(404).send({ error: 'Project or branch not found' });
+    }
   });
 
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/file', async (req, reply) => {
@@ -366,13 +370,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/file', async (req, reply) => {
       const { branch = 'main', path: rel, content = '', encoding = 'utf8', createOnly = false } = req.body || {};
       if (!rel) return reply.code(400).send({ error: 'path required' });
-      if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
+      if (isHiddenPath(rel) || rel.includes('..')) return reply.code(403).send({ error: 'Invalid file path' });
       await gitops.ensureWorktree(req.params.id, branch);
       // createOnly (new-file flow): never clobber an existing file with empty content
       if (createOnly && store.fileExists(req.params.id, branch, rel)) {
         return reply.code(409).send({ error: 'A file with that name already exists' });
       }
-      store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
+      try {
+        store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
+      } catch {
+        return reply.code(400).send({ error: 'Could not write that file path' });
+      }
       refreshBranchDocsFromDisk(req.params.id, branch);
       scheduleCommit(req.params.id, branch); // non-collab write → still reach git history
       return { ok: true };
@@ -383,6 +391,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const { branch = 'main', from, to } = req.body || {};
       if (!from || !to) return reply.code(400).send({ error: 'from/to required' });
       if (isHiddenPath(from) || isHiddenPath(to)) return reply.code(403).send({ error: 'forbidden path' });
+      if (from === to) return { ok: true };
+      // never overwrite an existing file — that would destroy both it and the source
+      if (store.fileExists(req.params.id, branch, to)) {
+        return reply.code(409).send({ error: `A file named "${to}" already exists` });
+      }
       // evict the source doc first so its final store can't recreate the old file
       evictDoc(req.params.id, branch, from);
       store.renameFile(req.params.id, branch, from, to);
