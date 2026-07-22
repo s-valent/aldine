@@ -245,16 +245,6 @@ The `aldine` API exposes `ui.registerSidebarPanel`, `editor.insertAtCursor`,
 `project` context, `compile()`, `toast()`, and `fetch()`. See
 `plugins/zotero` for a complete example.
 
-## How Aldine was built
-
-Most of this codebase was written by an AI agent (Claude) running in an
-autonomous plan → implement → test → review loop, directed and reviewed by a
-human — the commit history tells that story honestly. The trust argument is
-the same as for any codebase: a Playwright e2e suite that exercises every
-headline feature in a real browser, a sandboxed compiler, security review
-passes, and CI gating every change. Judge the artifact, not the typist. The
-original build plan is preserved in [docs/PLAN.md](docs/PLAN.md).
-
 ## License
 
 [AGPL-3.0](LICENSE) — self-host freely; if you offer a modified Aldine as a

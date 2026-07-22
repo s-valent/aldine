@@ -26,3 +26,6 @@ apps/server/dist/
 
 # maintainer-local launch playbook (not for the public repo)
 LAUNCH.md
+
+# local Claude Code config
+.claude/
