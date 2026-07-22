@@ -94,6 +94,135 @@ test.describe('visual editor (experimental)', () => {
     }
   });
 
+  test('math renders via KaTeX and click reveals its source', async ({ page, request }) => {
+    const id = await createProject(request, 'Visual Math');
+    try {
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: 'Euler: $e^{i\\pi} + 1 = 0$ stays true.\n\\[ \\int_0^1 x^2 \\, dx = \\tfrac{1}{3} \\]\nplain end\n' } });
+      await openProject(page, id);
+      await page.locator('.cm-line', { hasText: 'plain end' }).click();
+      await expect(page.getByTestId('vis-math')).toHaveCount(2);
+      await expect(page.locator('.katex').first()).toBeVisible();
+      await expect(page.locator('.cm-content')).not.toContainText('e^{i\\pi}');
+      // click the inline equation → raw source appears for editing
+      await page.getByTestId('vis-math').first().click();
+      await expect(page.locator('.cm-content')).toContainText('$e^{i\\pi} + 1 = 0$');
+      // leave → re-rendered
+      await page.locator('.cm-line', { hasText: 'plain end' }).click();
+      await expect(page.locator('.cm-content')).not.toContainText('e^{i\\pi}');
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('lists render with markers; cite and figure become chips', async ({ page, request }) => {
+    const id = await createProject(request, 'Visual Chips');
+    const doc = [
+      'Intro text.',
+      '\\begin{itemize}',
+      '\\item First point',
+      '\\item Second point',
+      '\\end{itemize}',
+      'See \\cite{knuth1984} and Figure ref.',
+      '\\begin{figure}',
+      '\\caption{A very nice plot}',
+      '\\end{figure}',
+      'plain end',
+      '',
+    ].join('\n');
+    try {
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: doc } });
+      await openProject(page, id);
+      await page.locator('.cm-line', { hasText: 'plain end' }).click();
+      await expect(page.getByTestId('vis-item')).toHaveCount(2);
+      await expect(page.locator('.cm-content')).not.toContainText('\\begin{itemize}');
+      await expect(page.getByTestId('vis-chip-cite')).toContainText('knuth1984');
+      await expect(page.getByTestId('vis-chip-figure')).toContainText('A very nice plot');
+      await expect(page.locator('.cm-content')).not.toContainText('\\caption');
+      // clicking the figure chip reveals its source
+      await page.getByTestId('vis-chip-figure').click();
+      await expect(page.locator('.cm-content')).toContainText('\\begin{figure}');
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('Mod-B wraps and unwraps the selection byte-exactly', async ({ page, request }) => {
+    const id = await seed(request, 'Visual Bold');
+    const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+    try {
+      await openProject(page, id);
+      const line = page.locator('.cm-line', { hasText: 'More prose here.' });
+      await line.click();
+      // select the word "prose" precisely
+      const box = (await line.boundingBox())!;
+      await page.mouse.dblclick(box.x + 42, box.y + box.height / 2);
+      await page.evaluate(() => window.getSelection()?.toString());
+      await page.keyboard.press(`${mod}+b`);
+      await page.waitForTimeout(2500); // collab flush
+      const wrapped = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(wrapped).toContain('\\textbf{');
+      // caret is inside the new bold → construct revealed; toggle again unwraps
+      await page.keyboard.press(`${mod}+b`);
+      await page.waitForTimeout(2500);
+      const unwrapped = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(unwrapped).toBe(DOC);
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('dual-mode collab: visual and source peers stay byte-consistent', async ({ browser, request }) => {
+    const id = await seed(request, 'Dual Mode');
+    const mk = async (visual: boolean) => {
+      const ctx = await browser.newContext();
+      await ctx.addInitScript((v) => {
+        window.localStorage.setItem('aldine.onboarded', '1');
+        window.localStorage.setItem('aldine.experimental.visualEditor', v ? '1' : '0');
+        window.localStorage.setItem('aldine.editorMode', v ? 'visual' : 'source');
+        window.localStorage.setItem('aldine.name', v ? 'Ada' : 'Grace');
+      }, visual);
+      return { ctx, page: await ctx.newPage() };
+    };
+    const A = await mk(true);
+    const B = await mk(false);
+    try {
+      await openProject(A.page, id);
+      await openProject(B.page, id);
+      await A.page.locator('.cm-line', { hasText: 'More prose here.' }).click();
+
+      // B (source) extends the heading; A (visual) sees the rendered heading update
+      await B.page.locator('.cm-line', { hasText: '\\section{Introduction}' }).click();
+      await B.page.keyboard.press('End');
+      await B.page.keyboard.press('ArrowLeft'); // inside the closing brace
+      await B.page.keyboard.type(' and Basics');
+      await expect(A.page.locator('.cm-line.cm-vis-h1')).toContainText('Introduction and Basics', { timeout: 10_000 });
+
+      // remote-caret force-reveal: B's caret sits inside \textbf{...} → A shows raw source
+      await B.page.locator('.cm-line', { hasText: '\\textbf{brave}' }).click();
+      await B.page.keyboard.press('Home');
+      for (let i = 0; i < 15; i++) await B.page.keyboard.press('ArrowRight'); // into "brave"
+      // (the remote caret label renders inside the word, so match the markup prefix)
+      await expect(A.page.locator('.cm-content')).toContainText('\\textbf{', { timeout: 10_000 });
+
+      // A (visual) types prose; B sees the exact source
+      await A.page.locator('.cm-line', { hasText: 'More prose here.' }).click();
+      await A.page.keyboard.press('End');
+      await A.page.keyboard.type(' Extra from A.');
+      await expect(B.page.locator('.cm-content')).toContainText('Extra from A.', { timeout: 10_000 });
+
+      // stored bytes match both peers' view of the world, exactly
+      await A.page.waitForTimeout(2500);
+      const text = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(text).toBe(DOC
+        .replace('\\section{Introduction}', '\\section{Introduction and Basics}')
+        .replace('More prose here.', 'More prose here. Extra from A.'));
+    } finally {
+      await A.ctx.close();
+      await B.ctx.close();
+      await cleanup(request, id);
+    }
+  });
+
   test('spellcheck toggle no longer remounts the editor', async ({ page, request }) => {
     const id = await seed(request, 'No Remount');
     try {

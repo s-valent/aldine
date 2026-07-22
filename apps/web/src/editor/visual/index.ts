@@ -7,6 +7,7 @@ import { atomicField } from './atomicField';
 import { markPlugin } from './markPlugin';
 import { visualTheme } from './theme';
 import { ensureKatex, registerView, unregisterView } from './katex';
+import { remoteCaretReveal } from './remoteCarets';
 
 /** Clicking a rendered widget puts the caret inside its construct → reveal. */
 const widgetClick = EditorView.domEventHandlers({
@@ -40,6 +41,6 @@ export interface VisualDeps {
  * It never dispatches document changes — source bytes are only ever modified
  * by explicit user edits and the formatting commands in ./commands.ts.
  */
-export function visualExtensions(_deps: VisualDeps): Extension {
-  return [revealField, atomicField, markPlugin, visualTheme, widgetClick, katexLifecycle];
+export function visualExtensions(deps: VisualDeps): Extension {
+  return [revealField, atomicField, markPlugin, visualTheme, widgetClick, katexLifecycle, remoteCaretReveal(deps.awareness)];
 }

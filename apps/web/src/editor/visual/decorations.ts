@@ -4,6 +4,8 @@ import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import { RevealRange, intersectsReveal } from './reveal';
 import { MathWidget } from './widgets/math';
+import { figureChip, tableChip, citeChip, refChip } from './widgets/chips';
+import { ItemMarkerWidget } from './widgets/listMarker';
 
 /** Copied from codemirror-lang-latex (internal SECTION_RANK, not exported). */
 export const SECTION_RANK: Record<string, number> = {
@@ -84,14 +86,91 @@ function wrapperParts(node: SyntaxNode, argName: string) {
  * constructs) stays raw source. Verbatim subtrees are never entered. Nodes
  * intersecting a reveal range are skipped (their source shows).
  */
+/** First braced-argument interior text of a node (e.g. a caption), trimmed. */
+function argText(node: SyntaxNode, doc: { sliceString(from: number, to: number): string }): string {
+  const arg = node.getChild('TextArgument') ?? node.getChild('ShortTextArgument');
+  const open = arg?.getChild('OpenBrace');
+  const close = arg?.getChild('CloseBrace');
+  if (!arg || !open || !close) return '';
+  return doc.sliceString(open.to, close.from).trim().slice(0, 60);
+}
+
+function findDescendant(node: SyntaxNode, name: string): SyntaxNode | null {
+  const c = node.cursor();
+  do {
+    if (c.name === name) return c.node;
+  } while (c.next() && c.from < node.to);
+  return null;
+}
+
+const itemLine = Decoration.line({ class: 'cm-vis-li' });
+
 export function walk(state: EditorState, reveals: readonly RevealRange[], from: number, to: number, emit: WalkEmit): void {
   const doc = state.doc;
+  // enumerate counters per list nesting depth
+  const listStack: Array<{ name: string; counter: number }> = [];
   syntaxTree(state).iterate({
     from,
     to,
+    leave(n) {
+      if (n.name === 'ListEnvironment') listStack.pop();
+    },
     enter(n) {
       if (n.name === 'VerbatimEnvironment') return false;
       if (n.name === 'Comment') return false;
+
+      if (n.name === 'ListEnvironment') {
+        const envName = findDescendant(n.node, 'ListEnvName');
+        listStack.push({ name: envName ? doc.sliceString(envName.from, envName.to) : 'itemize', counter: 0 });
+        return; // walk into items and nested content
+      }
+      if (n.name === 'BeginEnv' || n.name === 'EndEnv') {
+        const inList = listStack.length > 0;
+        if (!inList || intersectsReveal(reveals, n.from, n.to)) return;
+        // hide the \begin{...}/\end{...} line including one adjacent newline so
+        // the list reads as a block; bail out near doc edges or odd layouts.
+        let hideFrom = n.from;
+        let hideTo = n.to;
+        if (n.name === 'BeginEnv' && hideTo < doc.length && doc.sliceString(hideTo, hideTo + 1) === '\n') hideTo += 1;
+        else if (n.name === 'EndEnv' && hideFrom > 0 && doc.sliceString(hideFrom - 1, hideFrom) === '\n') hideFrom -= 1;
+        emit.atomic(hideFrom, hideTo, hide);
+        return;
+      }
+      if (n.name === 'Item') {
+        const top = listStack[listStack.length - 1];
+        const tok = n.node.getChild('ItemCtrlSeq');
+        if (!top || !tok || intersectsReveal(reveals, tok.from, tok.to)) return;
+        let markerTo = tok.to;
+        if (doc.sliceString(markerTo, markerTo + 1) === ' ') markerTo += 1;
+        const marker = top.name === 'enumerate' ? `${++top.counter}. ` : top.name === 'description' ? '– ' : '•  ';
+        emit.atomic(tok.from, markerTo, Decoration.replace({ widget: new ItemMarkerWidget(marker) }));
+        emit.mark(doc.lineAt(tok.from).from, doc.lineAt(tok.from).from, itemLine);
+        return;
+      }
+
+      if (n.name === 'FigureEnvironment' || n.name === 'TableEnvironment' || n.name === 'TabularEnvironment') {
+        if (intersectsReveal(reveals, n.from, n.to)) return; // revealed: show raw source
+        const end = n.node.getChild('EndEnv');
+        if (!end || end.to !== n.to) return; // incomplete env stays raw
+        const caption = findDescendant(n.node, 'Caption');
+        const label = caption ? argText(caption, doc) : '';
+        const chip = n.name === 'FigureEnvironment' ? figureChip(label, n.from) : tableChip(label, n.from);
+        emit.atomic(n.from, n.to, Decoration.replace({ widget: chip }));
+        return false;
+      }
+
+      if (n.name === 'Cite' || n.name === 'Ref') {
+        if (intersectsReveal(reveals, n.from, n.to)) return;
+        const argName = n.name === 'Cite' ? 'BibKeyArgument' : 'RefArgument';
+        const arg = n.node.getChild(argName);
+        const inner = arg?.getChild('ShortTextArgument') ?? arg;
+        const open = inner?.getChild('OpenBrace');
+        const close = inner?.getChild('CloseBrace');
+        if (!inner || !open || !close || close.to !== n.to) return;
+        const keys = doc.sliceString(open.to, close.from).trim();
+        emit.atomic(n.from, n.to, Decoration.replace({ widget: n.name === 'Cite' ? citeChip(keys, n.from) : refChip(keys, n.from) }));
+        return false;
+      }
 
       const rank = SECTION_RANK[n.name];
       if (rank) {

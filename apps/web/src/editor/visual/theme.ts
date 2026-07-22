@@ -26,4 +26,16 @@ export const visualTheme = EditorView.theme({
   '.cm-vis-math:hover': { background: 'var(--accent-soft)' },
   '.cm-vis-math--display': { display: 'block', textAlign: 'center', padding: '8px 0' },
   '.cm-vis-math--raw': { fontFamily: 'var(--font-mono)', fontSize: '0.85em', color: 'var(--syn-command)' },
+
+  '.cm-vis-chip': {
+    display: 'inline-flex', alignItems: 'baseline', gap: '5px', cursor: 'pointer',
+    border: '1px solid var(--hairline)', borderRadius: '6px', padding: '1px 8px',
+    background: 'var(--bg-inset)', fontFamily: 'var(--font-ui)', fontSize: '0.8em',
+  },
+  '.cm-vis-chip:hover': { borderColor: 'var(--hairline-strong)', background: 'var(--bg-hover)' },
+  '.cm-vis-chip__kind': { textTransform: 'uppercase', fontSize: '0.75em', fontWeight: '700', color: 'var(--text-3)', letterSpacing: '0.06em' },
+  '.cm-vis-chip--cite': { color: 'var(--accent)' },
+  '.cm-vis-chip--ref': { color: 'var(--accent)' },
+  '.cm-vis-item': { color: 'var(--text-2)', paddingRight: '2px' },
+  '.cm-vis-li': { paddingLeft: '1.4em' },
 });

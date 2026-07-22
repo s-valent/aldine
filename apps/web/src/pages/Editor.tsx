@@ -17,6 +17,7 @@ import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras'
 import { useCommentSignal } from '../editor/commentSignal';
 import GithubSync from '../components/GithubSync';
 import CommentComposer from '../components/CommentComposer';
+import FormatToolbar from '../components/FormatToolbar';
 import { toggleTheme } from '../theme';
 
 type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error';
@@ -448,6 +449,7 @@ export default function Editor() {
             <>
               <div className="pane__header">
                 <span className="statusbar__file">{activeFile}</span>
+                {visualEnabled && mode === 'visual' && <FormatToolbar target={codeRef} />}
                 <span className="toolbar__spacer" />
                 <span className="pdf-status" data-testid="word-count">
                   {stats.selWords != null
