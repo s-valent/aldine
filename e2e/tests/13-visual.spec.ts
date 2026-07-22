@@ -202,12 +202,15 @@ test.describe('visual editor (experimental)', () => {
       await openProject(B.page, id);
       await A.page.locator('.cm-line', { hasText: 'More prose here.' }).click();
 
-      // B (source) extends the heading; A (visual) sees the rendered heading update
+      // B (source) extends the heading; A (visual) receives the edit. A renders
+      // it either as a styled heading or — because B's caret sits in that
+      // construct — as revealed raw source (remote-caret force-reveal). Either
+      // way the new text must be present in A's document.
       await B.page.locator('.cm-line', { hasText: '\\section{Introduction}' }).click();
       await B.page.keyboard.press('End');
       await B.page.keyboard.press('ArrowLeft'); // inside the closing brace
       await B.page.keyboard.type(' and Basics');
-      await expect(A.page.locator('.cm-line.cm-vis-h1')).toContainText('Introduction and Basics', { timeout: 10_000 });
+      await expect(A.page.locator('.cm-content')).toContainText('Introduction and Basics', { timeout: 10_000 });
 
       // remote-caret force-reveal: B's caret sits inside \textbf{...} → A shows raw source
       await B.page.locator('.cm-line', { hasText: '\\textbf{brave}' }).click();
