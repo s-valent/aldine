@@ -788,3 +788,8 @@
 .fmt__btn--i { font-style: italic; font-family: var(--font-serif); }
 .fmt__select { border: 1px solid transparent; background: transparent; color: var(--text-2); font: 600 12px var(--font-ui); border-radius: 6px; cursor: pointer; }
 .fmt__select:hover { background: var(--bg-hover); color: var(--text); }
+
+/* MathLive popover */
+.vis-math-popover { z-index: 60; background: var(--bg-panel); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow-pop); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 300px; }
+.vis-math-popover math-field { font-size: 18px; border: 1px solid var(--hairline); border-radius: 6px; padding: 4px 8px; background: var(--bg-inset); color: var(--text); }
+.vis-math-popover__bar { display: flex; gap: 8px; justify-content: flex-end; }

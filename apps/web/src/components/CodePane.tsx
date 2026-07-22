@@ -12,8 +12,10 @@ import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { localUser } from '../api';
 import { citeCompletionSource, refCompletionSource, citeHoverTooltip, warmBib } from '../editor/latexExtras';
+import { setComments, CommentRange } from '../editor/commentsEffect';
 import { visualExtensions, type VisualDeps } from '../editor/visual';
 import { toggleStyle, setSectionLevel, toggleItemize } from '../editor/visual/commands';
+import { documentOutline, OutlineEntry } from '../editor/visual/outline';
 import type { PresenceUser } from './Presence';
 
 export type EditorMode = 'source' | 'visual';
@@ -23,13 +25,13 @@ export interface CodePaneHandle {
   insertAtCursor(text: string): void;
   currentLine(): number | null;
   getSelection(): { from: number; to: number; quote: string } | null;
-  setCommentRanges(ranges: Array<{ id: string; from: number; to: number; resolved: boolean }>): void;
+  setCommentRanges(ranges: CommentRange[]): void;
   revealPos(pos: number): void;
   format(action: 'bold' | 'italic' | 'list' | { section: 1 | 2 | 3 | 4 }): void;
+  getOutline(): OutlineEntry[];
 }
 
 /** Comment highlight decorations, updatable via an effect and tracking edits. */
-const setComments = StateEffect.define<Array<{ from: number; to: number; resolved: boolean }>>();
 const commentMark = Decoration.mark({ class: 'cm-comment-range' });
 const commentResolvedMark = Decoration.mark({ class: 'cm-comment-range cm-comment-resolved' });
 const commentField = StateField.define<DecorationSet>({
@@ -163,7 +165,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
     setCommentRanges(ranges) {
       const view = viewRef.current;
       if (!view) return;
-      view.dispatch({ effects: setComments.of(ranges.map((r) => ({ from: r.from, to: r.to, resolved: r.resolved }))) });
+      view.dispatch({ effects: setComments.of(ranges) });
     },
     revealPos(pos) {
       const view = viewRef.current;
@@ -180,6 +182,10 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       else if (action === 'list') toggleItemize(view);
       else setSectionLevel(action.section)(view);
       view.focus();
+    },
+    getOutline() {
+      const view = viewRef.current;
+      return view ? documentOutline(view.state) : [];
     },
   }), []);
 

@@ -1,4 +1,4 @@
-import type { EditorView } from '@codemirror/view';
+import { pokeViews } from './refresh';
 
 /**
  * Lazy KaTeX: loaded (with its CSS) only when visual mode first renders math,
@@ -10,14 +10,6 @@ type Katex = typeof import('katex').default;
 
 let katex: Katex | null = null;
 let loading: Promise<void> | null = null;
-const views = new Set<EditorView>();
-
-export function registerView(view: EditorView): void {
-  views.add(view);
-}
-export function unregisterView(view: EditorView): void {
-  views.delete(view);
-}
 
 export function ensureKatex(): void {
   if (katex || loading) return;
@@ -25,9 +17,7 @@ export function ensureKatex(): void {
   loading = Promise.all([import('katex'), import('katex/dist/katex.min.css')])
     .then(([mod]) => {
       katex = mod.default;
-      for (const v of views) v.requestMeasure();
-      // widgets compare by source string; force a redraw so toDOM reruns
-      for (const v of views) v.dispatch({});
+      pokeViews(); // widgets compare by source; a redraw makes toDOM rerun
     })
     .catch(() => { loading = null; });
 }

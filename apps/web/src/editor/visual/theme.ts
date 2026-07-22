@@ -38,4 +38,34 @@ export const visualTheme = EditorView.theme({
   '.cm-vis-chip--ref': { color: 'var(--accent)' },
   '.cm-vis-item': { color: 'var(--text-2)', paddingRight: '2px' },
   '.cm-vis-li': { paddingLeft: '1.4em' },
+
+  '.cm-vis-strike': { textDecoration: 'line-through', textDecorationColor: 'var(--error)', opacity: '0.75' },
+  '.cm-vis-suggest': { display: 'inline-flex', alignItems: 'center', gap: '3px', margin: '0 3px' },
+  '.cm-vis-suggest__ins': { color: 'var(--ok)', textDecoration: 'underline', textDecorationStyle: 'dotted' },
+  '.cm-vis-suggest__btn': {
+    border: '1px solid var(--hairline)', background: 'var(--bg-inset)', color: 'var(--text-2)',
+    borderRadius: '5px', fontSize: '10px', width: '18px', height: '18px', lineHeight: '1',
+    cursor: 'pointer', padding: '0',
+  },
+  '.cm-vis-suggest__btn:hover': { color: 'var(--text)', borderColor: 'var(--hairline-strong)' },
+
+  '.cm-vis-figure__img': { display: 'block', maxHeight: '140px', maxWidth: '100%', borderRadius: '4px', margin: '2px 0' },
+  '.cm-vis-figure__cap': { display: 'block', fontSize: '0.85em', fontStyle: 'italic', color: 'var(--text-2)' },
+  '.cm-vis-figure': { display: 'inline-block', padding: '6px 10px' },
+  '.cm-vis-cap': { fontStyle: 'italic', color: 'var(--text-2)' },
+
+  '.cm-vis-table': { display: 'inline-block', margin: '4px 0' },
+  '.cm-vis-table__grid': { borderCollapse: 'collapse', fontFamily: 'var(--font-serif)', fontSize: '0.95em' },
+  '.cm-vis-table__grid td': { border: '1px solid var(--hairline)', padding: '3px 10px', cursor: 'text', minWidth: '40px' },
+  '.cm-vis-table__grid td:hover': { background: 'var(--bg-hover)' },
+  '.cm-vis-table__bar': { display: 'flex', gap: '4px', marginTop: '3px' },
+  '.cm-vis-table__btn': {
+    border: '1px solid var(--hairline)', background: 'var(--bg-inset)', color: 'var(--text-2)',
+    borderRadius: '5px', fontSize: '10.5px', fontFamily: 'var(--font-ui)', padding: '1px 7px', cursor: 'pointer',
+  },
+  '.cm-vis-table__btn:hover': { color: 'var(--text)', borderColor: 'var(--hairline-strong)' },
+  '.cm-vis-table__input': {
+    font: 'inherit', color: 'inherit', background: 'var(--bg-panel)', border: '1px solid var(--accent)',
+    borderRadius: '3px', padding: '1px 4px', width: '100%', boxSizing: 'border-box',
+  },
 });

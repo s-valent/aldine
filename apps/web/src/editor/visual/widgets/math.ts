@@ -6,7 +6,7 @@ import { renderMath } from '../katex';
  * host extension handles the mousedown), which reveals the raw source.
  */
 export class MathWidget extends WidgetType {
-  constructor(readonly source: string, readonly display: boolean, readonly pos: number) {
+  constructor(readonly source: string, readonly display: boolean, readonly pos: number, readonly innerFrom: number, readonly innerTo: number) {
     super();
   }
 
@@ -18,6 +18,8 @@ export class MathWidget extends WidgetType {
     const el = document.createElement(this.display ? 'div' : 'span');
     el.className = `cm-vis-math ${this.display ? 'cm-vis-math--display' : ''}`;
     el.dataset.pos = String(this.pos);
+    el.dataset.innerFrom = String(this.innerFrom);
+    el.dataset.innerTo = String(this.innerTo);
     el.setAttribute('data-testid', 'vis-math');
     const html = renderMath(this.source, this.display);
     if (html) {

@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { CodePaneHandle } from './CodePane';
+import type { OutlineEntry } from '../editor/visual/outline';
 
 interface Props {
   target: React.RefObject<CodePaneHandle | null>;
@@ -29,6 +31,31 @@ export default function FormatToolbar({ target }: Props) {
         <option value="3">Subsubsection</option>
         <option value="4">Paragraph</option>
       </select>
+      <ContentsDropdown target={target} />
     </span>
+  );
+}
+
+function ContentsDropdown({ target }: Props) {
+  const [outline, setOutline] = useState<OutlineEntry[] | null>(null);
+  return (
+    <select
+      className="fmt__select"
+      title="Contents"
+      aria-label="Contents"
+      data-testid="outline-dropdown"
+      value=""
+      onFocus={() => setOutline(target.current?.getOutline() ?? [])}
+      onChange={(e) => {
+        const line = Number(e.target.value);
+        if (line) target.current?.gotoLine(line);
+        e.target.value = '';
+      }}
+    >
+      <option value="" disabled>Contents…</option>
+      {(outline ?? []).map((h, i) => (
+        <option key={i} value={h.line}>{'\u2007'.repeat((h.level - 1) * 2) + h.title}</option>
+      ))}
+    </select>
   );
 }

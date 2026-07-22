@@ -5,6 +5,7 @@ import type { SyntaxNode } from '@lezer/common';
 import { RevealRange, intersectsReveal } from './reveal';
 import { MathWidget } from './widgets/math';
 import { figureChip, tableChip, citeChip, refChip } from './widgets/chips';
+import { TableWidget, parseTabular } from './widgets/table';
 import { ItemMarkerWidget } from './widgets/listMarker';
 
 /** Copied from codemirror-lang-latex (internal SECTION_RANK, not exported). */
@@ -40,19 +41,19 @@ export interface WalkEmit {
  * the construct is incomplete. Equation-array content is wrapped in `aligned`
  * so KaTeX can typeset the `&`/`\\` alignment.
  */
-function mathParts(name: string, node: SyntaxNode, doc: { sliceString(from: number, to: number): string }): { source: string; display: boolean } | null {
+function mathParts(name: string, node: SyntaxNode, doc: { sliceString(from: number, to: number): string }): { source: string; display: boolean; innerFrom: number; innerTo: number } | null {
   const slice = (a: number, b: number) => doc.sliceString(a, b).trim();
   if (name === 'DollarMath') {
     const inner = node.getChild('InlineMath') ?? node.getChild('DisplayMath');
     const dollars = node.getChildren('Dollar');
     if (!inner || dollars.length < 2) return null;
-    return { source: slice(inner.from, inner.to), display: inner.name === 'DisplayMath' };
+    return { source: slice(inner.from, inner.to), display: inner.name === 'DisplayMath', innerFrom: inner.from, innerTo: inner.to };
   }
   if (name === 'BracketMath' || name === 'ParenMath') {
     const open = node.getChild(name === 'BracketMath' ? 'OpenBracketMath' : 'OpenParenMath');
     const close = node.getChild(name === 'BracketMath' ? 'CloseBracketMath' : 'CloseParenMath');
     if (!open || !close) return null;
-    return { source: slice(open.to, close.from), display: name === 'BracketMath' };
+    return { source: slice(open.to, close.from), display: name === 'BracketMath', innerFrom: open.to, innerTo: close.from };
   }
   if (name === 'EquationEnvironment' || name === 'EquationArrayEnvironment') {
     const begin = node.getChild('BeginEnv');
@@ -62,6 +63,8 @@ function mathParts(name: string, node: SyntaxNode, doc: { sliceString(from: numb
     return {
       source: name === 'EquationArrayEnvironment' ? `\\begin{aligned}${body}\\end{aligned}` : body,
       display: true,
+      innerFrom: begin.to,
+      innerTo: end.from,
     };
   }
   return null;
@@ -104,6 +107,7 @@ function findDescendant(node: SyntaxNode, name: string): SyntaxNode | null {
 }
 
 const itemLine = Decoration.line({ class: 'cm-vis-li' });
+const captionMark = Decoration.mark({ class: 'cm-vis-cap' });
 
 export function walk(state: EditorState, reveals: readonly RevealRange[], from: number, to: number, emit: WalkEmit): void {
   const doc = state.doc;
@@ -113,16 +117,16 @@ export function walk(state: EditorState, reveals: readonly RevealRange[], from: 
     from,
     to,
     leave(n) {
-      if (n.name === 'ListEnvironment') listStack.pop();
+      if (n.name === 'ListEnvironment' || n.name === 'TableEnvironment') listStack.pop();
     },
     enter(n) {
       if (n.name === 'VerbatimEnvironment') return false;
       if (n.name === 'Comment') return false;
 
-      if (n.name === 'ListEnvironment') {
-        const envName = findDescendant(n.node, 'ListEnvName');
+      if (n.name === 'ListEnvironment' || n.name === 'TableEnvironment') {
+        const envName = findDescendant(n.node, n.name === 'ListEnvironment' ? 'ListEnvName' : 'TableEnvName');
         listStack.push({ name: envName ? doc.sliceString(envName.from, envName.to) : 'itemize', counter: 0 });
-        return; // walk into items and nested content
+        return; // walk into items / tabular / caption
       }
       if (n.name === 'BeginEnv' || n.name === 'EndEnv') {
         const inList = listStack.length > 0;
@@ -139,7 +143,8 @@ export function walk(state: EditorState, reveals: readonly RevealRange[], from: 
       if (n.name === 'Item') {
         const top = listStack[listStack.length - 1];
         const tok = n.node.getChild('ItemCtrlSeq');
-        if (!top || !tok || intersectsReveal(reveals, tok.from, tok.to)) return;
+        if (!top || !tok || !['itemize', 'enumerate', 'description'].includes(top.name)) return;
+        if (intersectsReveal(reveals, tok.from, tok.to)) return;
         let markerTo = tok.to;
         if (doc.sliceString(markerTo, markerTo + 1) === ' ') markerTo += 1;
         const marker = top.name === 'enumerate' ? `${++top.counter}. ` : top.name === 'description' ? '– ' : '•  ';
@@ -148,14 +153,59 @@ export function walk(state: EditorState, reveals: readonly RevealRange[], from: 
         return;
       }
 
-      if (n.name === 'FigureEnvironment' || n.name === 'TableEnvironment' || n.name === 'TabularEnvironment') {
+      if (n.name === 'Caption') {
+        if (intersectsReveal(reveals, n.from, n.to)) return;
+        const parts = wrapperParts(n.node, 'TextArgument');
+        if (!parts) return;
+        emit.atomic(n.from, parts.openEnd, hide);
+        emit.atomic(parts.closeFrom, parts.closeTo, hide);
+        if (parts.openEnd < parts.closeFrom) emit.mark(parts.openEnd, parts.closeFrom, captionMark);
+        return;
+      }
+
+      if (n.name === 'FigureEnvironment') {
         if (intersectsReveal(reveals, n.from, n.to)) return; // revealed: show raw source
         const end = n.node.getChild('EndEnv');
         if (!end || end.to !== n.to) return; // incomplete env stays raw
         const caption = findDescendant(n.node, 'Caption');
         const label = caption ? argText(caption, doc) : '';
-        const chip = n.name === 'FigureEnvironment' ? figureChip(label, n.from) : tableChip(label, n.from);
-        emit.atomic(n.from, n.to, Decoration.replace({ widget: chip }));
+        let image: string | null = null;
+        const ig = findDescendant(n.node, 'IncludeGraphics');
+        const igArg = ig && (findDescendant(ig, 'FilePathArgument') ?? findDescendant(ig, 'BareFilePathArgument'));
+        if (igArg) {
+          const open = igArg.getChild('OpenBrace');
+          const close = igArg.getChild('CloseBrace');
+          image = open && close ? doc.sliceString(open.to, close.from).trim() : doc.sliceString(igArg.from, igArg.to).trim();
+        }
+        emit.atomic(n.from, n.to, Decoration.replace({ widget: figureChip(label, n.from, image) }));
+        return false;
+      }
+
+      if (n.name === 'TabularEnvironment') {
+        if (intersectsReveal(reveals, n.from, n.to)) return; // revealed: show raw source
+        const begin = n.node.getChild('BeginEnv');
+        const end = n.node.getChild('EndEnv');
+        if (!begin || !end || end.to !== n.to) return;
+        // column spec is the tabular's argument group right after \begin{tabular}
+        const argNode = n.node.getChild('TabularArgument') ?? n.node.getChild('TextArgument') ?? n.node.getChild('NonEmptyGroup');
+        const argOpen = argNode ? (argNode.getChild('OpenBrace') ?? findDescendant(argNode, 'OpenBrace')) : null;
+        const argClose = argNode ? (argNode.getChild('CloseBrace') ?? findDescendant(argNode, 'CloseBrace')) : null;
+        const bodyFrom = argNode ? argNode.to : begin.to;
+        const parsed = parseTabular(doc.sliceString(bodyFrom, end.from), bodyFrom);
+        if (!parsed) {
+          emit.atomic(n.from, n.to, Decoration.replace({ widget: tableChip('', n.from) }));
+          return false;
+        }
+        const cols = Math.max(...parsed.rows.map((r) => r.length));
+        emit.atomic(n.from, n.to, Decoration.replace({
+          widget: new TableWidget({
+            rows: parsed.rows,
+            rowEnds: parsed.rowEnds,
+            cols,
+            rowInsertAt: doc.lineAt(end.from).from,
+            colSpec: argOpen && argClose ? { from: argOpen.to, to: argClose.from } : null,
+          }, doc.sliceString(n.from, n.to), n.from),
+        }));
         return false;
       }
 
@@ -187,7 +237,7 @@ export function walk(state: EditorState, reveals: readonly RevealRange[], from: 
       const math = mathParts(n.name, n.node, doc);
       if (math) {
         if (intersectsReveal(reveals, n.from, n.to)) return false;
-        emit.atomic(n.from, n.to, Decoration.replace({ widget: new MathWidget(math.source, math.display, n.from) }));
+        emit.atomic(n.from, n.to, Decoration.replace({ widget: new MathWidget(math.source, math.display, n.from, math.innerFrom, math.innerTo) }));
         return false; // math interior is the widget's business
       }
 

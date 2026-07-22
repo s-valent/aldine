@@ -1,4 +1,5 @@
 import { WidgetType } from '@codemirror/view';
+import { citeLabel, fileUrl } from '../context';
 
 /** A compact pill standing in for a construct; click puts the caret inside. */
 class Chip extends WidgetType {
@@ -28,14 +29,52 @@ class Chip extends WidgetType {
   }
 }
 
-export function figureChip(caption: string, pos: number): Chip {
-  return new Chip('figure', caption, pos);
+/** Figure with an inline image preview when the included graphic resolves. */
+class FigureWidget extends WidgetType {
+  constructor(readonly caption: string, readonly image: string | null, readonly pos: number) {
+    super();
+  }
+
+  eq(other: FigureWidget): boolean {
+    return other.caption === this.caption && other.image === this.image;
+  }
+
+  toDOM(): HTMLElement {
+    const el = document.createElement('span');
+    el.className = 'cm-vis-chip cm-vis-figure';
+    el.dataset.pos = String(this.pos);
+    el.setAttribute('data-testid', 'vis-chip-figure');
+    if (this.image) {
+      const url = fileUrl(this.image);
+      if (url) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = this.caption || this.image;
+        img.className = 'cm-vis-figure__img';
+        img.onerror = () => img.remove();
+        el.appendChild(img);
+      }
+    }
+    const cap = document.createElement('span');
+    cap.className = 'cm-vis-figure__cap';
+    cap.textContent = this.caption ? `Figure: ${this.caption}` : 'Figure';
+    el.appendChild(cap);
+    return el;
+  }
+
+  ignoreEvent(event: Event): boolean {
+    return event.type !== 'mousedown';
+  }
+}
+
+export function figureChip(caption: string, pos: number, image: string | null = null): FigureWidget {
+  return new FigureWidget(caption, image, pos);
 }
 export function tableChip(caption: string, pos: number): Chip {
   return new Chip('table', caption, pos);
 }
 export function citeChip(keys: string, pos: number): Chip {
-  return new Chip('cite', keys, pos);
+  return new Chip('cite', citeLabel(keys) ?? keys, pos);
 }
 export function refChip(target: string, pos: number): Chip {
   return new Chip('ref', target, pos);

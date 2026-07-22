@@ -178,7 +178,7 @@ export default function Editor() {
     if (!activeFile) return;
     const ranges = comments
       .filter((c) => c.file === activeFile)
-      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved }));
+      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved, suggestion: c.suggestion }));
     requestAnimationFrame(() => codeRef.current?.setCommentRanges(ranges));
   }, [comments, activeFile]);
 
@@ -237,6 +237,20 @@ export default function Editor() {
       toast(`Could not accept: ${err.message}`, 'error');
     }
   }, [id, branch, loadComments, toast]);
+
+  // visual-mode suggestion widgets dispatch accept/dismiss as window events
+  useEffect(() => {
+    const onAction = (e: Event) => {
+      const { id: cid, action } = (e as CustomEvent<{ id: string; action: 'accept' | 'resolve' }>).detail;
+      const c = comments.find((x) => x.id === cid);
+      if (!c) return;
+      if (action === 'accept') acceptSuggestion(c);
+      else api.resolveComment(id, c.id, true).then(() => { loadComments(); bumpComments(); });
+    };
+    window.addEventListener('aldine:suggestion', onAction);
+    return () => window.removeEventListener('aldine:suggestion', onAction);
+  }, [comments, id, acceptSuggestion, loadComments, bumpComments]);
+
 
   // Inverse SyncTeX: double-click in the PDF → open the source file at that line.
   const onPdfInverse = useCallback(async (page: number, x: number, y: number) => {

@@ -14,7 +14,7 @@ const UNIT_NAMES = new Set([
   'TextBoldCommand', 'TextItalicCommand', 'EmphasisCommand', 'UnderlineCommand', 'TextSmallCapsCommand',
   'DollarMath', 'BracketMath', 'ParenMath', 'EquationEnvironment', 'EquationArrayEnvironment',
   'FigureEnvironment', 'TableEnvironment', 'TabularEnvironment',
-  'Cite', 'Ref', 'BeginEnv', 'EndEnv',
+  'Cite', 'Ref', 'BeginEnv', 'EndEnv', 'Caption',
 ]);
 // \item reveals only its marker token, not the item's whole content.
 const ITEM = 'Item';

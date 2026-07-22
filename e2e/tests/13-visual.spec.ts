@@ -103,9 +103,21 @@ test.describe('visual editor (experimental)', () => {
       await expect(page.getByTestId('vis-math')).toHaveCount(2);
       await expect(page.locator('.katex').first()).toBeVisible();
       await expect(page.locator('.cm-content')).not.toContainText('e^{i\\pi}');
-      // click the inline equation → raw source appears for editing
+      // click the inline equation → the MathLive editor opens
       await page.getByTestId('vis-math').first().click();
-      await expect(page.locator('.cm-content')).toContainText('$e^{i\\pi} + 1 = 0$');
+      await expect(page.getByTestId('math-popover')).toBeVisible();
+      // editing through the math field writes back a precise source edit
+      await page.evaluate(() => {
+        (document.querySelector('[data-testid="math-field"]') as HTMLElement & { value: string }).value = 'e^{i\\pi} + 2 = 1';
+      });
+      await page.getByTestId('math-popover-done').click();
+      await page.waitForTimeout(2500);
+      const edited = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(edited).toContain('$e^{i\\pi} + 2 = 1$');
+      // the "TeX" button drops into raw source instead
+      await page.getByTestId('vis-math').first().click();
+      await page.getByTestId('math-popover-source').click();
+      await expect(page.locator('.cm-content')).toContainText('$e^{i\\pi} + 2 = 1$');
       // leave → re-rendered
       await page.locator('.cm-line', { hasText: 'plain end' }).click();
       await expect(page.locator('.cm-content')).not.toContainText('e^{i\\pi}');
@@ -135,7 +147,7 @@ test.describe('visual editor (experimental)', () => {
       await page.locator('.cm-line', { hasText: 'plain end' }).click();
       await expect(page.getByTestId('vis-item')).toHaveCount(2);
       await expect(page.locator('.cm-content')).not.toContainText('\\begin{itemize}');
-      await expect(page.getByTestId('vis-chip-cite')).toContainText('knuth1984');
+      await expect(page.getByTestId('vis-chip-cite')).toContainText(/knuth1984|Knuth 1984/);
       await expect(page.getByTestId('vis-chip-figure')).toContainText('A very nice plot');
       await expect(page.locator('.cm-content')).not.toContainText('\\caption');
       // clicking the figure chip reveals its source
@@ -219,6 +231,92 @@ test.describe('visual editor (experimental)', () => {
     } finally {
       await A.ctx.close();
       await B.ctx.close();
+      await cleanup(request, id);
+    }
+  });
+
+  test('table renders as an editable grid; cell edits are precise', async ({ page, request }) => {
+    const id = await createProject(request, 'Visual Table');
+    const doc = 'Before.\n\\begin{tabular}{ll}\na & b \\\\\nc & d \\\\\n\\end{tabular}\nplain end\n';
+    try {
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: doc } });
+      await openProject(page, id);
+      await page.locator('.cm-line', { hasText: 'plain end' }).click();
+      await expect(page.getByTestId('vis-table')).toBeVisible();
+      // edit cell "b" → "beta"
+      await page.getByTestId('vis-table').locator('td', { hasText: 'b' }).first().dispatchEvent('mousedown');
+      const input = page.getByTestId('vis-table-cell-input');
+      await input.fill('beta');
+      await input.press('Enter');
+      await page.waitForTimeout(2500);
+      let text = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(text).toContain('a & beta');
+      // add a row
+      await page.getByTestId('vis-table-addrow').dispatchEvent('mousedown');
+      await page.waitForTimeout(2500);
+      text = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(text.match(/\\\\/g)!.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('outline dropdown lists headings and jumps', async ({ page, request }) => {
+    const id = await seed(request, 'Visual Outline');
+    try {
+      await openProject(page, id);
+      await page.locator('.cm-line', { hasText: 'More prose here.' }).click();
+      const dd = page.getByTestId('outline-dropdown');
+      await dd.focus();
+      await expect(dd.locator('option', { hasText: 'Introduction' })).toHaveCount(1);
+      await expect(dd.locator('option', { hasText: 'Details' })).toHaveCount(1);
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('a suggestion renders as an inline tracked change and accepts', async ({ page, request }) => {
+    const id = await seed(request, 'Visual Suggest');
+    try {
+      await request.post(`/api/projects/${id}/comments`, {
+        data: {
+          branch: 'main', file: 'main.tex',
+          anchor: { from: DOC.indexOf('More prose here.'), to: DOC.indexOf('More prose here.') + 'More prose'.length, quote: 'More prose' },
+          body: 'tighten this', suggestion: 'Less prose', author: 'Reviewer',
+        },
+      });
+      await openProject(page, id);
+      await page.locator('.cm-line', { hasText: 'Hello' }).click();
+      await expect(page.getByTestId('vis-suggest')).toBeVisible();
+      await expect(page.locator('.cm-vis-strike')).toContainText('More prose');
+      await page.getByTestId('vis-suggest-accept').dispatchEvent('mousedown');
+      await page.waitForTimeout(2500);
+      const text = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(text).toContain('Less prose here.');
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+
+  test('pasting rich HTML converts to LaTeX', async ({ page, request }) => {
+    const id = await seed(request, 'Visual Paste');
+    try {
+      await openProject(page, id);
+      await page.locator('.cm-line', { hasText: 'More prose here.' }).click();
+      await page.keyboard.press('End');
+      await page.evaluate(() => {
+        const dt = new DataTransfer();
+        dt.setData('text/html', '<p>Copied <b>bold</b> and <i>slanted</i> words.</p><ul><li>alpha</li><li>beta</li></ul>');
+        dt.setData('text/plain', 'Copied bold and slanted words. alpha beta');
+        document.querySelector('.cm-content')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await page.waitForTimeout(2500);
+      const text = await (await request.get(`/api/projects/${id}/file?branch=main&path=main.tex`)).text();
+      expect(text).toContain('\\textbf{bold}');
+      expect(text).toContain('\\textit{slanted}');
+      expect(text).toContain('\\begin{itemize}');
+      expect(text).toContain('\\item alpha');
+    } finally {
       await cleanup(request, id);
     }
   });
