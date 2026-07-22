@@ -798,3 +798,29 @@
 .notfound { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
 .notfound h1 { font-size: 22px; font-weight: 600; }
 .notfound p { color: var(--text-2); }
+
+/* --- a11y & responsive polish (QA deferred batch) --- */
+/* Import-ZIP label acts as a button; expose it to AT */
+.home__bar label.btn, .empty label.btn { position: relative; }
+
+/* light-theme line numbers: lift contrast to meet WCAG */
+:root:not([data-theme="dark"]) .code-pane .cm-gutters { color: #6b6b70; }
+
+/* sidebar tabs: single scrollable row instead of an uneven wrap */
+.sidebar__tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.sidebar__tabs::-webkit-scrollbar { display: none; }
+.sidebar__tab { flex: 0 0 auto; }
+
+/* responsive: below 900px let the editor stack usably; hide the fixed PDF pane
+   split and let panes flow, and allow the sidebar to collapse */
+@media (max-width: 900px) {
+  .editor-shell .resizer { display: none; }
+  .toolbar { flex-wrap: wrap; height: auto; row-gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+  .toolbar__name { max-width: 40vw; }
+}
+@media (max-width: 640px) {
+  .home__bar { flex-direction: column; align-items: stretch; gap: 12px; }
+  .home__bar > div:last-child { flex-wrap: wrap; }
+  .split-pdf, .pdf-pane { display: none; }
+  .sidebar { position: absolute; z-index: 30; height: 100%; box-shadow: var(--shadow-pop); }
+}

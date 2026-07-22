@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Modal from './Modal';
 
 /** Inline composer for a new review comment (replaces the old window.prompt flow). */
 export default function CommentComposer({ quote, onSubmit, onClose }: {
@@ -18,8 +19,8 @@ export default function CommentComposer({ quote, onSubmit, onClose }: {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ width: 460 }} onClick={(e) => e.stopPropagation()} data-testid="comment-composer">
+    <Modal onClose={onClose} label="Add a comment" testId="comment-composer">
+      <div style={{ width: 460 }}>
         <h2 style={{ marginBottom: 8 }}>Add a comment</h2>
         <blockquote className="composer__quote" title={quote}>{quote}</blockquote>
         <textarea
@@ -53,6 +54,6 @@ export default function CommentComposer({ quote, onSubmit, onClose }: {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

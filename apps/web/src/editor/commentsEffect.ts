@@ -7,6 +7,7 @@ export interface CommentRange {
   to: number;
   resolved: boolean;
   suggestion?: string;
+  quote?: string;
 }
 
 export const setComments = StateEffect.define<CommentRange[]>();

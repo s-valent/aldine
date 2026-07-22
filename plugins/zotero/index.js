@@ -63,7 +63,7 @@ export default {
 
         const connect = async () => {
           const key = state.apiKey.trim();
-          if (!key) return;
+          if (!key) { aldine.toast('Paste a Zotero API key first', 'error'); return; }
           setBusy(true);
           try {
             const info = await jfetch('/api/zotero/validate', { method: 'POST', body: JSON.stringify({ apiKey: key }) });

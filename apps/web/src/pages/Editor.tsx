@@ -17,6 +17,7 @@ import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras'
 import { useCommentSignal } from '../editor/commentSignal';
 import GithubSync from '../components/GithubSync';
 import CommentComposer from '../components/CommentComposer';
+import Modal from '../components/Modal';
 import FormatToolbar from '../components/FormatToolbar';
 import { toggleTheme } from '../theme';
 
@@ -39,7 +40,17 @@ export default function Editor() {
   const [pluginPanels, setPluginPanels] = useState<PluginPanel[]>([]);
   const [auto, setAuto] = useState(() => localStorage.getItem('aldine.autoTypeset') !== '0');
   const [stats, setStats] = useState<{ words: number; selWords: number | null }>({ words: 0, selWords: null });
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoomState] = useState(() => {
+    const z = Number(localStorage.getItem('aldine.pdfZoom'));
+    return z >= 0.5 && z <= 3 ? z : 1;
+  });
+  const setZoom = useCallback((v: number | ((z: number) => number)) => {
+    setZoomState((prev) => {
+      const next = typeof v === 'function' ? v(prev) : v;
+      localStorage.setItem('aldine.pdfZoom', String(next));
+      return next;
+    });
+  }, []);
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('aldine.spellcheck') === '1');
@@ -178,7 +189,7 @@ export default function Editor() {
     if (!activeFile) return;
     const ranges = comments
       .filter((c) => c.file === activeFile)
-      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved, suggestion: c.suggestion }));
+      .map((c) => ({ id: c.id, from: c.anchor.from, to: c.anchor.to, resolved: c.resolved, suggestion: c.suggestion, quote: c.anchor.quote }));
     requestAnimationFrame(() => codeRef.current?.setCommentRanges(ranges));
   }, [comments, activeFile]);
 
@@ -460,7 +471,7 @@ export default function Editor() {
                 activeFile={activeFile}
                 onReveal={revealComment}
                 onResolve={async (c, resolved) => { await api.resolveComment(id, c.id, resolved); await loadComments(); bumpComments(); }}
-                onDelete={async (c) => { await api.deleteComment(id, c.id); await loadComments(); bumpComments(); }}
+                onDelete={async (c) => { if (!window.confirm('Delete this comment thread?')) return; await api.deleteComment(id, c.id); await loadComments(); bumpComments(); }}
                 onReply={async (c, body) => { await api.replyComment(id, c.id, body, localUser().name); await loadComments(); bumpComments(); }}
                 onAccept={acceptSuggestion}
               />
@@ -523,7 +534,11 @@ export default function Editor() {
               })}
               {errors.length === 0 && (
                 <div className="errors__row" style={{ cursor: 'default' }}>
-                  <span className="errors__msg">Typesetting failed — open the log for details.</span>
+                  <span className="errors__msg">
+                    {compile.result?.timedOut
+                      ? 'Typesetting timed out — the document took too long (a possible infinite loop, or it needs a bigger compile budget). Open the log for details.'
+                      : 'Typesetting failed — open the log for details.'}
+                  </span>
                 </div>
               )}
             </div>
@@ -558,7 +573,7 @@ export default function Editor() {
             <span className="toolbar__spacer" />
             <div className="zoom" data-testid="zoom-controls">
               <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.1).toFixed(2)))} title="Zoom out" aria-label="Zoom out">−</button>
-              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width">{Math.round(zoom * 100)}%</button>
+              <button className="zoom__label" onClick={() => setZoom(1)} title="Reset to fit width" aria-label={`PDF zoom ${Math.round(zoom * 100)}%, click to reset`}>{Math.round(zoom * 100)}%</button>
               <button className="btn btn--ghost btn--small" onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))} title="Zoom in" aria-label="Zoom in">+</button>
             </div>
             <button
@@ -582,15 +597,15 @@ export default function Editor() {
       )}
 
       {showLog && compile.result && (
-        <div className="modal-backdrop" onClick={() => setShowLog(false)}>
-          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+        <Modal onClose={() => setShowLog(false)} label="Typesetting log" wide>
+          <div>
             <h2>Typesetting log</h2>
             <pre className="logview" data-testid="log-view">{compile.result.log || '(no log)'}</pre>
             <div className="modal__row">
               <button className="btn" onClick={() => setShowLog(false)}>Close</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

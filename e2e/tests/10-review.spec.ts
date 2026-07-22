@@ -86,3 +86,26 @@ test.describe('real-time review', () => {
     }
   });
 });
+
+test.describe('comment re-anchoring (QA regression)', () => {
+  test('a comment highlight tracks its text after edits shift its offset', async ({ page, request }) => {
+    const id = await createProject(request, 'Reanchor');
+    try {
+      // seed a file and anchor a comment on ANCHOR_ME at offset 0 via the API
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: 'ANCHOR_ME here.\nmore lines\n' } });
+      const c = await request.post(`/api/projects/${id}/comments`, {
+        data: { branch: 'main', file: 'main.tex', anchor: { from: 0, to: 9, quote: 'ANCHOR_ME' }, body: 'anchor test', author: 'QA' },
+      });
+      expect(c.ok()).toBeTruthy();
+      // now shift ANCHOR_ME down by prepending text — the stored offset (0) is stale
+      await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: 'main.tex', content: 'PREPENDED LINE ONE\nPREPENDED LINE TWO\n' + 'ANCHOR_ME here.\nmore lines\n' } });
+      // open fresh: the client must re-anchor the comment to ANCHOR_ME by its quote,
+      // not leave the highlight on the (now different) text at offset 0
+      await openProject(page, id);
+      await expect(page.locator('.cm-comment-range')).toContainText('ANCHOR_ME', { timeout: 10_000 });
+      await expect(page.locator('.cm-comment-range')).not.toContainText('PREPENDED');
+    } finally {
+      await cleanup(request, id);
+    }
+  });
+});

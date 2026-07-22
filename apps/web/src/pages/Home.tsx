@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ProjectSummary, TemplateInfo } from '../api';
 import { useToast } from '../components/Toast';
 import { useAuth } from '../components/Auth';
+import Modal from '../components/Modal';
 import { IconDoc, IconLink, IconX } from '../components/Icons';
 import AccountSettings from '../components/AccountSettings';
 import { getTheme, toggleTheme } from '../theme';
@@ -12,6 +13,7 @@ import { friendlyDate } from '../util/dates';
 
 export default function Home() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [creating, setCreating] = useState(false);
   const [themeChoice, setThemeChoice] = useState(getTheme());
   const [newName, setNewName] = useState('');
@@ -26,7 +28,9 @@ export default function Home() {
   const toast = useToast();
   const { authEnabled, user, setUser } = useAuth();
 
-  const load = () => api.listProjects().then(setProjects).catch(() => setProjects([]));
+  const load = () => api.listProjects()
+    .then((p) => { setProjects(p); setLoadFailed(false); })
+    .catch(() => { setLoadFailed(true); setProjects((cur) => cur ?? []); });
   useEffect(() => { load(); }, []);
   // returning from GitHub OAuth connect → reopen the import flow (now connected)
   useEffect(() => {
@@ -108,7 +112,7 @@ export default function Home() {
             )}
             <label className="btn" data-testid="import-zip">
               Import ZIP
-              <input type="file" accept=".zip" hidden data-testid="import-input"
+              <input type="file" accept=".zip" hidden data-testid="import-input" aria-label="Import a project from a ZIP file"
                 onChange={async (e) => { if (e.target.files?.[0]) await importZip(e.target.files[0]); e.target.value = ''; }} />
             </label>
             <button className="btn" onClick={() => setShowGithub(true)} data-testid="new-from-github">
@@ -122,6 +126,11 @@ export default function Home() {
 
         {projects === null ? (
           <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>
+        ) : loadFailed ? (
+          <div className="empty">
+            <p style={{ margin: '0 0 16px' }}>Couldn’t reach the server to load your projects.</p>
+            <button className="btn btn--primary" onClick={load}>Try again</button>
+          </div>
         ) : projects.length === 0 ? (
           <div className="empty">
             <p style={{ margin: '0 0 16px' }}>No projects yet — start a paper however you like.</p>
@@ -177,8 +186,8 @@ export default function Home() {
       )}
 
       {creating && (
-        <div className="modal-backdrop" onClick={() => setCreating(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <Modal onClose={() => setCreating(false)} label="New project">
+          <div>
             <h2>New project</h2>
             <p className="modal__sub">Name it, pick a starting point, start writing.</p>
             <input
@@ -212,7 +221,7 @@ export default function Home() {
               <button className="btn btn--primary" onClick={create} data-testid="create-project">Create</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -242,8 +251,8 @@ function ShareModal({ project, onClose, onSaved, toast }: {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} data-testid="share-modal">
+    <Modal onClose={onClose} label={`Share ${project.name}`} testId="share-modal">
+      <div>
         <h2>Share “{project.name}”</h2>
         <p className="modal__sub">Choose who can open and edit this project.</p>
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -267,6 +276,6 @@ function ShareModal({ project, onClose, onSaved, toast }: {
           <button className="btn btn--primary" onClick={save} disabled={busy} data-testid="share-save">Save</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

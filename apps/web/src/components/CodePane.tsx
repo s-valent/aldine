@@ -17,8 +17,31 @@ import { visualExtensions, type VisualDeps } from '../editor/visual';
 import { toggleStyle, setSectionLevel, toggleItemize } from '../editor/visual/commands';
 import { documentOutline, OutlineEntry } from '../editor/visual/outline';
 import type { PresenceUser } from './Presence';
+import type { Text } from '@codemirror/state';
 
 export type EditorMode = 'source' | 'visual';
+
+/**
+ * Re-anchor a comment by its stored quote when its saved offset has drifted
+ * (edits above it made while it wasn't being live-tracked — reload, another
+ * user's edits). Uses the occurrence of the quote nearest the saved offset;
+ * falls back to the clamped saved offset when the quote can't be found.
+ */
+function reanchor(doc: Text, r: CommentRange): CommentRange {
+  const len = doc.length;
+  const from = Math.min(Math.max(0, r.from), len);
+  const to = Math.min(Math.max(from, r.to), len);
+  if (!r.quote) return { ...r, from, to };
+  if (doc.sliceString(from, to) === r.quote) return { ...r, from, to }; // still exact
+  const text = doc.toString();
+  let best = -1, bestDist = Infinity;
+  for (let i = text.indexOf(r.quote); i !== -1; i = text.indexOf(r.quote, i + 1)) {
+    const d = Math.abs(i - r.from);
+    if (d < bestDist) { best = i; bestDist = d; }
+  }
+  if (best === -1) return { ...r, from, to }; // quote gone — keep clamped offset
+  return { ...r, from: best, to: best + r.quote.length };
+}
 
 export interface CodePaneHandle {
   gotoLine(line: number): void;
@@ -134,6 +157,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
   cbRef.current = { onDocChanged, onStats, onSave, onJumpToPdf };
   // Per-mount reconfiguration handles: compartments + the deps visualExtensions needs.
   const reconfRef = useRef<{ modeComp: Compartment; spellComp: Compartment; deps: VisualDeps } | null>(null);
+  const lastCommentRanges = useRef<CommentRange[]>([]);
 
   useImperativeHandle(ref, () => ({
     gotoLine(line: number) {
@@ -163,9 +187,10 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       return { from: sel.from, to: sel.to, quote: view.state.sliceDoc(sel.from, sel.to) };
     },
     setCommentRanges(ranges) {
+      lastCommentRanges.current = ranges; // remember for a re-apply once the doc syncs
       const view = viewRef.current;
       if (!view) return;
-      view.dispatch({ effects: setComments.of(ranges) });
+      view.dispatch({ effects: setComments.of(ranges.map((r) => reanchor(view.state.doc, r))) });
     },
     revealPos(pos) {
       const view = viewRef.current;
@@ -297,6 +322,11 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
 
     const initialStats = () => {
       cbRef.current.onStats?.({ words: latexWordCount(view.state.doc.toString()), selWords: null });
+      // Re-anchor comments against the now-populated doc: a push that arrived
+      // before the Yjs sync ran against an empty document.
+      if (lastCommentRanges.current.length) {
+        view.dispatch({ effects: setComments.of(lastCommentRanges.current.map((r) => reanchor(view.state.doc, r))) });
+      }
     };
     provider.on('synced', initialStats);
 

@@ -314,10 +314,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.patch<{ Params: { id: string }; Body: Partial<Pick<store.ProjectMeta, 'name' | 'rootFile' | 'engine'>> }>(
-    '/api/projects/:id', async (req) => {
+    '/api/projects/:id', async (req, reply) => {
       const meta = await store.readMeta(req.params.id);
       const { name, rootFile, engine } = req.body || {};
-      if (name) meta.name = name;
+      if (name !== undefined) {
+        const trimmed = String(name).trim();
+        if (!trimmed) return reply.code(400).send({ error: 'Project name cannot be empty' });
+        if (trimmed.length > 200) return reply.code(400).send({ error: 'Project name is too long (max 200 characters)' });
+        meta.name = trimmed;
+      }
       if (rootFile) meta.rootFile = rootFile;
       if (engine) meta.engine = engine;
       await store.writeMeta(meta);
@@ -410,7 +415,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     evictDoc(req.params.id, branch, rel); // prevent resurrection via pending store
     store.deleteFile(req.params.id, branch, rel);
     scheduleCommit(req.params.id, branch);
-    return { ok: true };
+    // If the typeset root was deleted, re-point it at another .tex so the next
+    // compile doesn't fail with "root file not found".
+    let newRoot: string | undefined;
+    try {
+      const meta = await store.readMeta(req.params.id);
+      if (meta.rootFile === rel) {
+        const tex = store.listFiles(req.params.id, branch).find((f) => f.type === 'file' && f.path.endsWith('.tex'));
+        if (tex) { meta.rootFile = tex.path; await store.writeMeta(meta); newRoot = tex.path; }
+      }
+    } catch { /* meta unreadable — leave as-is */ }
+    return { ok: true, ...(newRoot ? { newRoot } : {}) };
   });
 
   /** Serve compile artifacts (PDF, synctex) from the branch's .aldine-out. */
@@ -677,8 +692,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/comments', async (req, reply) => {
       const b = req.body || ({} as any);
       if (!b.file || !b.anchor) return reply.code(400).send({ error: 'file and anchor required' });
+      const branch = b.branch || 'main';
+      // the anchor must point at a real span in a real file
+      if (!store.fileExists(req.params.id, branch, b.file)) return reply.code(404).send({ error: 'File not found' });
+      const { from, to } = b.anchor;
+      if (typeof from !== 'number' || typeof to !== 'number' || from < 0 || to <= from) {
+        return reply.code(400).send({ error: 'Invalid comment anchor' });
+      }
+      if (typeof b.body === 'string' && b.body.length > 5000) return reply.code(400).send({ error: 'Comment is too long (max 5000 characters)' });
+      if (typeof b.suggestion === 'string' && b.suggestion.length > 20000) return reply.code(400).send({ error: 'Suggestion is too long' });
       return comments.addComment(req.params.id, {
-        branch: b.branch || 'main',
+        branch,
         file: b.file,
         anchor: b.anchor,
         author: reqUser(req)?.name || b.author || 'Anonymous',

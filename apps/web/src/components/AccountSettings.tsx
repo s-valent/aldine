@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, AuthUser } from '../api';
 import { useToast } from './Toast';
+import Modal from './Modal';
 
 /** Account settings: identity + change password (password accounts only). */
 export default function AccountSettings({ user, onClose }: { user: AuthUser; onClose(): void }) {
@@ -25,8 +26,8 @@ export default function AccountSettings({ user, onClose }: { user: AuthUser; onC
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ width: 420 }} onClick={(e) => e.stopPropagation()} data-testid="account-settings">
+    <Modal onClose={onClose} label="Account settings" testId="account-settings">
+      <div style={{ width: 420 }}>
         <h2 style={{ marginBottom: 2 }}>Account</h2>
         <p className="modal__sub">{user.email}</p>
 
@@ -57,6 +58,6 @@ export default function AccountSettings({ user, onClose }: { user: AuthUser; onC
           {!isSso && <button className="btn btn--primary" onClick={change} disabled={busy} data-testid="save-password">{busy ? '…' : 'Update password'}</button>}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

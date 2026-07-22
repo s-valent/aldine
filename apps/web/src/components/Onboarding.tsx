@@ -1,3 +1,4 @@
+import Modal from './Modal';
 /** First-run welcome shown once (localStorage-gated by the parent). */
 export default function Onboarding({ onNew, onGithub, onImportZip, onClose }: {
   onNew(): void; onGithub(): void; onImportZip(file: File): void; onClose(): void;
@@ -5,8 +6,8 @@ export default function Onboarding({ onNew, onGithub, onImportZip, onClose }: {
   const start = (fn: () => void) => { onClose(); fn(); };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal onboard" onClick={(e) => e.stopPropagation()} data-testid="onboarding">
+    <Modal onClose={onClose} label="Welcome to Aldine" testId="onboarding">
+      <div className="onboard">
         <h1 className="home__brand" style={{ fontSize: 30, marginBottom: 2 }}>aldine<em>.</em></h1>
         <p className="home__tag" style={{ marginBottom: 20 }}>Write LaTeX together — fast, versioned, yours.</p>
 
@@ -36,6 +37,6 @@ export default function Onboarding({ onNew, onGithub, onImportZip, onClose }: {
           <button className="btn btn--primary" onClick={onClose} data-testid="onboard-dismiss">Get started</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
