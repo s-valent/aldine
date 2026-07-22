@@ -5,6 +5,7 @@ import { Server as HocuspocusServer } from '@hocuspocus/server';
 import type { Hocuspocus } from '@hocuspocus/server';
 import * as Y from 'yjs';
 import { branchDir, readMeta } from './store.js';
+import { config } from './config.js';
 import { commitAll, ensureWorktree } from './gitops.js';
 import { safeJoin, debouncePerKey } from './util.js';
 import { AUTH_ENABLED, userFromRequest } from './auth.js';
@@ -36,6 +37,30 @@ export function parseDocName(name: string): { projectId: string; branch: string;
 }
 
 const TEXT_KEY = 'content';
+
+/**
+ * Yjs binary snapshots (one per doc), stored OUTSIDE the git worktree so they
+ * never reach git or the compiler. Reloading a doc from its snapshot preserves
+ * CRDT operation identity; reseeding from plain text instead would mint fresh
+ * operations that a reconnecting client's copy MERGES — duplicating the whole
+ * document on every server restart/deploy. The .tex file on disk stays the
+ * source of truth for git/compile; the snapshot only carries collab identity.
+ */
+const YJS_DIR = path.join(config.metaRoot, 'yjs');
+const snapPath = (name: string) => path.join(YJS_DIR, crypto.createHash('sha1').update(name).digest('hex') + '.ybin');
+
+function writeSnapshot(name: string, document: Y.Doc): void {
+  try {
+    fs.mkdirSync(YJS_DIR, { recursive: true });
+    fs.writeFileSync(snapPath(name), Buffer.from(Y.encodeStateAsUpdate(document)));
+  } catch (err) { console.error('[collab] snapshot write failed', (err as Error).message); }
+}
+function readSnapshot(name: string): Uint8Array | null {
+  try { return fs.readFileSync(snapPath(name)); } catch { return null; }
+}
+function deleteSnapshot(name: string): void {
+  try { fs.rmSync(snapPath(name), { force: true }); } catch { /* best effort */ }
+}
 
 /** Debounced auto-commit per project::branch after edits settle. */
 const scheduleAutoCommit = debouncePerKey(20_000, (key: string) => {
@@ -78,7 +103,11 @@ export function writeDocToDisk(name: string, document: Y.Doc): void {
   if (!fs.existsSync(dir)) return; // branch was deleted while doc loaded
   const abs = safeJoin(dir, filePath);
   const text = document.getText(TEXT_KEY).toString();
-  // Skip the write when the content is identical to what's on disk (keeps
+  // Keep the collab snapshot in step with the live doc on every store (small,
+  // and independent of the .tex-write skip below so reconnect identity is
+  // always current even when the rendered text didn't change).
+  writeSnapshot(name, document);
+  // Skip the .tex write when the content is identical to what's on disk (keeps
   // latexmk incremental builds effective) — compared in memory, no disk read.
   const hash = sha1(text);
   if (lastWritten.get(name) === hash) return;
@@ -153,11 +182,31 @@ export const hocuspocus: Hocuspocus = HocuspocusServer.configure({
     if (text.length > 0) return document; // already has state (e.g. synced from a peer node)
     let content = '';
     try { content = fs.readFileSync(safeJoin(branchDir(projectId, branch), filePath), 'utf8'); } catch { /* new file → empty */ }
-    if (content.length > 0) text.insert(0, content);
-    // Seed lastWritten from what's actually on disk right now, so (a) the first
-    // store of an unchanged doc skips (no mtime churn) and (b) a doc reopened
-    // after an out-of-band disk change tracks the NEW disk state, not a stale
-    // hash from a previous load — otherwise a later store could wrongly skip.
+
+    // Prefer the Yjs snapshot (preserves operation identity → reconnect-safe).
+    // Fall back to a plain-text seed only when there's no snapshot or the file
+    // changed out-of-band on disk (git pull/merge/revert), where disk wins.
+    const snap = readSnapshot(documentName);
+    let loaded = false;
+    if (snap) {
+      try {
+        Y.applyUpdate(document, snap);
+        loaded = true;
+        if (text.toString() !== content) {
+          document.transact(() => { text.delete(0, text.length); if (content.length) text.insert(0, content); });
+          writeSnapshot(documentName, document);
+        }
+      } catch {
+        try { document.transact(() => text.delete(0, text.length)); } catch { /* start clean */ }
+        loaded = false;
+      }
+    }
+    if (!loaded) {
+      if (content.length > 0) text.insert(0, content);
+      writeSnapshot(documentName, document); // establish a snapshot for future reconnects
+    }
+    // Track lastWritten against disk so the first store of an unchanged doc
+    // skips the .tex rewrite (no latexmk churn).
     lastWritten.set(documentName, sha1(content));
     return document;
   },
@@ -191,6 +240,7 @@ export function evictDoc(projectId: string, branch: string, filePath: string): v
   const name = docName(projectId, branch, filePath);
   tombstone(name);
   lastWritten.delete(name);
+  deleteSnapshot(name); // file deleted/renamed → drop its collab snapshot so a re-create starts clean
   const doc = hocuspocus.documents.get(name) as (Y.Doc & { destroy?: () => void }) | undefined;
   if (doc) {
     hocuspocus.documents.delete(name);
@@ -238,5 +288,6 @@ export function refreshBranchDocsFromDisk(projectId: string, branch: string): vo
       text.delete(0, text.length);
       text.insert(0, content!);
     });
+    writeSnapshot(name, doc); // the doc's ops changed → keep the reconnect snapshot current
   });
 }

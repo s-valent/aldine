@@ -34,6 +34,19 @@ function reqUser(req: any): auth.PublicUser | null {
   return req._user ?? null;
 }
 
+/** Validate an email/password body before it reaches auth (avoids leaking
+ *  internal TypeErrors on malformed requests, and caps lengths). Returns an
+ *  error message, or null when the shape is acceptable. */
+function badCredentials(body: { email?: unknown; password?: unknown } | undefined): string | null {
+  const email = body?.email, password = body?.password;
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
+    return 'Email and password are required';
+  }
+  if (email.length > 254) return 'Email is too long';
+  if (password.length > 1024) return 'Password is too long';
+  return null;
+}
+
 function oauthProviders(): Array<{ id: string; label: string }> {
   return oauth.configuredProviders().map((p) => ({ id: p.id, label: p.label }));
 }
@@ -87,6 +100,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!(await registerLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
+    const bad = badCredentials(req.body);
+    if (bad) return reply.code(400).send({ error: bad });
     try {
       const user = await auth.register(req.body.email, req.body.password, req.body.name);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
@@ -98,6 +113,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!(await loginLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many attempts — wait a moment and try again' });
+    if (badCredentials(req.body)) return reply.code(400).send({ error: 'Email and password are required' });
     try {
       const user = await auth.login(req.body.email, req.body.password);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
@@ -346,12 +362,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.put<{ Params: { id: string }; Body: { branch?: string; path: string; content?: string; encoding?: 'utf8' | 'base64' } }>(
+  app.put<{ Params: { id: string }; Body: { branch?: string; path: string; content?: string; encoding?: 'utf8' | 'base64'; createOnly?: boolean } }>(
     '/api/projects/:id/file', async (req, reply) => {
-      const { branch = 'main', path: rel, content = '', encoding = 'utf8' } = req.body || {};
+      const { branch = 'main', path: rel, content = '', encoding = 'utf8', createOnly = false } = req.body || {};
       if (!rel) return reply.code(400).send({ error: 'path required' });
       if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
       await gitops.ensureWorktree(req.params.id, branch);
+      // createOnly (new-file flow): never clobber an existing file with empty content
+      if (createOnly && store.fileExists(req.params.id, branch, rel)) {
+        return reply.code(409).send({ error: 'A file with that name already exists' });
+      }
       store.writeFile(req.params.id, branch, rel, encoding === 'base64' ? Buffer.from(content, 'base64') : content);
       refreshBranchDocsFromDisk(req.params.id, branch);
       scheduleCommit(req.params.id, branch); // non-collab write → still reach git history
@@ -474,17 +494,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/api/projects/:id/branches', async (req, reply) => {
       const { name, from = 'main' } = req.body || {};
       if (!name) return reply.code(400).send({ error: 'name required' });
+      if (!BRANCH_RE.test(name) || name.includes('..') || /^(refs|heads|remotes)\//.test(name) || /^-/.test(name)) {
+        return reply.code(400).send({ error: 'Invalid branch name' });
+      }
       // capture latest edits so the new branch starts from what the user sees
       flushBranchDocs(req.params.id, from);
       await gitops.commitAll(req.params.id, from, 'aldine: checkpoint before branching').catch(() => {});
-      await gitops.createBranch(req.params.id, name, from);
+      try {
+        await gitops.createBranch(req.params.id, name, from);
+      } catch (err) {
+        return reply.code(409).send({ error: `Could not create branch: ${(err as Error).message}` });
+      }
       return { ok: true };
     });
 
   app.delete<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/branches', async (req, reply) => {
     const { name } = req.query;
     if (!name) return reply.code(400).send({ error: 'name required' });
-    await gitops.deleteBranch(req.params.id, name);
+    if (name === 'main') return reply.code(400).send({ error: 'Cannot delete the main branch' });
+    try {
+      await gitops.deleteBranch(req.params.id, name);
+    } catch (err) {
+      return reply.code(409).send({ error: `Could not delete branch: ${(err as Error).message}` });
+    }
     return { ok: true };
   });
 

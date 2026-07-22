@@ -104,6 +104,10 @@ export function readFile(id: string, branch: string, rel: string): Buffer {
   return fs.readFileSync(safeJoin(branchDir(id, branch), rel));
 }
 
+export function fileExists(id: string, branch: string, rel: string): boolean {
+  try { return fs.existsSync(safeJoin(branchDir(id, branch), rel)); } catch { return false; }
+}
+
 export function writeFile(id: string, branch: string, rel: string, content: string | Buffer): void {
   const abs = safeJoin(branchDir(id, branch), rel);
   fs.mkdirSync(path.dirname(abs), { recursive: true });

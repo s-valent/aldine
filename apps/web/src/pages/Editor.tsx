@@ -418,7 +418,16 @@ export default function Editor() {
                 projectId={id}
                 branch={branch}
                 onOpen={setActiveFile}
-                onCreate={async (path) => { await api.writeFile(id, branch, path, ''); await loadFiles(); setActiveFile(path); }}
+                onCreate={async (path) => {
+                  try {
+                    await api.createFile(id, branch, path);
+                    await loadFiles();
+                    setActiveFile(path);
+                  } catch (err: any) {
+                    if (/already exists/i.test(err?.message)) { toast(`"${path}" already exists`, 'error'); setActiveFile(path); }
+                    else toast(`Could not create file: ${err.message}`, 'error');
+                  }
+                }}
                 onUploaded={async (paths) => {
                   await loadFiles();
                   toast(paths.length === 1 ? `Uploaded ${paths[0]}` : `Uploaded ${paths.length} files`, 'ok');
