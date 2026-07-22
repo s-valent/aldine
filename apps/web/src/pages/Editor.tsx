@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, CompileResult, ProjectDetail, TreeEntry, Comment, localUser } from '../api';
 import { useToast } from '../components/Toast';
 import FileTree from '../components/FileTree';
-import CodePane, { CodePaneHandle } from '../components/CodePane';
+import CodePane, { CodePaneHandle, EditorMode } from '../components/CodePane';
 import PdfPane, { PdfPaneHandle } from '../components/PdfPane';
 import BranchMenu from '../components/BranchMenu';
 import HistoryPanel from '../components/HistoryPanel';
@@ -42,6 +42,11 @@ export default function Editor() {
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('aldine.spellcheck') === '1');
+  // Visual mode is gated by an experimental flag until it graduates.
+  const visualEnabled = localStorage.getItem('aldine.experimental.visualEditor') === '1';
+  const [mode, setMode] = useState<EditorMode>(() =>
+    visualEnabled && localStorage.getItem('aldine.editorMode') === 'visual' ? 'visual' : 'source');
+  const switchMode = (m: EditorMode) => { localStorage.setItem('aldine.editorMode', m); setMode(m); };
   const [comments, setComments] = useState<Comment[]>([]);
   const [composing, setComposing] = useState<{ from: number; to: number; quote: string } | null>(null);
   const codeRef = useRef<CodePaneHandle>(null);
@@ -280,6 +285,9 @@ export default function Editor() {
       { id: 'jump-pdf', group: 'Action', title: 'Jump PDF to cursor', hint: '⌘J', run: () => jumpToPdf() },
       { id: 'spell', group: 'Action', title: spellcheck ? 'Turn spellcheck off' : 'Turn spellcheck on', run: () => setSpellcheck((s) => { localStorage.setItem('aldine.spellcheck', s ? '0' : '1'); return !s; }) },
       { id: 'theme', group: 'View', title: 'Toggle light/dark theme', run: () => { toggleTheme(); } },
+      ...(visualEnabled
+        ? [{ id: 'mode', group: 'View', title: mode === 'visual' ? 'Switch to Source editing' : 'Switch to Visual editing', run: () => switchMode(mode === 'visual' ? 'source' : 'visual') }]
+        : [{ id: 'experimental-visual', group: 'View', title: 'Enable experimental Visual editor', run: () => { localStorage.setItem('aldine.experimental.visualEditor', '1'); location.reload(); } }]),
       { id: 'commit', group: 'Git', title: 'Save a checkpoint…', run: () => { setTab('history'); } },
       { id: 'newbranch', group: 'Git', title: 'New branch…', run: () => { setTab('files'); document.querySelector<HTMLElement>('[data-testid="branch-menu"]')?.click(); } },
     ];
@@ -346,6 +354,12 @@ export default function Editor() {
           onSwitch={switchBranch}
           onChanged={() => { loadProject(); loadFiles(); }}
         />
+        {visualEnabled && (
+          <div className="seg" role="tablist" aria-label="Editing mode" data-testid="mode-toggle">
+            <button role="tab" aria-selected={mode === 'source'} className={`seg__btn ${mode === 'source' ? 'seg__btn--active' : ''}`} onClick={() => switchMode('source')}>Source</button>
+            <button role="tab" aria-selected={mode === 'visual'} className={`seg__btn ${mode === 'visual' ? 'seg__btn--active' : ''}`} onClick={() => switchMode('visual')}>Visual</button>
+          </div>
+        )}
         <div className="toolbar__spacer" />
         {project.github && (
           <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
@@ -442,7 +456,7 @@ export default function Editor() {
                 </span>
               </div>
               <CodePane
-                key={`${id}::${branch}::${activeFile}::${spellcheck}`}
+                key={`${id}::${branch}::${activeFile}`}
                 ref={codeRef}
                 projectId={id}
                 branch={branch}
@@ -453,6 +467,7 @@ export default function Editor() {
                 onStats={setStats}
                 onJumpToPdf={jumpToPdf}
                 spellcheck={spellcheck}
+                mode={mode}
               />
             </>
           ) : (

@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars, Decoration, DecorationSet } from '@codemirror/view';
-import { EditorState, StateField, StateEffect } from '@codemirror/state';
+import { EditorState, StateField, StateEffect, Compartment } from '@codemirror/state';
 import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
@@ -12,7 +12,10 @@ import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { localUser } from '../api';
 import { citeCompletionSource, refCompletionSource, citeHoverTooltip, warmBib } from '../editor/latexExtras';
+import { visualExtensions, type VisualDeps } from '../editor/visual';
 import type { PresenceUser } from './Presence';
+
+export type EditorMode = 'source' | 'visual';
 
 export interface CodePaneHandle {
   gotoLine(line: number): void;
@@ -58,6 +61,7 @@ interface Props {
   onStats?(stats: { words: number; selWords: number | null }): void;
   onJumpToPdf?(): void;
   spellcheck?: boolean;
+  mode?: EditorMode;
 }
 
 /** Approximate word count for LaTeX prose: strips comments, commands, math. */
@@ -110,11 +114,22 @@ const aldineTheme = EditorView.theme({
   '.cm-panels': { backgroundColor: 'var(--bg-inset)', color: 'var(--text)', borderColor: 'var(--hairline)' },
 });
 
-const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf, spellcheck = false }, ref) {
+/** Spellcheck is presentation config, swapped at runtime via a Compartment. */
+function spellcheckAttrs(spellcheck: boolean, filePath: string) {
+  return EditorView.contentAttributes.of({
+    spellcheck: spellcheck && /\.(tex|md|txt)$/i.test(filePath) ? 'true' : 'false',
+    autocorrect: 'off',
+    autocapitalize: 'off',
+  });
+}
+
+const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId, branch, filePath, onUsers, onSave, onDocChanged, onStats, onJumpToPdf, spellcheck = false, mode = 'source' }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const cbRef = useRef({ onDocChanged, onStats, onSave, onJumpToPdf });
   cbRef.current = { onDocChanged, onStats, onSave, onJumpToPdf };
+  // Per-mount reconfiguration handles: compartments + the deps visualExtensions needs.
+  const reconfRef = useRef<{ modeComp: Compartment; spellComp: Compartment; deps: VisualDeps } | null>(null);
 
   useImperativeHandle(ref, () => ({
     gotoLine(line: number) {
@@ -180,6 +195,9 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
     provider.setAwarenessField('user', { name: user.name, color: user.color, colorLight: user.color + '55' });
 
     const awareness = provider.awareness!;
+    const modeComp = new Compartment();
+    const spellComp = new Compartment();
+    const deps: VisualDeps = { projectId, branch, ydoc, awareness };
     const reportUsers = () => {
       // key by Yjs clientID so two collaborators with the same display name stay distinct
       const byClient = new Map<number, PresenceUser>();
@@ -249,16 +267,14 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           aldineTheme,
           EditorView.lineWrapping,
           // browser-native spellcheck on prose (only meaningful for .tex/.md)
-          EditorView.contentAttributes.of({
-            spellcheck: spellcheck && /\.(tex|md|txt)$/i.test(filePath) ? 'true' : 'false',
-            autocorrect: 'off',
-            autocapitalize: 'off',
-          }),
+          spellComp.of(spellcheckAttrs(spellcheck, filePath)),
+          modeComp.of(mode === 'visual' ? visualExtensions(deps) : []),
           yCollab(ytext, provider.awareness),
         ],
       }),
     });
     viewRef.current = view;
+    reconfRef.current = { modeComp, spellComp, deps };
 
     const initialStats = () => {
       cbRef.current.onStats?.({ words: latexWordCount(view.state.doc.toString()), selWords: null });
@@ -273,8 +289,22 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
       provider.destroy();
       ydoc.destroy();
       viewRef.current = null;
+      reconfRef.current = null;
     };
   }, [projectId, branch, filePath]);
+
+  // Mode and spellcheck are presentation-only: swap them at runtime through
+  // compartments so the Yjs doc, collab socket, scroll, and cursor survive.
+  useEffect(() => {
+    const view = viewRef.current, rc = reconfRef.current;
+    if (!view || !rc) return;
+    view.dispatch({ effects: rc.modeComp.reconfigure(mode === 'visual' ? visualExtensions(rc.deps) : []) });
+  }, [mode]);
+  useEffect(() => {
+    const view = viewRef.current, rc = reconfRef.current;
+    if (!view || !rc) return;
+    view.dispatch({ effects: rc.spellComp.reconfigure(spellcheckAttrs(spellcheck, filePath)) });
+  }, [spellcheck, filePath]);
 
   return <div ref={hostRef} className="code-pane" data-testid="code-pane" />;
 });
