@@ -7,14 +7,24 @@ All notable changes to Aldine are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- **Visual editing mode (experimental)**: LaTeX renders as formatted text —
-  styled headings, bold/italic, real list bullets, KaTeX math, chips for
-  figures/tables/cites — while the source stays the single source of truth.
-  **Byte-stable by construction**: rendering never rewrites source you didn't
-  deliberately edit (proven by an e2e test). Cursor-reveal shows raw source
-  for the construct under any caret, including remote collaborators'.
-  Toggle via the Source|Visual control after enabling "experimental Visual
-  editor" in the command palette. Mod-B/Mod-I formatting works in both modes.
+- **Visual editing mode (experimental)** — LaTeX renders as formatted text
+  while the source stays the single source of truth. **Byte-stable by
+  construction**: rendering never rewrites source you didn't deliberately edit
+  (proven by an e2e test) — unlike Overleaf's visual editor. Includes:
+  - Styled headings, bold/italic/underline, real itemize/enumerate lists.
+  - **KaTeX math with click-to-edit** in a MathLive WYSIWYG popover; edits
+    write back precise source.
+  - **Editable tables** — `tabular` renders as a grid you edit in place
+    (cell edit, add row/column).
+  - **Inline tracked changes** — review suggestions show as strikethrough +
+    proposed text with accept/dismiss.
+  - **Paste rich text → LaTeX** — HTML from Word/Docs/web converts on paste.
+  - Figure chips render the image; cite chips show author-year from the `.bib`;
+    a Contents dropdown lists and jumps to headings.
+  - Cursor-reveal shows raw source for the construct under any caret — including
+    a remote collaborator's, so it stays collab-correct.
+  Enable via "experimental Visual editor" in the command palette (⌘K), then the
+  Source|Visual toggle. Off by default. Mod-B/Mod-I work in both modes.
 - `ALDINE_TEXLIVE_SCHEME=full` build option: compiler image with **all of
   CTAN** preinstalled (scheme-full, ~9 GB on disk) instead of the curated medium set.
   Missing-package compile errors now name the package and point at the option.
@@ -23,6 +33,20 @@ All notable changes to Aldine are documented here. The format follows
 - Relicensed from MIT to AGPL-3.0 (pre-launch, sole-author): self-hosting is
   unaffected; hosted derivatives must share their modifications. Plugins are
   separate works and may use any license.
+
+### Fixed
+- Documents no longer duplicate when a collaborator reconnects after a server
+  restart/deploy (Yjs docs now reload from a binary snapshot, preserving
+  operation identity, instead of reseeding from text).
+- Creating or renaming a file onto an existing name no longer destroys it.
+- DOI/arXiv citation import escapes `&` and other specials so the imported
+  `.bib` always compiles.
+- A stale biblatex `.aux` no longer breaks later compiles after the package set
+  changes (the compiler cleans aux and rebuilds).
+- Review-comment anchors track their text after edits above them, across reload.
+- Deleting the typeset root re-points it at another `.tex`.
+- Modals are proper dialogs (focus trap, Escape); editor is usable on small
+  screens; assorted validation, error-state, and a11y fixes.
 
 ## [0.1.0] — 2026-07-19
 

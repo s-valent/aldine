@@ -229,9 +229,27 @@
       <strong>track changes, git, and Zotero</strong>, and the deployment is a Toolkit-managed
       monolith with Mongo and Redis. In Aldine every feature is free, and the whole thing is
       two containers.</p>
-      <p>Where Overleaf still wins: a huge template gallery, a visual editor, and a decade of
-      production maturity. We say so in the <a href="https://github.com/trahloff/Aldine#how-aldine-compares">README table</a>
-      too — the visual editor is next on the roadmap.</p>
+      <p>Where Overleaf still wins: a huge template gallery and a decade of production
+      maturity. We say so in the <a href="https://github.com/trahloff/Aldine#how-aldine-compares">README table</a>
+      too. On the visual editor, though, Aldine now goes further — see below.</p>
+    </div>
+  </section>
+
+  <section class="wrap">
+    <h3 class="sec">Visual editing, done right <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">(experimental)</span></h3>
+    <div class="honest">
+      <p>Overleaf's visual editor is infamous for one thing: it rewrites your LaTeX in
+      arbitrary ways, so collaborators tell each other not to use it. Aldine's is a pure
+      rendering layer over the same source — <strong>it never changes a byte you didn't
+      deliberately edit</strong> (there's a test that proves it). And it does more:</p>
+      <div class="grid" style="margin-top:16px">
+        <div class="cell"><h4>WYSIWYG math</h4><p>Click an equation to edit it in a real math editor; your changes write back as precise LaTeX.</p></div>
+        <div class="cell"><h4>Editable tables</h4><p>Tables render as a grid — edit cells, add rows and columns — all as exact source edits.</p></div>
+        <div class="cell"><h4>Tracked changes</h4><p>Review suggestions show inline as strikethrough + proposed text, accepted or dismissed in place.</p></div>
+        <div class="cell"><h4>Paste to LaTeX</h4><p>Paste rich text from Word or Docs and it converts to clean LaTeX on the way in.</p></div>
+        <div class="cell"><h4>Live &amp; collab-safe</h4><p>The construct under your caret — or a co-author's — reveals its source; everything else stays rendered.</p></div>
+        <div class="cell"><h4>One keystroke away</h4><p>Toggle Source / Visual instantly, no reload. Off by default; enable it from the command palette.</p></div>
+      </div>
     </div>
   </section>
 
