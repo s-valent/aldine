@@ -65,8 +65,11 @@ const server = http.createServer((req, res) => {
   }
 
   // --- DOI content negotiation (any 10.x path) ---
+  // Title carries an HTML &amp; like real CrossRef output — the server must
+  // decode + LaTeX-escape it so the .bib compiles (regression: a bare & is an
+  // alignment tab and breaks the whole document).
   if (url.pathname.startsWith('/10.')) {
-    return send(200, `@article{doe2020,\n  title = {A Mock Paper for Testing},\n  author = {Doe, Jane},\n  year = {2020},\n  doi = {${url.pathname.slice(1)}},\n}`);
+    return send(200, `@article{doe2020,\n  title = {Knowledge Discovery &amp; Data Mining},\n  author = {Doe, Jane},\n  year = {2020},\n  doi = {${url.pathname.slice(1)}},\n}`);
   }
   // --- arXiv Atom feed ---
   if (url.pathname === '/api/query') {
