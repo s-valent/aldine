@@ -7,6 +7,14 @@ All notable changes to Aldine are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Visual editing mode (experimental)**: LaTeX renders as formatted text —
+  styled headings, bold/italic, real list bullets, KaTeX math, chips for
+  figures/tables/cites — while the source stays the single source of truth.
+  **Byte-stable by construction**: rendering never rewrites source you didn't
+  deliberately edit (proven by an e2e test). Cursor-reveal shows raw source
+  for the construct under any caret, including remote collaborators'.
+  Toggle via the Source|Visual control after enabling "experimental Visual
+  editor" in the command palette. Mod-B/Mod-I formatting works in both modes.
 - `ALDINE_TEXLIVE_SCHEME=full` build option: compiler image with **all of
   CTAN** preinstalled (scheme-full, ~9 GB on disk) instead of the curated medium set.
   Missing-package compile errors now name the package and point at the option.

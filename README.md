@@ -118,7 +118,7 @@ That's it. Projects live in the `aldine-data` volume.
 | Warm recompile | ~2s (persistent latexmk cache) | Comparable | Fastest (local) |
 | Templates gallery | 4 built-in | Huge community gallery — **they win** | CTAN / your own |
 | Package coverage | Curated set, or **all of CTAN** (`ALDINE_TEXLIVE_SCHEME=full`) | All of TeX Live | Whatever you install |
-| Rich-text / visual editing | ❌ — **they win** | ✅ | ❌ |
+| Rich-text / visual editing | ✅ experimental, byte-stable (never rewrites your source) | ✅ (rewrites source) | ❌ |
 | Maturity | Young (v0.x, 2026) — **they win** | A decade in production | Very mature |
 | License | AGPL-3.0 | AGPL | MIT/varies |
 
