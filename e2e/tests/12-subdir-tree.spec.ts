@@ -58,14 +58,17 @@ test.describe('file tree clutter', () => {
       for (const p of ['paper/main.tex', '.github/workflows/ci.yml', 'Makefile', 'README.md'])
         await request.put(`/api/projects/${id}/file`, { data: { branch: 'main', path: p, content: 'x\n' } });
       await openProject(page, id);
-      await expect(page.getByTestId('dir-.github')).toBeVisible();
-      // collapsed by default → the nested file is not shown
-      await expect(page.getByTestId('file-.github/workflows/ci.yml')).toHaveCount(0);
-      // source-only hides Makefile/README
-      await expect(page.getByTestId('file-Makefile')).toBeVisible();
-      await page.getByTestId('source-only').click();
-      await expect(page.getByTestId('file-Makefile')).toHaveCount(0);
+      // source-only is the default view: Makefile/README hidden, and .github
+      // is pruned entirely (it contains no source files)
       await expect(page.getByTestId('file-paper/main.tex')).toBeVisible();
+      await expect(page.getByTestId('file-Makefile')).toHaveCount(0);
+      await expect(page.getByTestId('dir-.github')).toHaveCount(0);
+      // switch to All: non-source files appear…
+      await page.getByTestId('source-only').click();
+      await expect(page.getByTestId('file-Makefile')).toBeVisible();
+      await expect(page.getByTestId('dir-.github')).toBeVisible();
+      // …but dot-dirs still start collapsed → the nested file is not shown
+      await expect(page.getByTestId('file-.github/workflows/ci.yml')).toHaveCount(0);
     } finally { await cleanup(request, id); }
   });
 });

@@ -51,6 +51,8 @@ test.describe('ZIP import', () => {
     await page.getByTestId('import-input').setInputFiles(zip);
     await expect(page.getByTestId('editor-shell')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('file-main.tex')).toBeVisible();
+    // the tree starts in source-only view; switch to All to see notes.txt
+    await page.getByTestId('source-only').click();
     await expect(page.getByTestId('file-notes.txt')).toBeVisible();
     await expect(page.locator('.cm-content')).toContainText('ZIP-IMPORTED');
     fs.rmSync(tmp, { recursive: true, force: true });

@@ -2,7 +2,9 @@ import { defineConfig } from '@playwright/test';
 
 /**
  * E2E suite. Assumes:
- *  - compiler service on :4020 (docker container or `npm run dev:compiler`)
+ *  - compiler service on :4020 (docker container, or locally:
+ *    `DATA_DIR=$(pwd)/.data-e2e PORT=4020 node apps/compiler/server.js` —
+ *    the compiler must share the app server's DATA_DIR or every compile 404s)
  *  - it starts the app server (:3100), a mock Zotero API (:4919) and Vite preview itself
  * Set ALDINE_URL to test an already-running stack (e.g. docker compose on :8080);
  * webServers are skipped via reuseExistingServer when ports are taken.
