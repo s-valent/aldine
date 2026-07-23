@@ -139,7 +139,7 @@
   .cell p { font-size: 14.5px; color: var(--text-2); line-height: 1.5; }
 
   /* honesty */
-  .honest { max-width: 40em; }
+  .honest {}
   .honest p { color: var(--text-2); font-size: 16px; margin-bottom: 14px; }
   .honest strong { color: var(--text); font-weight: 600; }
 
@@ -214,7 +214,9 @@
   <section class="wrap" id="demo">
     <h3 class="sec">Sixteen seconds of proof</h3>
     <div class="demo-frame">
-      <img src="assets/demo.gif" alt="Screen recording: a collaborator's edits stream in live, the PDF recompiles, and double-clicking the PDF jumps the editor to the source line" loading="lazy">
+      <video src="assets/demo.mp4" autoplay muted loop playsinline
+        aria-label="Screen recording: a collaborator's edits stream in live, the PDF recompiles, and double-clicking the PDF jumps the editor to the source line"
+        style="width:100%;display:block"></video>
     </div>
     <p class="demo-caption">A collaborator types, the PDF recompiles, and a double-click on the
     page jumps the editor to the source line — one real recording.</p>

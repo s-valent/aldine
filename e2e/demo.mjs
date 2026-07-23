@@ -23,18 +23,20 @@ await boot.request.post(`${BASE}/api/projects/${id}/compile`, { data: { branch: 
 await boot.close();
 
 const mkCtx = (record) => browser.newContext({
-  viewport: { width: 1280, height: 800 },
+  viewport: { width: 1440, height: 900 },
+  deviceScaleFactor: 2, // crisp text in the recording
   colorScheme: 'light',
-  ...(record ? { recordVideo: { dir: OUT, size: { width: 1280, height: 800 } } } : {}),
+  ...(record ? { recordVideo: { dir: OUT, size: { width: 1440, height: 900 } } } : {}),
 });
 
 // A records; B is the "other author" typing.
 const ctxA = await mkCtx(true);
 const ctxB = await mkCtx(false);
-for (const c of [ctxA, ctxB]) await c.addInitScript(() => {
+for (const c of [ctxA, ctxB]) await c.addInitScript((pid) => {
   window.localStorage.setItem('aldine.onboarded', '1');
   window.localStorage.setItem('aldine.theme', 'dark');
-});
+  window.localStorage.setItem(`aldine.ghNudged.${pid}`, '1'); // keep the publish nudge out of the recording
+}, id);
 
 const a = await ctxA.newPage();
 await a.goto(`${BASE}/p/${id}`);
