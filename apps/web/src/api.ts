@@ -114,6 +114,7 @@ export const api = {
   githubRepos: () => req<GithubRepo[]>('/api/github/repos'),
   githubImport: (fullName: string) => req<ProjectSummary>('/api/github/import', { method: 'POST', body: JSON.stringify({ fullName }) }),
   projectGithubStatus: (id: string) => req<{ linked: boolean; ahead: number; behind: number; fullName: string }>(`/api/projects/${id}/github/status`),
+  githubLink: (id: string, name?: string, priv?: boolean) => req<{ ok: boolean; github: { fullName: string } }>(`/api/projects/${id}/github/link`, { method: 'POST', body: JSON.stringify({ name, private: priv }) }),
   githubPush: (id: string, message?: string, auto?: boolean) => req<{ ok: boolean }>(`/api/projects/${id}/github/push`, { method: 'POST', body: JSON.stringify({ message, auto }) }),
   // conflict-aware: returns { conflict, conflicts } on a 409 instead of throwing
   githubPull: async (id: string): Promise<{ ok?: boolean; conflict?: boolean; conflicts?: string[] }> => {

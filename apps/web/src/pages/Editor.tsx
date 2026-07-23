@@ -16,6 +16,7 @@ import CommandPalette, { Command } from '../components/CommandPalette';
 import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras';
 import { useCommentSignal } from '../editor/commentSignal';
 import GithubSync from '../components/GithubSync';
+import GithubPublish from '../components/GithubPublish';
 import CommentComposer from '../components/CommentComposer';
 import Modal from '../components/Modal';
 import FormatToolbar from '../components/FormatToolbar';
@@ -53,6 +54,7 @@ export default function Editor() {
   }, []);
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('aldine.spellcheck') === '1');
   // Visual mode is gated by an experimental flag until it graduates.
   const visualEnabled = localStorage.getItem('aldine.experimental.visualEditor') === '1';
@@ -104,6 +106,12 @@ export default function Editor() {
       const f = await loadFiles();
       const first = f.find((e) => e.path === p.rootFile) || f.find((e) => e.type === 'file' && e.path.endsWith('.tex')) || f.find((e) => e.type === 'file' && !e.binary);
       setActiveFile((cur) => (cur && f.some((e) => e.path === cur) ? cur : first?.path || null));
+      // One-time nudge per project: work on an unlinked project exists only on
+      // this server until it's published to GitHub.
+      if (!p.github && !localStorage.getItem(`aldine.ghNudged.${id}`)) {
+        localStorage.setItem(`aldine.ghNudged.${id}`, '1');
+        toast('This project lives only on this server — publish it to GitHub to keep a synced copy.');
+      }
     })();
   }, [id, branch]);
 
@@ -387,8 +395,12 @@ export default function Editor() {
           </div>
         )}
         <div className="toolbar__spacer" />
-        {project.github && (
+        {project.github ? (
           <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
+        ) : (
+          <button className="btn btn--ghost" onClick={() => setPublishOpen(true)} data-testid="github-publish-open" title="Publish this project to a GitHub repo — backup + sync">
+            Publish to GitHub
+          </button>
         )}
         <button className="btn" onClick={startComment} data-testid="add-comment" title="Comment on the selected text">Comment</button>
         <Presence users={users} />
@@ -594,6 +606,10 @@ export default function Editor() {
 
       {composing && (
         <CommentComposer quote={composing.quote} onSubmit={submitComment} onClose={() => setComposing(null)} />
+      )}
+
+      {publishOpen && project && (
+        <GithubPublish projectId={id} projectName={project.name} onClose={() => setPublishOpen(false)} onLinked={() => loadProject()} />
       )}
 
       {showLog && compile.result && (

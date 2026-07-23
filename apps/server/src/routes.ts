@@ -867,6 +867,34 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { meta, token: conn.token, owner: meta.github.owner, repo: meta.github.repo, url: github.tokenUrl(meta.github.cloneUrl, conn.token), remoteBranch: meta.github.remoteBranch };
   };
 
+  // Publish a locally-created project to a fresh GitHub repo. This is the only
+  // way an unlinked project gains an off-server copy, so the editor nudges
+  // toward it. Creates the repo under the connected account, commits the
+  // current state, pushes main, and stores the link (same shape as an import).
+  app.post<{ Params: { id: string }; Body: { name?: string; private?: boolean } }>('/api/projects/:id/github/link', async (req, reply) => {
+    const meta = await store.readMeta(req.params.id);
+    if (auth.AUTH_ENABLED && !isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can publish this project' });
+    if (meta.github) return reply.code(400).send({ error: 'This project is already linked to GitHub' });
+    const conn = await github.getConnection(ghUserId(req));
+    if (!conn) return reply.code(400).send({ error: 'Connect GitHub first' });
+    const name = (req.body?.name || meta.name).trim()
+      .replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100);
+    if (!name) return reply.code(400).send({ error: 'Repository name required' });
+    let info: github.Repo;
+    try { info = await github.createRepo(conn.token, name, req.body?.private !== false); }
+    catch (err: any) { return reply.code(400).send({ error: `Could not create repo: ${err.message}` }); }
+    flushBranchDocs(req.params.id, 'main');
+    await gitops.commitAll(req.params.id, 'main', 'aldine: publish to GitHub', reqUser(req)?.name).catch(() => {});
+    meta.github = { fullName: info.fullName, owner: info.owner, repo: info.name, remoteBranch: 'main', cloneUrl: info.cloneUrl, connectedBy: ghUserId(req) };
+    await store.writeMeta(meta);
+    try { await gitops.pushToRemote(req.params.id, 'main', github.tokenUrl(info.cloneUrl, conn.token)); }
+    catch (err: any) {
+      // repo exists and the link is stored — the user can retry the push from the sync UI
+      return reply.code(502).send({ error: `Repo created but the first push failed: ${err.message}. Use Push to retry.`, github: meta.github });
+    }
+    return { ok: true, github: meta.github };
+  });
+
   app.get<{ Params: { id: string } }>('/api/projects/:id/github/status', async (req, reply) => {
     const link = await linkedRemote(req, reply); if (!link) return;
     try { return { linked: true, ...link.meta.github, ...(await gitops.remoteStatus(req.params.id, link.remoteBranch, link.url)) }; }

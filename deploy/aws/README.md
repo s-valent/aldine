@@ -25,6 +25,10 @@ SSM      OAuth/API secrets (SecureString) ─► injected into the server
 - **EFS** holds the git repos + JSON datastore, so replacing/redeploying the task
   loses nothing. `/secrets` is a **separate access point the compiler never
   mounts**, preserving the code's rule that the compiler can't read API keys.
+- **Daily EFS backups** via AWS Backup (`aws_efs_backup_policy`, the built-in
+  `aws/efs` vault, 35-day retention). EFS is the only copy of every user's
+  work — restore a point-in-time copy from the AWS Backup console if anything
+  is ever lost or fat-fingered.
 
 ## Prerequisites
 

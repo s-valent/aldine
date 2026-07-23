@@ -16,6 +16,16 @@ resource "aws_efs_file_system" "main" {
   tags = { Name = "papyr" }
 }
 
+# Daily automatic backups via AWS Backup (aws/efs vault, 35-day retention).
+# This filesystem is the only copy of every user's projects — without this,
+# an accidental destroy or fat-fingered rm is unrecoverable.
+resource "aws_efs_backup_policy" "main" {
+  file_system_id = aws_efs_file_system.main.id
+  backup_policy {
+    status = "ENABLED"
+  }
+}
+
 resource "aws_efs_mount_target" "main" {
   count           = length(aws_subnet.public)
   file_system_id  = aws_efs_file_system.main.id
