@@ -136,6 +136,13 @@ they can hold in their head.
 
 ## Screenshots
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="e2e/shots/visual-dark.png">
+  <img alt="Visual editing mode: the same LaTeX paper rendered as formatted text with typeset math, next to the live PDF" src="e2e/shots/visual-light.png">
+</picture>
+
+*Visual editing (experimental): the source rendered as formatted text — byte-stable, math and tables editable in place. Enable via ⌘K.*
+
 | | |
 |---|---|
 | <picture><source media="(prefers-color-scheme: dark)" srcset="e2e/shots/review-dark.png"><img alt="Review mode: anchored comment threads with suggested edits" src="e2e/shots/review-light.png"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="e2e/shots/branches-dark.png"><img alt="Branch menu on a project" src="e2e/shots/branches-light.png"></picture> |

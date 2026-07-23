@@ -5,7 +5,7 @@ name: Landing page
 on:
   push:
     branches: [main]
-    paths: ["site/**", "e2e/shots/demo.gif", ".github/workflows/pages.yml"]
+    paths: ["site/**", "e2e/shots/demo.gif", "e2e/shots/visual-dark.png", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -30,6 +30,7 @@ jobs:
           mkdir -p _site/assets
           cp -r site/. _site/
           cp e2e/shots/demo.gif _site/assets/demo.gif
+          cp e2e/shots/visual-dark.png _site/assets/visual-dark.png
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

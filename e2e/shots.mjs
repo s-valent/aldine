@@ -37,6 +37,23 @@ for (const scheme of ['light', 'dark']) {
     await p.waitForSelector('canvas.pdf-page', { timeout: 120000 }).catch(() => {});
     await p.waitForTimeout(600);
   });
+  await shoot(ctx, `visual-${scheme}`, async (p) => {
+    // enable the experimental flag for this page only, and load straight into visual mode
+    await p.addInitScript(() => {
+      window.localStorage.setItem('aldine.experimental.visualEditor', '1');
+      window.localStorage.setItem('aldine.editorMode', 'visual');
+    });
+    await p.goto(`${BASE}/p/${id}`);
+    await p.waitForSelector('.cm-content');
+    await p.waitForSelector('.katex', { timeout: 30000 });
+    await p.waitForSelector('canvas.pdf-page', { timeout: 120000 }).catch(() => {});
+    await p.getByTestId('pdf-status').getByText(/Typeset in/).waitFor({ timeout: 120000 }).catch(() => {});
+    await p.waitForSelector('canvas.pdf-page', { timeout: 120000 }).catch(() => {});
+    // jump to §2 so the shot shows rendered headings + display math, not the preamble
+    await p.getByTestId('outline-dropdown').focus();
+    await p.getByTestId('outline-dropdown').selectOption({ label: 'Convergence' }).catch(() => {});
+    await p.waitForTimeout(600);
+  });
   await shoot(ctx, `review-${scheme}`, async (p) => {
     await p.goto(`${BASE}/p/${id}`);
     await p.waitForSelector('.cm-content');
