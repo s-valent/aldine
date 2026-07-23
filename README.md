@@ -173,12 +173,16 @@ ALDINE_URL=http://localhost:8080 npm run test:e2e   # against docker compose
 ## Production deploy
 
 ```bash
-# HTTPS via Caddy (auto-provisions certificates for your domain), with the
-# production overlay: app bound to localhost only, proxy headers trusted,
-# secure cookies, log rotation.
-ALDINE_DOMAIN=aldine.example.com ALDINE_APP_BIND=127.0.0.1 \
+# Behind your existing reverse proxy (nginx, Traefik, …) — the usual setup.
+# The prod overlay binds the app to 127.0.0.1:8080, trusts proxy headers,
+# sets secure cookies, and rotates logs; point your proxy at that port.
+# Sample nginx vhost (WebSocket + body-size gotchas handled): deploy/nginx.conf
+ALDINE_APP_BIND=127.0.0.1 \
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
-  --profile tls up -d --build
+  up -d --build
+
+# …or, if nothing else owns ports 80/443, add the bundled Caddy for
+# zero-config HTTPS: append `--profile tls` and set ALDINE_DOMAIN.
 
 # Optional features are env-gated and off by default — set what you want
 # (usually in a .env file next to docker-compose.yml):
@@ -204,7 +208,8 @@ reference lookups; compiles are concurrency-capped, with optional per-user
 compile quotas (`ALDINE_COMPILE_QUOTA_MIN`) if you host for a group.
 
 See [deploy/README.md](deploy/README.md) for the full single-VPS runbook
-(TLS, backups, SSO setup, Postgres/Redis, every config variable),
+(nginx/Traefik/Caddy ingress, backups, SSO setup, Postgres/Redis, every
+config variable),
 [deploy/aws](deploy/aws) for a Terraform/Fargate deployment, and
 [SECURITY.md](SECURITY.md) for the threat model and how to report
 vulnerabilities.

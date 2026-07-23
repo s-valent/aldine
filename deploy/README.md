@@ -1,10 +1,11 @@
 # Deploying Aldine on a single VPS
 
 This is the recommended production setup: one dedicated-CPU box (e.g. a Hetzner
-CCX, OVH, or any VPS with ≥8 GB RAM and 2+ dedicated vCPUs), Docker, and Caddy
-for automatic HTTPS. It runs the whole stack from the committed compose files —
-no managed platform required. (Prefer AWS? There's a complete Terraform
-deployment — Fargate, EFS, ALB, SES — in [`deploy/aws`](aws/).)
+CCX, OVH, or any VPS with ≥8 GB RAM and 2+ dedicated vCPUs), Docker Compose for
+the stack, and **your existing reverse proxy** (nginx, Traefik, …) — or the
+bundled Caddy if you don't have one — for TLS. No managed platform required.
+(Prefer AWS? There's a complete Terraform deployment — Fargate, EFS, ALB, SES —
+in [`deploy/aws`](aws/).)
 
 ## 1. Provision
 
@@ -23,9 +24,9 @@ git clone <your-repo> .
 Create `/opt/aldine/.env` (compose reads it automatically):
 
 ```dotenv
-ALDINE_DOMAIN=aldine.example.com
 ALDINE_PUBLIC_URL=https://aldine.example.com
-ALDINE_APP_BIND=127.0.0.1          # app on loopback only; Caddy fronts it
+ALDINE_APP_BIND=127.0.0.1          # app on loopback only; your proxy fronts it
+#ALDINE_DOMAIN=aldine.example.com  # only needed for the bundled-Caddy option (3c)
 
 # multi-user mode
 AUTH_ENABLED=1
@@ -81,17 +82,72 @@ SENTRY_DSN=
 #REDIS_URL=redis://redis:6379
 ```
 
-## 3. Launch (with TLS)
+## 3. Launch + ingress
+
+Start the stack (all options below use the same command — the prod overlay
+binds the app to `127.0.0.1:8080`, rotates logs, and sets `TRUST_PROXY=1` +
+`COOKIE_SECURE=1`; the compiler runs on an internal-only network with no
+egress and all Linux caps dropped):
+
+```bash
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+```
+
+Then pick the ingress you already run. Aldine is one upstream (`127.0.0.1:8080`)
+serving the app, `/api`, `/plugins`, and the `/collab` WebSocket — any reverse
+proxy works as long as it forwards WebSocket upgrades and allows 32 MB bodies
+(uploads / ZIP import).
+
+### 3a. nginx (most common)
+
+Use the committed sample vhost — it handles both gotchas:
+
+```bash
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/aldine.conf
+# edit: server_name + ssl_certificate paths (e.g. certbot --nginx)
+sudo ln -s /etc/nginx/sites-available/aldine.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+See [`deploy/nginx.conf`](nginx.conf) — the load-bearing lines are
+`client_max_body_size 32m` (nginx's 1 MB default breaks ZIP import) and the
+`Upgrade`/`Connection` headers on `/collab` (without them the editor loads but
+live cursors never appear).
+
+### 3b. Traefik
+
+If Traefik runs in Docker on the same host, skip the host port entirely: put
+the app on Traefik's network and route by labels. Add an overlay of your own
+(names depend on your Traefik setup):
+
+```yaml
+# traefik.yml overlay — compose -f docker-compose.yml -f deploy/docker-compose.prod.yml -f traefik.yml up -d
+services:
+  app:
+    networks: [frontend, backend, proxy]     # `proxy` = your external Traefik network
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.aldine.rule: Host(`aldine.example.com`)
+      traefik.http.routers.aldine.entrypoints: websecure
+      traefik.http.routers.aldine.tls.certresolver: letsencrypt   # your resolver name
+      traefik.http.services.aldine.loadbalancer.server.port: "3000"
+networks:
+  proxy:
+    external: true
+```
+
+WebSockets pass through Traefik without extra config. Bump the body limit only
+if you set a global `buffering` middleware (none by default).
+
+### 3c. No proxy yet? Bundled Caddy
+
+If the box runs nothing else on 80/443, add `--profile tls` and set
+`ALDINE_DOMAIN` in `.env` — Caddy provisions and renews the certificate
+automatically:
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
 ```
-
-Caddy provisions and renews the certificate for `ALDINE_DOMAIN`. The app is bound
-to loopback (`127.0.0.1:8080`) — only Caddy's 80/443 face the internet. The
-compiler runs on an internal-only network (no egress) with all Linux caps
-dropped. The prod overlay also sets `TRUST_PROXY=1` (so per-client rate limits
-see real IPs through Caddy) and `COOKIE_SECURE=1`.
 
 ## 4. Backups (systemd timer)
 
@@ -112,7 +168,8 @@ scripts.)
 
 ```bash
 cd /opt/aldine && git pull
-docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
+docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+# (append --profile tls if you use the bundled Caddy, plus any other profiles you run)
 ```
 
 ## Scaling notes
@@ -131,7 +188,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile
   DATABASE_URL=postgres://aldine:aldine@db:5432/aldine
   # bring up with the bundled Postgres (or point at a managed one)
   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
-    --profile tls --profile postgres up -d
+    --profile postgres up -d
   ```
   Users, sessions, project metadata, comments, and usage move to Postgres;
   git repos stay on disk. The same test suite passes on both backends.
