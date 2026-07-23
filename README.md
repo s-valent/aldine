@@ -155,10 +155,10 @@ environment variables when you want it.
 | GitHub sync + PRs from the editor | ✅ | Paid tiers | ✅ natively |
 | Zotero | Whole library **or one collection**, free | Premium, whole library | Via Better BibTeX, manual |
 | Warm recompile | ~2s (persistent latexmk cache) | Comparable | Fastest (local) |
-| Templates gallery | 4 built-in | Huge community gallery — **they win** | CTAN / your own |
+| Templates gallery | 4 built-in | Huge community gallery | CTAN / your own |
 | Package coverage | Curated set, or **all of CTAN** (`ALDINE_TEXLIVE_SCHEME=full`) | All of TeX Live | Whatever you install |
 | Rich-text / visual editing | ✅ experimental — byte-stable, WYSIWYG math, editable tables, tracked changes | ✅ (rewrites your source) | ❌ |
-| Maturity | Young (v0.x, 2026) — **they win** | A decade in production | Very mature |
+| Maturity | Young (v0.x, 2026) | A decade in production | Very mature |
 | License | AGPL-3.0 | AGPL | MIT/varies |
 
 If Overleaf CE fits you, use it — it's good software. Aldine exists for people
