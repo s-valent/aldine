@@ -22,15 +22,20 @@ export default function Home() {
   const [sharing, setSharing] = useState<ProjectSummary | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showGithub, setShowGithub] = useState(false);
+  const [trash, setTrash] = useState<{ id: string; name: string; deletedAt: string }[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('aldine.onboarded') !== '1');
   const dismissOnboarding = () => { localStorage.setItem('aldine.onboarded', '1'); setShowOnboarding(false); };
   const navigate = useNavigate();
   const toast = useToast();
   const { authEnabled, user, setUser } = useAuth();
 
-  const load = () => api.listProjects()
-    .then((p) => { setProjects(p); setLoadFailed(false); })
-    .catch(() => { setLoadFailed(true); setProjects((cur) => cur ?? []); });
+  const load = () => {
+    api.listTrash().then(setTrash).catch(() => setTrash([]));
+    return api.listProjects()
+      .then((p) => { setProjects(p); setLoadFailed(false); })
+      .catch(() => { setLoadFailed(true); setProjects((cur) => cur ?? []); });
+  };
   useEffect(() => { load(); }, []);
   // returning from GitHub OAuth connect → reopen the import flow (now connected)
   useEffect(() => {
@@ -68,10 +73,21 @@ export default function Home() {
 
   const remove = async (e: React.MouseEvent, p: ProjectSummary) => {
     e.stopPropagation();
-    if (!window.confirm(`Delete “${p.name}”? This removes the project and its history.`)) return;
+    if (!window.confirm(`Move “${p.name}” to the trash? You can restore it for 30 days.`)) return;
     await api.deleteProject(p.id);
-    toast(`Deleted ${p.name}`, 'ok');
+    toast(`Moved ${p.name} to the trash`, 'ok');
     load();
+  };
+
+  const restore = async (id: string, name: string) => {
+    try { await api.restoreProject(id); toast(`Restored ${name}`, 'ok'); load(); }
+    catch (err: any) { toast(err.message, 'error'); }
+  };
+
+  const purge = async (id: string, name: string) => {
+    if (!window.confirm(`Permanently delete “${name}”? This cannot be undone.`)) return;
+    try { await api.deleteProject(id, true); toast(`Deleted ${name} forever`, 'ok'); load(); }
+    catch (err: any) { toast(err.message, 'error'); }
   };
 
   const [dragOver, setDragOver] = useState(false);
@@ -170,7 +186,36 @@ export default function Home() {
             ))}
           </div>
         )}
+
+        {trash.length > 0 && (
+          <p style={{ textAlign: 'center', marginTop: 26 }}>
+            <button className="btn btn--ghost btn--small" onClick={() => setShowTrash(true)} data-testid="open-trash">
+              Trash ({trash.length})
+            </button>
+          </p>
+        )}
       </div>
+
+      {showTrash && (
+        <Modal onClose={() => setShowTrash(false)} label="Trash" testId="trash-modal">
+          <div>
+            <h2 style={{ marginBottom: 2 }}>Trash</h2>
+            <p className="modal__sub">Deleted projects are kept for 30 days, then removed permanently.</p>
+            {trash.length === 0 && <p style={{ color: 'var(--text-2)' }}>The trash is empty.</p>}
+            {trash.map((t) => (
+              <div key={t.id} className="settings__row" style={{ alignItems: 'center', gap: 10 }} data-testid={`trash-${t.id}`}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+                <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  <span style={{ color: 'var(--text-3)', fontSize: 11.5 }}>{friendlyDate(t.deletedAt)}</span>
+                  <button className="btn btn--small" onClick={() => restore(t.id, t.name)} data-testid={`restore-${t.id}`}>Restore</button>
+                  <button className="btn btn--ghost btn--small" onClick={() => purge(t.id, t.name)} data-testid={`purge-${t.id}`}>Delete forever</button>
+                </span>
+              </div>
+            ))}
+            <div className="modal__row" style={{ marginTop: 14 }}><button className="btn" onClick={() => setShowTrash(false)}>Close</button></div>
+          </div>
+        </Modal>
+      )}
 
       {sharing && (
         <ShareModal project={sharing} onClose={() => setSharing(null)} onSaved={() => { setSharing(null); load(); }} toast={toast} />

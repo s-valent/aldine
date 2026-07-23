@@ -231,8 +231,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // so it uses the DECODED :id param — never a regex over the raw (still
   // percent-encoded) URL, which a `%61bc…` id would slip past.
   app.addHook('preHandler', async (req, reply) => {
+    const reqId = (req.params as { id?: string } | undefined)?.id;
+    // Trashed projects behave as gone for every route except restore and
+    // delete (purge) — works with or without auth.
+    if (reqId !== undefined) {
+      let m: store.ProjectMeta | null = null;
+      try { m = await store.readMeta(reqId); } catch { /* handled below / by the route */ }
+      const p = req.url.split('?')[0];
+      if (m?.deletedAt && !(p.endsWith('/restore') || (req.method === 'DELETE' && p === `/api/projects/${reqId}`))) {
+        return reply.code(404).send({ error: 'project not found' });
+      }
+    }
     if (!auth.AUTH_ENABLED) return;
-    const id = (req.params as { id?: string } | undefined)?.id;
+    const id = reqId;
     if (id !== undefined) {
       let meta: store.ProjectMeta;
       try { meta = await store.readMeta(id); } catch { return reply.code(404).send({ error: 'project not found' }); }
@@ -243,7 +254,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     // non-id routes: require sign-in for the project list / create / import
     const path = req.url.split('?')[0];
-    if (/^\/api\/projects(\/import)?$/.test(path) && !reqUser(req)) {
+    if (/^\/api\/projects(\/import|\/trash)?$/.test(path) && !reqUser(req)) {
       return reply.code(401).send({ error: 'Sign in required' });
     }
   });
@@ -251,7 +262,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- projects ----------
   app.get('/api/projects', async (req) => {
     const user = reqUser(req);
-    return Promise.all((await store.listProjects()).filter((m) => canAccess(m, user)).map((m) => publicMeta(m, user)));
+    return Promise.all((await store.listProjects()).filter((m) => !m.deletedAt && canAccess(m, user)).map((m) => publicMeta(m, user)));
+  });
+
+  // Trash: soft-deleted projects the user owns, newest first. Restorable until purge (~30 days).
+  app.get('/api/projects/trash', async (req) => {
+    const user = reqUser(req);
+    const mine = (await store.listProjects()).filter((m) => !!m.deletedAt && (auth.AUTH_ENABLED ? isOwner(m, user) : true));
+    mine.sort((a, b) => (b.deletedAt || '').localeCompare(a.deletedAt || ''));
+    return mine.map((m) => ({ id: m.id, name: m.name, deletedAt: m.deletedAt }));
   });
 
   app.post<{ Body: { name?: string; files?: Record<string, string>; template?: string } }>('/api/projects', async (req, reply) => {
@@ -341,11 +360,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return publicMeta(meta);
     });
 
-  app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
+  // Delete = move to trash (restorable ~30 days). ?permanent=1 skips the trash
+  // — used by "Delete forever" in the trash UI and by tests that must clean up.
+  app.delete<{ Params: { id: string }; Querystring: { permanent?: string } }>('/api/projects/:id', async (req, reply) => {
     const meta = await store.readMeta(req.params.id);
     if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can delete this project' });
-    await store.deleteProject(req.params.id);
+    if (req.query.permanent === '1') await store.deleteProject(req.params.id);
+    else await store.softDeleteProject(req.params.id);
     lastPushedHead.delete(req.params.id); // don't leak the push-dedup entry (or reuse a stale hash)
+    return { ok: true };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/projects/:id/restore', async (req, reply) => {
+    const meta = await store.readMeta(req.params.id);
+    if (!isOwner(meta, reqUser(req))) return reply.code(403).send({ error: 'Only the owner can restore this project' });
+    if (!meta.deletedAt) return reply.code(400).send({ error: 'Project is not in the trash' });
+    await store.restoreProject(req.params.id);
     return { ok: true };
   });
 

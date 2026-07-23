@@ -72,10 +72,38 @@ export async function createProject(name: string, files: Record<string, string> 
   return meta;
 }
 
+/** Permanently remove a project — repo, worktrees, and metadata. */
 export async function deleteProject(id: string): Promise<void> {
   fs.rmSync(repoDir(id), { recursive: true, force: true });
   fs.rmSync(path.join(worktreesDir, id), { recursive: true, force: true });
   await db().deleteMeta(id);
+}
+
+/** Move a project to trash: data stays on disk, listings hide it, purge collects it later. */
+export async function softDeleteProject(id: string): Promise<void> {
+  const meta = await readMeta(id);
+  meta.deletedAt = new Date().toISOString();
+  await writeMeta(meta);
+}
+
+export async function restoreProject(id: string): Promise<ProjectMeta> {
+  const meta = await readMeta(id);
+  delete meta.deletedAt;
+  await writeMeta(meta);
+  return meta;
+}
+
+/** Hard-delete trashed projects older than `days`. Returns the ids purged. */
+export async function purgeExpiredTrash(days: number): Promise<string[]> {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const purged: string[] = [];
+  for (const m of await listProjects()) {
+    if (m.deletedAt && Date.parse(m.deletedAt) < cutoff) {
+      await deleteProject(m.id);
+      purged.push(m.id);
+    }
+  }
+  return purged;
 }
 
 export interface TreeEntry { path: string; type: 'file' | 'dir'; size?: number; binary?: boolean }

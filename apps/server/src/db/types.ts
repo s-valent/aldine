@@ -37,6 +37,8 @@ export interface ProjectMeta {
   rootFile: string;
   engine: 'pdf' | 'xelatex' | 'lualatex';
   createdAt: string;
+  /** Soft-delete marker: set when the project is moved to trash; purged after ~30 days. */
+  deletedAt?: string;
   ownerId?: string;
   share?: { mode: 'private' | 'link'; collaborators: string[] };
   zotero?: {

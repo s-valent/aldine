@@ -17,7 +17,7 @@ test.describe('home', () => {
     await expect(page.getByTestId('project-grid')).toContainText('My First Paper');
   });
 
-  test('delete a project', async ({ page, request }) => {
+  test('delete moves to trash; restore and delete-forever work', async ({ page, request }) => {
     const res = await request.post('/api/projects', { data: { name: 'Doomed Project' } });
     const { id } = await res.json();
     await page.goto('/');
@@ -26,6 +26,16 @@ test.describe('home', () => {
     page.on('dialog', (d) => d.accept());
     await card.locator('.project-card__del').click();
     await expect(card).not.toBeVisible();
+    // trashed → API hides it, trash lists it, restore brings it back
+    await page.getByTestId('open-trash').click();
+    await page.getByTestId(`restore-${id}`).click();
+    await page.keyboard.press('Escape'); // close the trash modal
+    await expect(page.getByTestId(`project-card-${id}`)).toBeVisible();
+    // delete again, then delete forever from the trash
+    await page.getByTestId(`project-card-${id}`).locator('.project-card__del').click();
+    await page.getByTestId('open-trash').click();
+    await page.getByTestId(`purge-${id}`).click();
+    await expect(page.getByTestId(`trash-${id}`)).toHaveCount(0);
   });
 });
 

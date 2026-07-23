@@ -61,5 +61,6 @@ export async function expectTypesetOk(page: Page, timeout = 120_000): Promise<vo
 }
 
 export async function cleanup(request: APIRequestContext, id: string): Promise<void> {
-  await request.delete(`/api/projects/${id}`).catch(() => {});
+  // permanent: tests must actually remove their data, not fill the trash
+  await request.delete(`/api/projects/${id}?permanent=1`).catch(() => {});
 }

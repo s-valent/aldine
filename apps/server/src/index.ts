@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { registerRoutes } from './routes.js';
 import { hocuspocus, flushAllDocs } from './collab.js';
 import { commitAll } from './gitops.js';
+import * as store from './store.js';
 import { initObservability, captureError } from './observability.js';
 import { initDb, closeDb } from './db/index.js';
 import { initRateLimit } from './ratelimit.js';
@@ -53,6 +54,15 @@ app.server.on('upgrade', (request, socket, head) => {
 });
 
 console.log(`[aldine] server on :${config.port} — data=${config.dataDir} compiler=${config.compilerUrl}`);
+
+// Trash purge: hard-delete soft-deleted projects after ALDINE_TRASH_DAYS
+// (default 30). Swept on boot and daily; errors are logged, never fatal.
+const TRASH_DAYS = Number(process.env.ALDINE_TRASH_DAYS || 30);
+const sweepTrash = () => store.purgeExpiredTrash(TRASH_DAYS)
+  .then((ids) => { if (ids.length) console.log(`[aldine] trash purge: removed ${ids.length} project(s) older than ${TRASH_DAYS}d`); })
+  .catch((err) => console.error('[aldine] trash purge failed', err));
+sweepTrash();
+setInterval(sweepTrash, 24 * 60 * 60 * 1000).unref();
 
 let shuttingDown = false;
 async function shutdown(signal: string) {
