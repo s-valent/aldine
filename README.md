@@ -96,19 +96,50 @@ Live collaboration, a recompile, and a SyncTeX jump — one real recording (comp
 
 ## Quick start
 
-```bash
-docker compose up -d --build
-open http://localhost:8080
+No clone, no build — save this as `docker-compose.yml` and run `docker compose up -d`:
+
+```yaml
+services:
+  app:
+    image: ghcr.io/trahloff/aldine-app:latest
+    ports:
+      - "8080:3000"
+    environment:
+      DATA_DIR: /data
+      META_DIR: /secrets
+      COMPILER_URL: http://compiler:4020
+    volumes:
+      - aldine-data:/data
+      - aldine-secrets:/secrets
+    depends_on:
+      - compiler
+    restart: unless-stopped
+
+  compiler:
+    image: ghcr.io/trahloff/aldine-compiler:latest
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - aldine-data:/data
+    restart: unless-stopped
+
+volumes:
+  aldine-data:
+  aldine-secrets:
 ```
 
-That's it. Projects live in the `aldine-data` volume.
+Open http://localhost:8080. That's it — projects live in the `aldine-data`
+volume, and everything else (auth, SSO, AI fix, email) is opt-in via
+environment variables when you want it.
 
-- **The first build is big**: it pulls a ~2.5 GB TeX Live image and installs
-  LaTeX packages — expect 15–40 minutes on a fresh machine. Every build after
-  that is cached and takes seconds. It's ready when
-  `curl localhost:8080/api/health` returns `{"ok":true}`.
-- **Port 8080 taken?** `ALDINE_PORT=18080 docker compose up -d` and open
-  http://localhost:18080.
+- **The first pull is big** (~2.5 GB — TeX Live is in the compiler image);
+  after that, starts take seconds. Ready when `curl localhost:8080/api/health`
+  returns `{"ok":true}`. Images are published on release tags.
+- **Building from source instead** (latest `main`):
+  `git clone https://github.com/trahloff/Aldine && cd Aldine && docker compose up -d --build`
+  — the first build installs LaTeX packages, expect 15–40 minutes.
+- **Port 8080 taken?** Change the left side of `ports:` in the snippet (or,
+  from a clone, `ALDINE_PORT=18080 docker compose up -d`).
 - **Need packages beyond the curated set?** Build with all of CTAN
   preinstalled (~9 GB on disk): `ALDINE_TEXLIVE_SCHEME=full docker compose up
   -d --build`.
