@@ -6,7 +6,7 @@ export default function Onboarding({ onNew, onGithub, onImportZip, onClose }: {
   const start = (fn: () => void) => { onClose(); fn(); };
 
   return (
-    <Modal onClose={onClose} label="Welcome to Aldine" testId="onboarding">
+    <Modal onClose={onClose} label="Welcome to Aldine" testId="onboarding" wide>
       <div className="onboard">
         <h1 className="home__brand" style={{ fontSize: 30, marginBottom: 2 }}>aldine<em>.</em></h1>
         <p className="home__tag" style={{ marginBottom: 20 }}>Write LaTeX together — fast, versioned, yours.</p>

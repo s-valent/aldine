@@ -56,7 +56,7 @@ export default function FileTree({ files, active, rootFile, projectId, branch, o
   const [name, setName] = useState('');
   const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [sourceOnly, setSourceOnly] = useState(false);
+  const [sourceOnly, setSourceOnly] = useState(true);
   // User expand/collapse overrides. Default: dot-directories (.github, .devcontainer, …)
   // start collapsed; everything else expanded. This overlay avoids depending on
   // `files` at mount (which is empty on first render).

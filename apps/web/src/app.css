@@ -181,7 +181,7 @@
 .login__error { color: var(--error); font-size: 12.5px; margin: 2px 0 8px; }
 .login__info { color: var(--ok); font-size: 12.5px; margin: 2px 0 8px; }
 /* first-run onboarding */
-.onboard { width: 560px; max-width: 92vw; text-align: center; }
+.onboard { width: 100%; text-align: center; }
 .onboard__tiles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 18px; }
 .onboard__tile { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 12px; border: 1px solid var(--hairline); border-radius: var(--radius-m); background: var(--bg-inset); cursor: pointer; transition: border-color 0.12s, transform 0.12s; }
 .onboard__tile:hover { border-color: var(--accent); transform: translateY(-1px); }
@@ -438,7 +438,7 @@
 .tree__item--active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .tree__item--dir { color: var(--text-2); font-weight: 600; cursor: default; }
 .tree__icon { flex: none; opacity: 0.75; width: 14px; text-align: center; }
-.tree__actions { display: flex; gap: 4px; padding: 6px 4px; border-top: 1px solid var(--hairline); }
+.tree__actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 8px; border-top: 1px solid var(--hairline); }
 
 /* editor pane */
 .code-pane { flex: 1; min-height: 0; overflow: hidden; position: relative; }
