@@ -6,6 +6,8 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-23
+
 ### Added
 - **Visual editing mode (experimental)** — LaTeX renders as formatted text
   while the source stays the single source of truth. **Byte-stable by
