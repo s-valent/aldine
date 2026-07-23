@@ -9,7 +9,7 @@
 
 locals {
   ses_mail_from = "${var.ses_mail_from_subdomain}.${var.domain_name}"
-  ses_from      = var.ses_from != "" ? var.ses_from : "Papyr <no-reply@${var.domain_name}>"
+  ses_from      = var.ses_from != "" ? var.ses_from : "Aldine <no-reply@${var.domain_name}>"
 }
 
 resource "aws_sesv2_email_identity" "domain" {
