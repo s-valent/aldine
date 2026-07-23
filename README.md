@@ -42,9 +42,9 @@ Live collaboration, a recompile, and a SyncTeX jump — one real recording (comp
   incremental builds (~2s warm recompiles) in a no-egress container with
   restricted shell-escape; errors surfaced with line numbers and
   click-to-jump.
-- **GitHub sync** — import a repo as a project, push/pull with ahead/behind
-  indicators, conflict resolution, opt-in auto-sync, and open a pull request —
-  all from the editor.
+- **GitHub sync** — import a repo as a project *or publish a local project to
+  a fresh repo*, push/pull with ahead/behind indicators, conflict resolution,
+  opt-in auto-sync, and open a pull request — all from the editor.
 - **Native Zotero integration** — link your whole Zotero library *or a single
   collection*, no premium tier required; keep a `.bib` in sync with cheap
   version-aware refresh, insert citations from a search panel or via `\cite{`

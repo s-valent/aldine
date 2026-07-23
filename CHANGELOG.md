@@ -28,6 +28,19 @@ All notable changes to Aldine are documented here. The format follows
 - `ALDINE_TEXLIVE_SCHEME=full` build option: compiler image with **all of
   CTAN** preinstalled (scheme-full, ~9 GB on disk) instead of the curated medium set.
   Missing-package compile errors now name the package and point at the option.
+- **Publish to GitHub** — locally-created projects can now be pushed to a
+  fresh GitHub repo (`POST /api/projects/:id/github/link`; private by
+  default), after which the regular sync (auto-push, pull, PRs) takes over.
+  Previously only imported repos could sync. The editor shows a Publish
+  button for unlinked projects and a one-time hint that unpublished work
+  lives on a single server.
+- **Trash instead of hard delete** — deleting a project moves it to a trash
+  restorable for 30 days (`ALDINE_TRASH_DAYS`); a Trash view on the home
+  page offers Restore and Delete forever. A boot + daily sweep purges
+  expired entries. `DELETE …?permanent=1` bypasses the trash.
+- Sample **nginx config** (`deploy/nginx.conf`) and a bring-your-own-proxy
+  deployment path (nginx/Traefik first, bundled Caddy optional); the AWS
+  deployment now enables **daily EFS backups** (AWS Backup, 35-day retention).
 
 ### Changed
 - Relicensed from MIT to AGPL-3.0 (pre-launch, sole-author): self-hosting is
