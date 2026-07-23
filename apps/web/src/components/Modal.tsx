@@ -5,6 +5,8 @@ interface Props {
   children: ReactNode;
   label: string;
   wide?: boolean;
+  /** Panel width in px (padding included) — overrides the 440px default. */
+  width?: number;
   testId?: string;
 }
 
@@ -13,7 +15,7 @@ interface Props {
  * on open and restored on close, focus trapped within, Escape and
  * backdrop-click to dismiss.
  */
-export default function Modal({ onClose, children, label, wide, testId }: Props) {
+export default function Modal({ onClose, children, label, wide, width, testId }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
 
@@ -47,6 +49,7 @@ export default function Modal({ onClose, children, label, wide, testId }: Props)
       <div
         ref={panelRef}
         className={`modal${wide ? ' modal--wide' : ''}`}
+        style={width ? { width } : undefined}
         role="dialog"
         aria-modal="true"
         aria-label={label}

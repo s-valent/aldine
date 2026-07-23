@@ -27,7 +27,7 @@ export default function AccountSettings({ user, onClose }: { user: AuthUser; onC
 
   return (
     <Modal onClose={onClose} label="Account settings" testId="account-settings">
-      <div style={{ width: 420 }}>
+      <div>
         <h2 style={{ marginBottom: 2 }}>Account</h2>
         <p className="modal__sub">{user.email}</p>
 

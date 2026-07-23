@@ -33,7 +33,11 @@ export function renderMath(source: string, displayMode: boolean): string | null 
   if (hit !== undefined) return hit;
   let html: string;
   try {
-    html = katex.renderToString(source, { displayMode, throwOnError: false, output: 'html' });
+    // \label{} and \tag-less refs are invisible in real typeset output; KaTeX
+    // would render them as red fallback text, so strip them (rendering only —
+    // the source is never touched).
+    const cleaned = source.replace(/\\label\s*\{[^}]*\}/g, '');
+    html = katex.renderToString(cleaned, { displayMode, throwOnError: false, output: 'html' });
   } catch {
     return ''; // signals render failure → widget falls back to raw source
   }

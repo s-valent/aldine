@@ -19,8 +19,8 @@ export default function CommentComposer({ quote, onSubmit, onClose }: {
   };
 
   return (
-    <Modal onClose={onClose} label="Add a comment" testId="comment-composer">
-      <div style={{ width: 460 }}>
+    <Modal onClose={onClose} label="Add a comment" width={500} testId="comment-composer">
+      <div>
         <h2 style={{ marginBottom: 8 }}>Add a comment</h2>
         <blockquote className="composer__quote" title={quote}>{quote}</blockquote>
         <textarea
