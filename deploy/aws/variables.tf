@@ -11,7 +11,7 @@ variable "cpu_architecture" {
 }
 
 variable "domain_name" {
-  description = "Public domain the app is served on (e.g. papyr.example.com)."
+  description = "Public domain the app is served on (e.g. latex.example.com)."
   type        = string
 }
 
@@ -56,13 +56,13 @@ variable "auth_enabled" {
 }
 
 variable "sso_only" {
-  description = "Disable password endpoints; sign-in only via a configured OAuth provider (PAPYR_SSO_ONLY)."
+  description = "Disable password endpoints; sign-in only via a configured OAuth provider (ALDINE_SSO_ONLY)."
   type        = bool
   default     = true
 }
 
 variable "ai_model" {
-  description = "PAPYR_AI_MODEL (optional; used when an AI key secret is set)."
+  description = "ALDINE_AI_MODEL (optional; used when an AI key secret is set)."
   type        = string
   default     = "anthropic/claude-opus-4.8"
 }
@@ -75,7 +75,7 @@ variable "enable_ses" {
 }
 
 variable "ses_from" {
-  description = "From address for outbound email. Empty → \"Papyr <no-reply@<domain>>\"."
+  description = "From address for outbound email. Empty → \"Aldine <no-reply@<domain>>\"."
   type        = string
   default     = ""
 }

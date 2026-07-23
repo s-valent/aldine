@@ -2,7 +2,7 @@
 # sensitive values; everything else has a sane default in variables.tf.
 
 region            = "eu-central-1"
-domain_name       = "papyr.example.com"
+domain_name       = "latex.example.com"
 route53_zone_name = "example.com"
 
 # SSO-only by default (no passwords). Set sso_only = false to also allow email/password.
@@ -16,7 +16,7 @@ use_fargate_spot = true
 
 # Secrets → SSM SecureString → injected into the server as these env vars.
 # Leave a line out (or set "") to skip provisioning it. Redirect/callback URLs in
-# the Google/GitHub OAuth apps must point at https://papyr.example.com/...
+# the Google/GitHub OAuth apps must point at https://latex.example.com/...
 secret_env = {
   GOOGLE_OAUTH_CLIENT_ID     = "REPLACE_ME.apps.googleusercontent.com"
   GOOGLE_OAUTH_CLIENT_SECRET = "REPLACE_ME"
