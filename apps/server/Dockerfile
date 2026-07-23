@@ -1,5 +1,8 @@
 # ---- build frontend ----
-FROM node:22-alpine AS webbuild
+# Build stages run on the BUILD machine's arch (their dist/ output is
+# arch-independent JS) — without this, multi-arch CI builds crawl through
+# vite/tsc under QEMU emulation for hours. Only the runtime stage is per-arch.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS webbuild
 WORKDIR /build
 COPY package.json package-lock.json* ./
 COPY apps/web/package.json apps/web/
@@ -9,7 +12,7 @@ COPY apps/web apps/web
 RUN npm run build -w apps/web
 
 # ---- build server (TS -> JS, so the container boots in seconds, not minutes) ----
-FROM node:22-alpine AS serverbuild
+FROM --platform=$BUILDPLATFORM node:22-alpine AS serverbuild
 WORKDIR /build
 COPY package.json package-lock.json* ./
 COPY apps/server/package.json apps/server/
