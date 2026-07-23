@@ -1,17 +1,17 @@
-# Papyr on AWS (serverless, all-IaC)
+# Aldine on AWS (serverless, all-IaC)
 
 > **Note:** the app is named **Aldine**; AWS resource names (cluster `papyr`,
 > ECR `papyr-server`/`papyr-compiler`, SSM `/papyr/*`) keep the legacy prefix
 > to avoid a destroy/recreate of live infrastructure.
 
-Deploys Papyr to `https://papyr.tobiasrahloff.com` on **AWS Fargate** — no servers
+Deploys Aldine to `https://latex.example.com` on **AWS Fargate** — no servers
 to manage, everything as Terraform. This is the cheapest AWS shape that actually
 fits the app; see [Why this architecture](#why-this-architecture-and-not-lambda).
 
 ## What gets created
 
 ```
-Route53  papyr.tobiasrahloff.com ─(alias)─►  ALB ─► Fargate task ── EFS (/data, /secrets)
+Route53  latex.example.com ─(alias)─►  ALB ─► Fargate task ── EFS (/data, /secrets)
 ACM      TLS cert (DNS-validated)                     ├─ server  container  (:3000)
                                                        └─ compiler container (:4020, localhost)
 ECR      papyr-server, papyr-compiler images
@@ -29,7 +29,7 @@ SSM      OAuth/API secrets (SecureString) ─► injected into the server
 ## Prerequisites
 
 1. **AWS account + SSO configured** (`aws configure sso`, then `aws sso login --profile papyr`).
-2. **The hosted zone `tobiasrahloff.com` already exists in Route53** in this account.
+2. **The hosted zone `example.com` already exists in Route53** in this account.
    (Registering/delegating the domain is a one-time manual step Terraform doesn't do.)
 3. `terraform` (or `tofu`) ≥ 1.6, `docker` with buildx, `aws` CLI.
 
@@ -54,14 +54,14 @@ aws ecs wait services-stable --cluster papyr --services papyr
 ```
 
 DNS + the ACM cert validate automatically through the Route53 zone (a few minutes
-on first apply). When it's stable, open **https://papyr.tobiasrahloff.com**.
+on first apply). When it's stable, open **https://latex.example.com**.
 
 ### OAuth redirect URLs
 
 Update the Google / GitHub OAuth apps so their callback URLs point at the new host:
 
-- Google:  `https://papyr.tobiasrahloff.com/api/auth/oauth/google/callback`
-- GitHub sync: `https://papyr.tobiasrahloff.com/api/github/oauth/callback`
+- Google:  `https://latex.example.com/api/auth/oauth/google/callback`
+- GitHub sync: `https://latex.example.com/api/github/oauth/callback`
 
 Set the corresponding client id/secret in `secret_env`.
 
@@ -87,7 +87,7 @@ stability. The ALB is the dominant fixed cost — see below.
 
 ## Why this architecture (and not "pure Lambda")
 
-Papyr is a **stateful real-time server**: it holds live Yjs documents in memory
+Aldine is a **stateful real-time server**: it holds live Yjs documents in memory
 and serves persistent `/collab` WebSockets, runs a **multi-GB TeX Live** compiler,
 and keeps project state as **git repos on a filesystem**. That shape doesn't fit
 scale-to-zero Lambda without rewriting the collaboration layer onto API Gateway
