@@ -105,6 +105,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = await auth.register(req.body.email, req.body.password, req.body.name);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
+      // Fire-and-forget a simple welcome email (no verification step). Never let
+      // a mail failure affect the signup response.
+      const base = process.env.ALDINE_PUBLIC_URL?.replace(/\/$/, '');
+      if (email.emailConfigured() && base) {
+        const greeting = user.name ? `Hi ${user.name},` : 'Hi there,';
+        email.sendMail({
+          to: user.email,
+          subject: 'Welcome to Aldine',
+          text: `${greeting}\n\nWelcome to Aldine — write LaTeX together, fast, versioned, and yours.\n\nOpen your workspace: ${base}\n\nStart a blank paper or a template, import a project from GitHub or an Overleaf ZIP, then hit ⌘S to typeset. Invite others and you'll see their cursors live.\n\nHappy writing.`,
+          html: `<p>${greeting}</p><p>Welcome to <strong>Aldine</strong> — write LaTeX together, fast, versioned, and yours.</p><p><a href="${base}">Open your workspace</a></p><p>Start a blank paper or a template, import a project from GitHub or an Overleaf ZIP, then hit ⌘S to typeset. Invite others and you'll see their cursors live.</p><p>Happy writing.</p>`,
+        }).catch((err) => console.error('[aldine] welcome email failed:', err?.message || err));
+      }
       return { user };
     } catch (err: any) { return reply.code(400).send({ error: err.message }); }
   });
