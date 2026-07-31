@@ -53,6 +53,7 @@ resource "hcloud_server" "demo" {
   server_type  = var.server_type
   image        = "ubuntu-24.04"
   location     = var.location
+  labels       = { "managed-by" = "terraform" }
   ssh_keys     = [hcloud_ssh_key.demo.id]
   firewall_ids = [hcloud_firewall.demo.id]
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
