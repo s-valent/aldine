@@ -7,7 +7,7 @@ name: Deploy to AWS
 # Manual trigger only (no surprise deploys/costs on every push). Requires:
 #   - vars.AWS_DEPLOY_ROLE_ARN : an IAM role trusting GitHub OIDC with ECR push +
 #     ecs:UpdateService/DescribeServices permission
-#   - vars.AWS_REGION          : e.g. eu-central-1
+#   - vars.AWS_REGION          : e.g. eu-west-1
 on:
   workflow_dispatch:
     inputs:
