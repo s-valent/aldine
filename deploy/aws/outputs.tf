@@ -25,3 +25,13 @@ output "ecs_cluster" {
 output "ecs_service" {
   value = aws_ecs_service.app.name
 }
+
+output "github_infra_role_arn" {
+  description = "Assume this from the infra repo's CI (empty github_infra_repo → null)."
+  value       = try(aws_iam_role.github_infra[0].arn, null)
+}
+
+output "github_deploy_role_arn" {
+  description = "Assume this from the app repo's image-deploy workflow (empty github_deploy_repo → null)."
+  value       = try(aws_iam_role.github_deploy[0].arn, null)
+}

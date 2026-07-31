@@ -104,3 +104,15 @@ variable "desired_count" {
   type        = number
   default     = 1
 }
+
+variable "github_infra_repo" {
+  description = "GitHub repo (owner/name) whose main branch may assume the infra-admin role via OIDC. Empty = don't create GitHub OIDC resources for it."
+  type        = string
+  default     = ""
+}
+
+variable "github_deploy_repo" {
+  description = "GitHub repo (owner/name) whose main branch may assume the image-deploy role via OIDC. Empty = don't create GitHub OIDC resources for it."
+  type        = string
+  default     = ""
+}
