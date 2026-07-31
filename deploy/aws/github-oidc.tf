@@ -33,9 +33,16 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${each.value}:ref:refs/heads/main"]
+      values = [
+        # legacy name-only claim (repos created before 2026-07-15)
+        "repo:${each.value}:ref:refs/heads/main",
+        # immutable-ID claim (newer repos): owner@ID/name@ID. '@' cannot
+        # appear in GitHub owner or repo names, so these wildcards cannot
+        # match any other repo's claim.
+        "repo:${replace(each.value, "/", "@*/")}@*:ref:refs/heads/main",
+      ]
     }
   }
 }
