@@ -29,3 +29,6 @@ LAUNCH.md
 
 # local Claude Code config
 .claude/
+
+# maintainer SSH pubkey copied in by aldine-ops tooling
+deploy/demo/*.pub
