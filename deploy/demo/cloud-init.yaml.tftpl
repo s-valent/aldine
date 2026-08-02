@@ -21,7 +21,7 @@ write_files:
       [Service]
       Type=oneshot
       WorkingDirectory=/opt/aldine/repo
-      ExecStart=/bin/bash -c 'docker compose --env-file /opt/aldine/.env.demo -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls down -v && docker compose --env-file /opt/aldine/.env.demo -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d'
+      ExecStart=/bin/bash -c 'docker compose --env-file /opt/aldine/.env.demo -f docker-compose.full.yml -f deploy/docker-compose.prod.yml --profile tls down -v && docker compose --env-file /opt/aldine/.env.demo -f docker-compose.full.yml -f deploy/docker-compose.prod.yml --profile tls up -d'
   - path: /etc/systemd/system/aldine-demo-wipe.timer
     content: |
       [Unit]
@@ -34,6 +34,6 @@ write_files:
 
 runcmd:
   - git clone ${repo_url} /opt/aldine/repo
-  - cd /opt/aldine/repo && docker compose --env-file /opt/aldine/.env.demo -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
+  - cd /opt/aldine/repo && docker compose --env-file /opt/aldine/.env.demo -f docker-compose.full.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
   - systemctl daemon-reload
   - systemctl enable --now aldine-demo-wipe.timer

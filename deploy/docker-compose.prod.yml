@@ -1,6 +1,6 @@
 # Production overrides for a single VPS behind Caddy TLS.
 # Usage (from the repo root):
-#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
+#   docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
 #
 # What this changes vs the base compose:
 #   - the app is no longer published on a public 0.0.0.0:8080 — only Caddy (80/443) faces the internet

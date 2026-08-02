@@ -124,17 +124,23 @@ Open http://localhost:8080. That's it — projects live in the `aldine-data`
 volume, and everything else (auth, SSO, AI fix, email) is opt-in via
 environment variables when you want it.
 
+The same file ships as the repo-root `docker-compose.yml`, so a clone works
+identically: `git clone https://github.com/trahloff/Aldine && cd Aldine &&
+docker compose up -d`.
+
 - **The first pull is big** (~2.5 GB — TeX Live is in the compiler image);
   after that, starts take seconds. Ready when `curl localhost:8080/api/health`
   returns `{"ok":true}`. Images are published on release tags.
-- **Building from source instead** (latest `main`):
-  `git clone https://github.com/trahloff/Aldine && cd Aldine && docker compose up -d --build`
-  — the first build installs LaTeX packages, expect 15–40 minutes.
-- **Port 8080 taken?** Change the left side of `ports:` in the snippet (or,
-  from a clone, `ALDINE_PORT=18080 docker compose up -d`).
-- **Need packages beyond the curated set?** Build with all of CTAN
-  preinstalled (~9 GB on disk): `ALDINE_TEXLIVE_SCHEME=full docker compose up
-  -d --build`.
+- **Port 8080 taken?** Change the left side of `ports:`.
+- **Everything beyond the minimum** — building from source (latest `main`),
+  auth/SSO/AI/email options, TLS, Postgres/Redis, hardening — lives in
+  [`docker-compose.full.yml`](docker-compose.full.yml) (same volumes, so you
+  can switch without losing data):
+  `docker compose -f docker-compose.full.yml up -d --build` — the first build
+  installs LaTeX packages, expect 15–40 minutes.
+- **Need packages beyond the curated set?** Build the full file with all of
+  CTAN preinstalled (~9 GB on disk):
+  `ALDINE_TEXLIVE_SCHEME=full docker compose -f docker-compose.full.yml up -d --build`.
 
 ## How Aldine compares
 
@@ -201,7 +207,7 @@ ALDINE_URL=http://localhost:8080 npm run test:e2e   # against docker compose
 # sets secure cookies, and rotates logs; point your proxy at that port.
 # Sample nginx vhost (WebSocket + body-size gotchas handled): deploy/nginx.conf
 ALDINE_APP_BIND=127.0.0.1 \
-docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
+docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml \
   up -d --build
 
 # …or, if nothing else owns ports 80/443, add the bundled Caddy for

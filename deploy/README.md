@@ -90,7 +90,7 @@ binds the app to `127.0.0.1:8080`, rotates logs, and sets `TRUST_PROXY=1` +
 egress and all Linux caps dropped):
 
 ```bash
-docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml up -d --build
 ```
 
 Then pick the ingress you already run. Aldine is one upstream (`127.0.0.1:8080`)
@@ -121,7 +121,7 @@ the app on Traefik's network and route by labels. Add an overlay of your own
 (names depend on your Traefik setup):
 
 ```yaml
-# traefik.yml overlay — compose -f docker-compose.yml -f deploy/docker-compose.prod.yml -f traefik.yml up -d
+# traefik.yml overlay — compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml -f traefik.yml up -d
 services:
   app:
     networks: [frontend, backend, proxy]     # `proxy` = your external Traefik network
@@ -146,7 +146,7 @@ If the box runs nothing else on 80/443, add `--profile tls` and set
 automatically:
 
 ```bash
-docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
+docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml --profile tls up -d --build
 ```
 
 ## 4. Backups (systemd timer)
@@ -168,7 +168,7 @@ scripts.)
 
 ```bash
 cd /opt/aldine && git pull
-docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml up -d --build
 # (append --profile tls if you use the bundled Caddy, plus any other profiles you run)
 ```
 
@@ -187,7 +187,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --b
   # in .env
   DATABASE_URL=postgres://aldine:aldine@db:5432/aldine
   # bring up with the bundled Postgres (or point at a managed one)
-  docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml \
+  docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml \
     --profile postgres up -d
   ```
   Users, sessions, project metadata, comments, and usage move to Postgres;

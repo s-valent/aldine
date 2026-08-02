@@ -6,6 +6,13 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The repo-root `docker-compose.yml` is now the minimal prebuilt-image setup
+  (identical to the README quick start). The previous full configuration —
+  build-from-source, every option documented, TLS/Postgres/Redis profiles,
+  hardening — moved to `docker-compose.full.yml`. Both share the same project
+  name and volumes, so switching between them keeps your data.
+
 ## [0.2.0] — 2026-07-23
 
 ### Added
