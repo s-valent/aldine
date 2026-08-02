@@ -90,6 +90,25 @@ test.describe('auth', () => {
     await bob.close();
   });
 
+  test('link sharing grants access by URL but never lists the project for strangers', async ({ browser }) => {
+    const alice = await browser.newContext();
+    await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123', name: 'Alice' } });
+    const proj = await (await alice.request.post('/api/projects', { data: { name: 'Linked Paper' } })).json();
+    await alice.request.post(`/api/projects/${proj.id}/share`, { data: { mode: 'link' } });
+
+    const carol = await browser.newContext();
+    await carol.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    // direct URL works…
+    const opened = await carol.request.get(`/api/projects/${proj.id}`);
+    expect(opened.ok()).toBeTruthy();
+    // …but the project must not surface in Carol's list
+    const list = await (await carol.request.get('/api/projects')).json();
+    expect(list.some((p: { id: string }) => p.id === proj.id)).toBeFalsy();
+
+    await alice.close();
+    await carol.close();
+  });
+
   test('percent-encoded project id cannot bypass the access guard (C1)', async ({ browser }) => {
     const alice = await browser.newContext();
     await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });

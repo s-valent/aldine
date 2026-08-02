@@ -12,6 +12,20 @@ export function canAccess(meta: ProjectMeta, user: PublicUser | null): boolean {
   return !!meta.share?.collaborators?.some((c) => c.toLowerCase() === email);
 }
 
+/**
+ * Should this project appear in the user's project list? Stricter than
+ * canAccess: link-mode grants access when the URL is opened, but must not
+ * surface the project on every signed-in user's home screen.
+ */
+export function isListed(meta: ProjectMeta, user: PublicUser | null): boolean {
+  if (!AUTH_ENABLED) return true;
+  if (!meta.ownerId) return true;      // legacy project created before auth
+  if (!user) return false;
+  if (meta.ownerId === user.id) return true;
+  const email = user.email.toLowerCase();
+  return !!meta.share?.collaborators?.some((c) => c.toLowerCase() === email);
+}
+
 /** Only the owner may change sharing / delete. */
 export function isOwner(meta: ProjectMeta, user: PublicUser | null): boolean {
   if (!AUTH_ENABLED) return true;

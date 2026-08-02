@@ -19,7 +19,7 @@ import * as comments from './comments.js';
 import * as auth from './auth.js';
 import * as oauth from './oauth.js';
 import * as email from './email.js';
-import { canAccess, isOwner, ownerName } from './authz.js';
+import { canAccess, isListed, isOwner, ownerName } from './authz.js';
 import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
 import { safeJoin, isTextFile, newId, BRANCH_RE } from './util.js';
 
@@ -262,7 +262,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- projects ----------
   app.get('/api/projects', async (req) => {
     const user = reqUser(req);
-    return Promise.all((await store.listProjects()).filter((m) => !m.deletedAt && canAccess(m, user)).map((m) => publicMeta(m, user)));
+    return Promise.all((await store.listProjects()).filter((m) => !m.deletedAt && isListed(m, user)).map((m) => publicMeta(m, user)));
   });
 
   // Trash: soft-deleted projects the user owns, newest first. Restorable until purge (~30 days).

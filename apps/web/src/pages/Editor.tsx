@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, CompileResult, ProjectDetail, TreeEntry, Comment, localUser } from '../api';
 import { useToast } from '../components/Toast';
+import { useAuth } from '../components/Auth';
+import ShareModal from '../components/ShareModal';
 import FileTree from '../components/FileTree';
 import CodePane, { CodePaneHandle, EditorMode } from '../components/CodePane';
 import PdfPane, { PdfPaneHandle } from '../components/PdfPane';
@@ -55,6 +57,8 @@ export default function Editor() {
   const [showLog, setShowLog] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const { authEnabled } = useAuth();
   const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem('aldine.spellcheck') === '1');
   // Visual mode is gated by an experimental flag until it graduates.
   const visualEnabled = localStorage.getItem('aldine.experimental.visualEditor') === '1';
@@ -402,6 +406,9 @@ export default function Editor() {
             Publish to GitHub
           </button>
         )}
+        {authEnabled && project.isOwner && (
+          <button className="btn" onClick={() => setShareOpen(true)} data-testid="share-project" title="Invite collaborators or share by link">Share</button>
+        )}
         <button className="btn" onClick={startComment} data-testid="add-comment" title="Comment on the selected text">Comment</button>
         <Presence users={users} />
         <div className="toolbar__group">
@@ -610,6 +617,10 @@ export default function Editor() {
 
       {publishOpen && project && (
         <GithubPublish projectId={id} projectName={project.name} onClose={() => setPublishOpen(false)} onLinked={() => loadProject()} />
+      )}
+
+      {shareOpen && project && (
+        <ShareModal project={project} onClose={() => setShareOpen(false)} onSaved={() => { setShareOpen(false); loadProject(); }} />
       )}
 
       {showLog && compile.result && (

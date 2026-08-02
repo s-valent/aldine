@@ -6,6 +6,15 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Share from the editor** — the toolbar gains a Share button (owner-only,
+  multi-user mode) opening the same dialog as the home-screen card.
+
+### Fixed
+- Link-shared projects no longer appear in every signed-in user's project
+  list. "Anyone with the link" now means exactly that: the project opens via
+  its URL but is listed only for the owner and invited collaborators.
+
 ### Changed
 - The repo-root `docker-compose.yml` is now the minimal prebuilt-image setup
   (identical to the README quick start). The previous full configuration —
