@@ -104,21 +104,13 @@ services:
     image: ghcr.io/trahloff/aldine-app:latest
     ports:
       - "8080:3000"
-    environment:
-      DATA_DIR: /data
-      META_DIR: /secrets
-      COMPILER_URL: http://compiler:4020
     volumes:
       - aldine-data:/data
       - aldine-secrets:/secrets
-    depends_on:
-      - compiler
     restart: unless-stopped
 
   compiler:
     image: ghcr.io/trahloff/aldine-compiler:latest
-    environment:
-      DATA_DIR: /data
     volumes:
       - aldine-data:/data
     restart: unless-stopped
