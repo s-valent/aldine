@@ -75,9 +75,13 @@ export default function Home() {
   const remove = async (e: React.MouseEvent, p: ProjectSummary) => {
     e.stopPropagation();
     if (!window.confirm(`Move “${p.name}” to the trash? You can restore it for 30 days.`)) return;
-    await api.deleteProject(p.id);
-    toast(`Moved ${p.name} to the trash`, 'ok');
-    load();
+    try {
+      await api.deleteProject(p.id);
+      toast(`Moved ${p.name} to the trash`, 'ok');
+      load();
+    } catch (err: any) {
+      toast(`Could not delete ${p.name}: ${err.message}`, 'error');
+    }
   };
 
   const restore = async (id: string, name: string) => {
@@ -161,7 +165,11 @@ export default function Home() {
           </div>
         ) : (
           <div className="projects" data-testid="project-grid">
-            {projects.map((p) => (
+            {projects.map((p) => {
+              // Deleting is owner-only server-side; without auth everyone owns
+              // everything. Don't offer what the server will refuse.
+              const canManage = !authEnabled || !!p.isOwner;
+              return (
               <div
                 key={p.id}
                 role="button"
@@ -178,13 +186,16 @@ export default function Home() {
                   {authEnabled && p.ownerId && !p.isOwner && <span title={`Shared by ${p.ownerName || 'someone'}`}>· shared</span>}
                   {p.zotero && <span title="Zotero linked" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><IconLink /> Zotero</span>}
                   {authEnabled && p.isOwner && (
-                    <button className="project-card__del" title="Share project" style={{ marginLeft: 'auto' }} data-testid={`share-${p.id}`}
+                    <button className="project-card__del" title={p.share?.mode === 'link' ? 'Shared by link — anyone signed in with the link can edit' : 'Share project'} style={{ marginLeft: 'auto' }} data-testid={`share-${p.id}`}
                       onClick={(e) => { e.stopPropagation(); setSharing(p); }}><IconLink /></button>
                   )}
-                  <button className="project-card__del" title="Delete project" aria-label={`Delete ${p.name}`} style={authEnabled && p.isOwner ? undefined : { marginLeft: 'auto' }} onClick={(e) => remove(e, p)}><IconX /></button>
+                  {canManage && (
+                    <button className="project-card__del" title="Delete project" aria-label={`Delete ${p.name}`} style={authEnabled && p.isOwner ? undefined : { marginLeft: 'auto' }} onClick={(e) => remove(e, p)}><IconX /></button>
+                  )}
                 </span>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -219,7 +230,14 @@ export default function Home() {
       )}
 
       {sharing && (
-        <ShareModal project={sharing} onClose={() => setSharing(null)} onSaved={() => { setSharing(null); load(); }} />
+        <ShareModal
+          project={sharing}
+          onClose={() => setSharing(null)}
+          onSaved={(updated) => {
+            setSharing(null);
+            setProjects((cur) => cur?.map((p) => (p.id === updated.id ? { ...p, share: updated.share } : p)) ?? cur);
+          }}
+        />
       )}
       {showAccount && user && (
         <AccountSettings user={user} onClose={() => setShowAccount(false)} />

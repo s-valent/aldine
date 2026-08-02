@@ -250,6 +250,21 @@ export function evictDoc(projectId: string, branch: string, filePath: string): v
   setTimeout(() => untombstone(name), 5000);
 }
 
+/**
+ * Drop every live collab socket on a project, forcing clients to reconnect and
+ * re-authenticate. Access is only checked in onAuthenticate (connect time), so
+ * without this a user whose access was just revoked keeps editing the shared
+ * document — and those edits keep being written to disk and auto-committed.
+ * The close code is a plain reset, so the provider reconnects on its own:
+ * still-allowed users resume, revoked ones are refused by the auth hook.
+ */
+export function closeProjectConnections(projectId: string): void {
+  hocuspocus.documents.forEach((_doc: Y.Doc, name: string) => {
+    const parsed = parseDocName(name);
+    if (parsed && parsed.projectId === projectId) hocuspocus.closeConnections(name);
+  });
+}
+
 /** Synchronously flush every loaded doc of a project+branch to disk (before compile/commit/merge). */
 export function flushBranchDocs(projectId: string, branch: string): number {
   let n = 0;

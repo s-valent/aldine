@@ -94,18 +94,104 @@ test.describe('auth', () => {
     const alice = await browser.newContext();
     await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123', name: 'Alice' } });
     const proj = await (await alice.request.post('/api/projects', { data: { name: 'Linked Paper' } })).json();
-    await alice.request.post(`/api/projects/${proj.id}/share`, { data: { mode: 'link' } });
+    const dEmail = uniq();
+    const shared = await alice.request.post(`/api/projects/${proj.id}/share`, { data: { mode: 'link', collaborators: [dEmail] } });
+    expect(shared.ok()).toBeTruthy();
 
     const carol = await browser.newContext();
-    await carol.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    const carolReg = await carol.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    expect(carolReg.ok()).toBeTruthy();
     // direct URL works…
     const opened = await carol.request.get(`/api/projects/${proj.id}`);
     expect(opened.ok()).toBeTruthy();
     // …but the project must not surface in Carol's list
-    const list = await (await carol.request.get('/api/projects')).json();
+    const listRes = await carol.request.get('/api/projects');
+    expect(listRes.ok()).toBeTruthy();
+    const list = await listRes.json();
+    expect(Array.isArray(list)).toBeTruthy();
     expect(list.some((p: { id: string }) => p.id === proj.id)).toBeFalsy();
 
+    // Positive controls — "not listed" must not be passing because nothing is
+    // listed: the owner still sees it, and so does a collaborator invited by
+    // email even though the mode is 'link'.
+    const aliceList = await (await alice.request.get('/api/projects')).json();
+    expect(aliceList.some((p: { id: string }) => p.id === proj.id)).toBeTruthy();
+
+    const dana = await browser.newContext();
+    await dana.request.post('/api/auth/register', { data: { email: dEmail, password: 'password123' } });
+    const danaList = await (await dana.request.get('/api/projects')).json();
+    expect(danaList.some((p: { id: string }) => p.id === proj.id)).toBeTruthy();
+
     await alice.close();
+    await carol.close();
+    await dana.close();
+  });
+
+  test('a link visitor gets the document, not the project: no roster, no rename, no Zotero, no remote', async ({ browser }) => {
+    const alice = await browser.newContext();
+    await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123', name: 'Alice' } });
+    const proj = await (await alice.request.post('/api/projects', { data: { name: 'Link Limits' } })).json();
+    const invitee = uniq();
+    await alice.request.post(`/api/projects/${proj.id}/share`, { data: { mode: 'link', collaborators: [invitee] } });
+
+    const carol = await browser.newContext();
+    await carol.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+
+    // opens the project, but the owner's invite list is not disclosed
+    const detail = await (await carol.request.get(`/api/projects/${proj.id}`)).json();
+    expect(detail.share.mode).toBe('link');
+    expect(detail.share.collaborators).toEqual([]);
+    expect(detail.isOwner).toBeFalsy();
+    expect(detail.isMember).toBeFalsy();
+    // …while the owner still sees who she invited
+    const own = await (await alice.request.get(`/api/projects/${proj.id}`)).json();
+    expect(own.share.collaborators).toEqual([invitee]);
+
+    // and cannot reconfigure the project or reach the owner's linked accounts
+    expect((await carol.request.patch(`/api/projects/${proj.id}`, { data: { name: 'Renamed by a stranger' } })).status()).toBe(403);
+    expect((await carol.request.get(`/api/projects/${proj.id}/zotero/search?q=a`)).status()).toBe(403);
+    expect((await carol.request.delete(`/api/projects/${proj.id}/zotero`)).status()).toBe(403);
+    expect((await carol.request.post(`/api/projects/${proj.id}/github/reset-to-remote`)).status()).toBe(403);
+    // the name is untouched
+    expect((await (await alice.request.get(`/api/projects/${proj.id}`)).json()).name).toBe('Link Limits');
+
+    await alice.close();
+    await carol.close();
+  });
+
+  test('share from the editor toolbar: owner-only button, link mode, copyable link', async ({ page, browser }) => {
+    const email = uniq();
+    await register(page, email);
+    const proj = await (await page.request.post('/api/projects', { data: { name: 'Toolbar Share' } })).json();
+    await page.goto(`/p/${proj.id}`);
+    await expect(page.getByTestId('editor-shell')).toBeVisible();
+
+    // the owner sees Share; the dialog opens with the current (private) mode
+    await page.getByTestId('share-project').click();
+    await expect(page.getByTestId('share-modal')).toBeVisible();
+    await expect(page.getByTestId('share-private')).toBeChecked();
+
+    // switching to link mode reveals the URL to send
+    await page.getByTestId('share-link').check();
+    await expect(page.getByTestId('share-url')).toContainText(`/p/${proj.id}`);
+    await page.getByTestId('share-emails').fill('not-an-email');
+    await page.getByTestId('share-save').click();
+    await expect(page.getByTestId('share-modal')).toBeVisible(); // refused, still open
+
+    await page.getByTestId('share-emails').fill(uniq());
+    await page.getByTestId('share-save').click();
+    await expect(page.getByTestId('share-modal')).toHaveCount(0);
+    const after = await (await page.request.get(`/api/projects/${proj.id}`)).json();
+    expect(after.share.mode).toBe('link');
+
+    // a link visitor opens the same project — and gets no Share button
+    const carol = await browser.newContext();
+    await carol.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    const carolPage = await carol.newPage();
+    await carolPage.goto(`/p/${proj.id}`);
+    await expect(carolPage.getByTestId('editor-shell')).toBeVisible();
+    await expect(carolPage.getByTestId('share-project')).toHaveCount(0);
+    await expect(carolPage.getByTestId('github-publish-open')).toHaveCount(0);
     await carol.close();
   });
 

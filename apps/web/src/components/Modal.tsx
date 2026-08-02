@@ -18,6 +18,12 @@ interface Props {
 export default function Modal({ onClose, children, label, wide, width, testId }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  // Callers pass an inline arrow, so onClose has a new identity on every parent
+  // render. Read it through a ref and mount the effect ONCE: keyed on onClose it
+  // would re-run whenever the parent re-renders (a compile tick, a presence
+  // update) and yank focus back to the first control mid-typing.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     returnFocus.current = document.activeElement as HTMLElement | null;
@@ -29,7 +35,7 @@ export default function Modal({ onClose, children, label, wide, width, testId }:
     (focusables()[0] ?? panel)?.focus();
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
       if (e.key !== 'Tab') return;
       const items = focusables();
       if (!items.length) { e.preventDefault(); return; }
@@ -42,7 +48,7 @@ export default function Modal({ onClose, children, label, wide, width, testId }:
       document.removeEventListener('keydown', onKey, true);
       returnFocus.current?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

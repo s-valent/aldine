@@ -8,7 +8,7 @@ import * as zotero from './zotero.js';
 import { compileProject, synctexLookup } from './compile.js';
 import * as usage from './usage.js';
 import * as github from './github.js';
-import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc, scheduleCommit } from './collab.js';
+import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc, scheduleCommit, closeProjectConnections } from './collab.js';
 import { parseBib, bibKeys, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
@@ -19,7 +19,7 @@ import * as comments from './comments.js';
 import * as auth from './auth.js';
 import * as oauth from './oauth.js';
 import * as email from './email.js';
-import { canAccess, isListed, isOwner, ownerName } from './authz.js';
+import { canAccess, isListed, isMember, isOwner, ownerName } from './authz.js';
 import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
 import { safeJoin, isTextFile, newId, BRANCH_RE } from './util.js';
 
@@ -71,12 +71,18 @@ function isHiddenPath(rel: string): boolean {
 }
 
 async function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null) {
-  const { zotero: z, ownerId, ...rest } = meta;
+  const { zotero: z, ownerId, share, ...rest } = meta;
+  // The collaborator roster is the owner's private list of invitee email
+  // addresses — never hand it to the other people who can open the project
+  // (link visitors most of all). Everyone else sees the mode only.
+  const owner = user !== undefined && isOwner(meta, user);
   return {
     ...rest,
+    share: share && (owner ? share : { mode: share.mode, collaborators: [] }),
     ownerId,
     ownerName: await ownerName(meta),
     isOwner: user !== undefined ? isOwner(meta, user) : undefined,
+    isMember: user !== undefined ? isMember(meta, user) : undefined,
     zotero: z ? {
       libraryPrefix: z.libraryPrefix,
       collectionKey: z.collectionKey,
@@ -85,6 +91,32 @@ async function publicMeta(meta: store.ProjectMeta, user?: auth.PublicUser | null
       username: z.username,
     } : null,
   };
+}
+
+/**
+ * Guards for routes the global preHandler's canAccess is too weak for. Link
+ * mode says "anyone signed in with the link can edit" — the document, not the
+ * project. Reconfiguring it, or reaching through it into the owner's linked
+ * Zotero/GitHub accounts, needs membership or ownership. Both return null
+ * after replying 403, so callers do: `const meta = await requireX(...); if
+ * (!meta) return;`
+ */
+async function requireMember(req: any, reply: any, action: string): Promise<store.ProjectMeta | null> {
+  const meta = await store.readMeta(req.params.id);
+  if (!isMember(meta, reqUser(req))) {
+    reply.code(403).send({ error: `Only the owner and collaborators can ${action}` });
+    return null;
+  }
+  return meta;
+}
+
+async function requireOwner(req: any, reply: any, action: string): Promise<store.ProjectMeta | null> {
+  const meta = await store.readMeta(req.params.id);
+  if (!isOwner(meta, reqUser(req))) {
+    reply.code(403).send({ error: `Only the owner can ${action}` });
+    return null;
+  }
+  return meta;
 }
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -298,6 +330,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         : (meta.share?.collaborators || []);
       meta.share = { mode, collaborators };
       await store.writeMeta(meta);
+      // Access is checked when a collab socket connects, so a session already
+      // in the document would survive being revoked. Drop this project's
+      // sockets: clients reconnect and re-authenticate, which re-runs the
+      // check — the still-allowed resume, the revoked are refused.
+      closeProjectConnections(meta.id);
       return publicMeta(meta, reqUser(req));
     });
 
@@ -328,7 +365,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (binFiles.length) await gitops.commitAll(meta.id, 'main', 'aldine: import assets').catch(() => {});
       const root = guessRoot(entries);
       if (root) { meta.rootFile = root; await store.writeMeta(meta); }
-      return publicMeta(meta);
+      return publicMeta(meta, reqUser(req));
     } catch (err: any) {
       return reply.code(400).send({ error: `Could not import ZIP: ${err.message}` });
     }
@@ -346,7 +383,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch<{ Params: { id: string }; Body: Partial<Pick<store.ProjectMeta, 'name' | 'rootFile' | 'engine'>> }>(
     '/api/projects/:id', async (req, reply) => {
-      const meta = await store.readMeta(req.params.id);
+      const meta = await requireMember(req, reply, 'rename or reconfigure this project');
+      if (!meta) return;
       const { name, rootFile, engine } = req.body || {};
       if (name !== undefined) {
         const trimmed = String(name).trim();
@@ -357,7 +395,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (rootFile) meta.rootFile = rootFile;
       if (engine) meta.engine = engine;
       await store.writeMeta(meta);
-      return publicMeta(meta);
+      return publicMeta(meta, reqUser(req));
     });
 
   // Delete = move to trash (restorable ~30 days). ?permanent=1 skips the trash
@@ -643,6 +681,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { id: string }; Body: { apiKey: string; libraryPrefix: string; collectionKey?: string; bibFile?: string; branch?: string } }>(
     '/api/projects/:id/zotero/link', async (req, reply) => {
       const { apiKey, libraryPrefix, collectionKey, bibFile = 'zotero.bib', branch = 'main' } = req.body || {};
+      const owned = await requireOwner(req, reply, 'link a Zotero library');
+      if (!owned) return;
       if (!apiKey || !libraryPrefix) return reply.code(400).send({ error: 'apiKey and libraryPrefix required' });
       if (isHiddenPath(bibFile)) return reply.code(403).send({ error: 'forbidden path' });
       try {
@@ -660,6 +700,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { id: string }; Body: { branch?: string; force?: boolean } }>(
     '/api/projects/:id/zotero/sync', async (req, reply) => {
+      if (!(await requireMember(req, reply, 'sync this Zotero library'))) return;
       try {
         return await zotero.syncProject(req.params.id, req.body?.branch || 'main', !!req.body?.force);
       } catch (err: any) {
@@ -667,15 +708,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
     });
 
-  app.delete<{ Params: { id: string } }>('/api/projects/:id/zotero', async (req) => {
-    const meta = await store.readMeta(req.params.id);
+  app.delete<{ Params: { id: string } }>('/api/projects/:id/zotero', async (req, reply) => {
+    const meta = await requireOwner(req, reply, 'unlink the Zotero library');
+    if (!meta) return;
     delete meta.zotero;
     await store.writeMeta(meta);
     return { ok: true };
   });
 
+  // Searches run on the OWNER's stored API key and reach their whole personal
+  // library, so this is members-only — a link visitor may edit the paper, not
+  // read the owner's Zotero account.
   app.get<{ Params: { id: string }; Querystring: { q?: string } }>('/api/projects/:id/zotero/search', async (req, reply) => {
-    const meta = await store.readMeta(req.params.id);
+    const meta = await requireMember(req, reply, 'search this Zotero library');
+    if (!meta) return;
     if (!meta.zotero) return reply.code(400).send({ error: 'no Zotero link' });
     try {
       return await zotero.searchItems(meta.zotero.apiKey, meta.zotero.libraryPrefix, req.query.q || '');
@@ -765,7 +811,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return c || reply.code(404).send({ error: 'comment not found' });
     });
 
-  app.delete<{ Params: { id: string; cid: string } }>('/api/projects/:id/comments/:cid', async (req) => {
+  // Anyone in the document may comment and reply, but clearing someone else's
+  // review thread is for the team — a link visitor can only delete their own.
+  app.delete<{ Params: { id: string; cid: string }; Querystring: Q }>('/api/projects/:id/comments/:cid', async (req, reply) => {
+    const meta = await store.readMeta(req.params.id);
+    if (!isMember(meta, reqUser(req))) {
+      const all = await comments.listComments(req.params.id, req.query.branch || 'main');
+      const mine = all.find((c) => c.id === req.params.cid)?.author === reqUser(req)?.name;
+      if (!mine) return reply.code(403).send({ error: 'Only the owner and collaborators can delete this comment' });
+    }
     await comments.deleteComment(req.params.id, req.params.cid);
     return { ok: true };
   });
@@ -889,8 +943,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   }
 
   // Sync a linked project with its GitHub remote (uses the acting user's token).
-  const linkedRemote = async (req: any, reply: any) => {
-    const meta = await store.readMeta(req.params.id);
+  // Syncing pushes the project into the OWNER's repo and can pull remote state
+  // over everyone's work, so every remote operation is members-only: link mode
+  // grants editing, not control of where the project is mirrored.
+  const linkedRemote = async (req: any, reply: any, action = 'sync this project') => {
+    const meta = await requireMember(req, reply, action);
+    if (!meta) return null;
     if (!meta.github) { reply.code(400).send({ error: 'This project is not linked to GitHub' }); return null; }
     const conn = await github.getConnection(ghUserId(req));
     if (!conn) { reply.code(400).send({ error: 'Connect GitHub to sync' }); return null; }
@@ -966,7 +1024,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Conflict escape hatch: discard local changes and take the GitHub version.
+  // Destroys everyone's unpushed work, so it is the owner's call alone.
   app.post<{ Params: { id: string } }>('/api/projects/:id/github/reset-to-remote', async (req, reply) => {
+    if (!(await requireOwner(req, reply, 'discard local changes'))) return;
     const link = await linkedRemote(req, reply); if (!link) return;
     try {
       await gitops.resetToRemote(req.params.id, link.remoteBranch, link.url);
@@ -990,6 +1050,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Switch which GitHub branch this project tracks. Saves current work (commit +
   // push) first so nothing is lost, then checks out the target branch.
   app.post<{ Params: { id: string }; Body: { branch?: string } }>('/api/projects/:id/github/switch-branch', async (req, reply) => {
+    // Persists meta.github.remoteBranch — repoints the project for everyone.
+    if (!(await requireOwner(req, reply, 'change the tracked GitHub branch'))) return;
     const link = await linkedRemote(req, reply); if (!link) return;
     const target = (req.body?.branch || '').trim();
     if (!target) return reply.code(400).send({ error: 'branch required' });

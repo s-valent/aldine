@@ -8,12 +8,8 @@ All notable changes to Aldine are documented here. The format follows
 
 ### Added
 - **Share from the editor** — the toolbar gains a Share button (owner-only,
-  multi-user mode) opening the same dialog as the home-screen card.
-
-### Fixed
-- Link-shared projects no longer appear in every signed-in user's project
-  list. "Anyone with the link" now means exactly that: the project opens via
-  its URL but is listed only for the owner and invited collaborators.
+  multi-user mode) opening the same dialog as the home-screen card. The dialog
+  now shows the share URL with a Copy link button when link mode is on.
 
 ### Changed
 - The repo-root `docker-compose.yml` is now the minimal prebuilt-image setup
@@ -21,6 +17,30 @@ All notable changes to Aldine are documented here. The format follows
   build-from-source, every option documented, TLS/Postgres/Redis profiles,
   hardening — moved to `docker-compose.full.yml`. Both share the same project
   name and volumes, so switching between them keeps your data.
+- A share link now grants the document, not the project. Opening one lets you
+  read and edit; renaming the project, syncing it to the owner's GitHub repo,
+  and searching or unlinking their Zotero library are for the owner and
+  invited collaborators.
+
+### Fixed
+- Link-shared projects no longer appear in every signed-in user's project
+  list. "Anyone with the link" now means exactly that: the project opens via
+  its URL but is listed only for the owner and invited collaborators.
+- The collaborator list is no longer disclosed to everyone who can open a
+  project — only the owner sees the email addresses they invited.
+- Revoking access now ends live editing sessions. Previously the check ran
+  only when a collaboration socket connected, so someone already in the
+  document kept editing (and their edits kept being committed) after being
+  removed.
+- Buttons the server refuses are no longer offered: Delete on projects shared
+  with you, and Publish/sync to GitHub when you are not the owner. A failed
+  delete or rename now reports the error instead of silently doing nothing.
+- Invalid collaborator addresses are rejected in the dialog instead of being
+  silently dropped after a "Sharing updated" confirmation; semicolon- and
+  newline-separated lists are accepted.
+- Typing in a dialog is no longer interrupted when the editor re-renders
+  underneath it (an auto-typeset tick or a collaborator's cursor moving would
+  pull focus back to the first control).
 
 ## [0.2.0] — 2026-07-23
 

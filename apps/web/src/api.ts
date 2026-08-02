@@ -9,6 +9,11 @@ export interface ProjectSummary {
   ownerId?: string;
   ownerName?: string;
   isOwner?: boolean;
+  /** Owner or invited collaborator — false for someone here via a share link.
+   *  Gates the affordances the server restricts to members. */
+  isMember?: boolean;
+  /** `collaborators` is empty unless you are the owner (the server does not
+   *  disclose other people's invite list). */
   share?: { mode: 'private' | 'link'; collaborators: string[] } | null;
   zotero: { libraryPrefix: string; collectionKey?: string; bibFile: string; lastSyncedAt?: string; username?: string } | null;
   github?: { fullName: string; owner: string; repo: string; remoteBranch: string; cloneUrl: string } | null;

@@ -111,8 +111,10 @@ export default function Editor() {
       const first = f.find((e) => e.path === p.rootFile) || f.find((e) => e.type === 'file' && e.path.endsWith('.tex')) || f.find((e) => e.type === 'file' && !e.binary);
       setActiveFile((cur) => (cur && f.some((e) => e.path === cur) ? cur : first?.path || null));
       // One-time nudge per project: work on an unlinked project exists only on
-      // this server until it's published to GitHub.
-      if (!p.github && !localStorage.getItem(`aldine.ghNudged.${id}`)) {
+      // this server until it's published to GitHub. Only the owner can publish,
+      // so only the owner is nudged.
+      const owner = !authEnabled || !!p.isOwner;
+      if (owner && !p.github && !localStorage.getItem(`aldine.ghNudged.${id}`)) {
         localStorage.setItem(`aldine.ghNudged.${id}`, '1');
         toast('This project lives only on this server — publish it to GitHub to keep a synced copy.');
       }
@@ -173,10 +175,17 @@ export default function Editor() {
     setCompile({ status: 'idle', result: null });
   };
 
-  const renameProject = async (name: string) => {
+  const renameProject = async (el: HTMLElement, name: string) => {
     if (!project || !name.trim() || name === project.name) return;
-    const p = await api.patchProject(id, { name: name.trim() });
-    setProject((prev) => (prev ? { ...prev, name: p.name } : prev));
+    try {
+      const p = await api.patchProject(id, { name: name.trim() });
+      setProject((prev) => (prev ? { ...prev, name: p.name } : prev));
+    } catch (err: any) {
+      // The name lives in a contentEditable React doesn't control, so a
+      // rejected rename would otherwise leave the refused text on screen.
+      el.textContent = project.name;
+      toast(`Could not rename: ${err.message}`, 'error');
+    }
   };
 
   const jumpToLine = (line: number | null, file?: string) => {
@@ -371,6 +380,10 @@ export default function Editor() {
 
   if (!project) return <div className="editor-shell" />;
 
+  // Without auth everyone is owner and member; with it, trust the server's word.
+  const isProjectOwner = !authEnabled || !!project.isOwner;
+  const canSync = !authEnabled || !!project.isMember;
+
   return (
     <div className="editor-shell" data-testid="editor-shell">
       <PluginHost ctx={pluginCtx} onPanels={setPluginPanels} />
@@ -381,7 +394,7 @@ export default function Editor() {
           contentEditable
           suppressContentEditableWarning
           data-testid="project-name"
-          onBlur={(e) => renameProject(e.currentTarget.textContent || '')}
+          onBlur={(e) => renameProject(e.currentTarget, e.currentTarget.textContent || '')}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLElement).blur(); } }}
         >
           {project.name}
@@ -399,12 +412,16 @@ export default function Editor() {
           </div>
         )}
         <div className="toolbar__spacer" />
+        {/* Syncing is members-only and publishing is owner-only server-side —
+            don't offer either to someone here on a share link. */}
         {project.github ? (
-          <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
+          canSync && <GithubSync projectId={id} fullName={project.github.fullName} onPulled={() => { loadFiles(); loadProject(); }} />
         ) : (
-          <button className="btn btn--ghost" onClick={() => setPublishOpen(true)} data-testid="github-publish-open" title="Publish this project to a GitHub repo — backup + sync">
-            Publish to GitHub
-          </button>
+          isProjectOwner && (
+            <button className="btn btn--ghost" onClick={() => setPublishOpen(true)} data-testid="github-publish-open" title="Publish this project to a GitHub repo — backup + sync">
+              Publish to GitHub
+            </button>
+          )
         )}
         {authEnabled && project.isOwner && (
           <button className="btn" onClick={() => setShareOpen(true)} data-testid="share-project" title="Invite collaborators or share by link">Share</button>
@@ -619,8 +636,12 @@ export default function Editor() {
         <GithubPublish projectId={id} projectName={project.name} onClose={() => setPublishOpen(false)} onLinked={() => loadProject()} />
       )}
 
-      {shareOpen && project && (
-        <ShareModal project={project} onClose={() => setShareOpen(false)} onSaved={() => { setShareOpen(false); loadProject(); }} />
+      {shareOpen && (
+        <ShareModal
+          project={project}
+          onClose={() => setShareOpen(false)}
+          onSaved={(updated) => { setShareOpen(false); setProject((prev) => (prev ? { ...prev, share: updated.share } : prev)); }}
+        />
       )}
 
       {showLog && compile.result && (
