@@ -8,7 +8,7 @@ import * as zotero from './zotero.js';
 import { compileProject, synctexLookup } from './compile.js';
 import * as usage from './usage.js';
 import * as github from './github.js';
-import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc, scheduleCommit, closeProjectConnections } from './collab.js';
+import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc, scheduleCommit, closeProjectConnections, bumpContentVersion, contentVersion } from './collab.js';
 import { publishProjectEvent } from './events.js';
 import { parseBib, bibKeys, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
@@ -341,6 +341,44 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return publicMeta(meta, reqUser(req));
     });
 
+  // Claim an ownerless legacy project (created before auth was enabled).
+  // First successful claim wins: the claimer becomes owner, sharing resets to
+  // private (any pre-existing share config was authorless), and everyone
+  // else's access ends — live sessions included, on every node.
+  const claiming = new Set<string>(); // in-process mutex: one node resolves races deterministically
+  app.post<{ Params: { id: string } }>('/api/projects/:id/claim', async (req, reply) => {
+    if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Claiming applies only when accounts are enabled' });
+    const user = reqUser(req);
+    if (!user) return reply.code(401).send({ error: 'Sign in required' });
+    if (claiming.has(req.params.id)) return reply.code(409).send({ error: 'Someone else is claiming this project' });
+    claiming.add(req.params.id);
+    try {
+      const meta = await store.readMeta(req.params.id); // re-read inside the mutex
+      if (meta.ownerId) return reply.code(409).send({ error: 'This project already has an owner' });
+      meta.ownerId = user.id;
+      meta.share = { mode: 'private', collaborators: [] };
+      await store.writeMeta(meta);
+      closeProjectConnections(meta.id);
+      publishProjectEvent({ type: 'access-changed', projectId: meta.id });
+      return publicMeta(meta, user);
+    } finally {
+      claiming.delete(req.params.id);
+    }
+  });
+
+  // Test hook (never in production): strip ownership so the e2e suite can
+  // fabricate the pre-auth legacy state against a fully materialized project.
+  // Same env-gating idiom as ALDINE_RESET_ECHO.
+  if (process.env.ALDINE_TEST_HOOKS === '1') {
+    app.post<{ Params: { id: string } }>('/api/projects/:id/disown', async (req) => {
+      const meta = await store.readMeta(req.params.id);
+      delete meta.ownerId;
+      delete meta.share;
+      await store.writeMeta(meta);
+      return { ok: true };
+    });
+  }
+
   app.get('/api/templates', async () => listTemplates());
 
   // Import an Overleaf/project ZIP (base64) as a new project.
@@ -491,6 +529,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // evict the source doc first so its final store can't recreate the old file
       evictDoc(req.params.id, branch, from);
       store.renameFile(req.params.id, branch, from, to);
+      bumpContentVersion(req.params.id, branch); // bib/label indexes carry file paths
       scheduleCommit(req.params.id, branch);
       return { ok: true };
     });
@@ -501,6 +540,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (isHiddenPath(rel)) return reply.code(403).send({ error: 'forbidden path' });
     evictDoc(req.params.id, branch, rel); // prevent resurrection via pending store
     store.deleteFile(req.params.id, branch, rel);
+    bumpContentVersion(req.params.id, branch);
     scheduleCommit(req.params.id, branch);
     // If the typeset root was deleted, re-point it at another .tex so the next
     // compile doesn't fail with "root file not found".
@@ -570,10 +610,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return synctexLookup(req.params.id, branch, payload);
     });
 
-  // ---------- bib index (for \cite autocomplete) ----------
+  // ---------- bib + label indexes (for \cite / \ref autocomplete) ----------
+  // Both walk the whole branch (readdir + read + parse every .bib/.tex), which
+  // used to run on EVERY autocomplete request. Cache per branch, keyed by the
+  // content version that every write path bumps (collab.ts) — a hit costs a
+  // Map lookup, a miss exactly one walk.
+  const bibIndexCache = new Map<string, { v: number; entries: BibEntry[] }>();
+  const labelIndexCache = new Map<string, { v: number; labels: Array<{ label: string; file: string }> }>();
+
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/bib', async (req) => {
     const branch = req.query.branch || 'main';
-    flushBranchDocs(req.params.id, branch);
+    flushBranchDocs(req.params.id, branch); // may bump the version (pending edits reach disk)
+    const key = `${req.params.id}::${branch}`;
+    const v = contentVersion(req.params.id, branch);
+    const hit = bibIndexCache.get(key);
+    if (hit && hit.v === v) return hit.entries;
     const entries: BibEntry[] = [];
     for (const f of store.listFiles(req.params.id, branch)) {
       if (f.type === 'file' && f.path.endsWith('.bib')) {
@@ -582,13 +633,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         } catch { /* skip broken bib */ }
       }
     }
+    bibIndexCache.set(key, { v, entries });
     return entries;
   });
 
-  // ---------- label index (for \ref autocomplete across files) ----------
   app.get<{ Params: { id: string }; Querystring: Q }>('/api/projects/:id/labels', async (req) => {
     const branch = req.query.branch || 'main';
     flushBranchDocs(req.params.id, branch);
+    const key = `${req.params.id}::${branch}`;
+    const v = contentVersion(req.params.id, branch);
+    const hit = labelIndexCache.get(key);
+    if (hit && hit.v === v) return hit.labels;
     const labels: Array<{ label: string; file: string }> = [];
     const re = /\\label\{([^}]+)\}/g;
     for (const f of store.listFiles(req.params.id, branch)) {
@@ -599,6 +654,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         while ((m = re.exec(text))) labels.push({ label: m[1], file: f.path });
       } catch { /* skip */ }
     }
+    labelIndexCache.set(key, { v, labels });
     return labels;
   });
 

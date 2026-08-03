@@ -373,3 +373,76 @@ test.describe('collab under auth', () => {
     await expect(page.locator('.cm-content')).toContainText('LOADED-UNDER-AUTH-42', { timeout: 15_000 });
   });
 });
+
+test.describe('ownerless legacy projects', () => {
+  // Fabricate the pre-auth state: a real project whose meta has no ownerId
+  // (ALDINE_TEST_HOOKS=1 exposes the disown route on the test server only).
+  const seedOwnerless = async (ctx: import('@playwright/test').APIRequestContext, name: string) => {
+    const proj = await (await ctx.post('/api/projects', { data: { name } })).json();
+    const r = await ctx.post(`/api/projects/${proj.id}/disown`);
+    if (!r.ok()) throw new Error('disown hook failed — is ALDINE_TEST_HOOKS set?');
+    return proj.id as string;
+  };
+
+  test('everyone sees it, nobody can manage it until claimed; first claim wins', async ({ browser }) => {
+    const alice = await browser.newContext();
+    await alice.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123', name: 'Alice' } });
+    const id = await seedOwnerless(alice.request, 'Legacy Doc');
+
+    const bob = await browser.newContext();
+    await bob.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123', name: 'Bob' } });
+
+    // listed for a stranger, readable, but not manageable
+    const bobList = await (await bob.request.get('/api/projects')).json();
+    const seen = bobList.find((p: { id: string }) => p.id === id);
+    expect(seen).toBeTruthy();
+    expect(seen.ownerId).toBeFalsy();
+    expect(seen.isOwner).toBeFalsy();
+    expect((await bob.request.delete(`/api/projects/${id}`)).status()).toBe(403);
+    expect((await bob.request.post(`/api/projects/${id}/share`, { data: { mode: 'link' } })).status()).toBe(403);
+
+    // simultaneous claims resolve to exactly one winner (in-process mutex)
+    const [r1, r2] = await Promise.all([
+      bob.request.post(`/api/projects/${id}/claim`),
+      alice.request.post(`/api/projects/${id}/claim`),
+    ]);
+    const statuses = [r1.status(), r2.status()].sort();
+    // Exactly one winner. The loser sees 409 (lost inside the claim mutex) or
+    // 403 (the winner's writeMeta already landed, so the global access guard
+    // rejects before the route) — both are correct denials, timing decides.
+    expect(statuses[0]).toBe(200);
+    expect([403, 409]).toContain(statuses[1]);
+
+    const winner = r1.status() === 200 ? bob : alice;
+    const loser = r1.status() === 200 ? alice : bob;
+    expect((await (await winner.request.get(`/api/projects/${id}`)).json()).isOwner).toBe(true);
+    // loser lost access entirely (project is private to the winner now)
+    expect((await loser.request.get(`/api/projects/${id}`)).status()).toBe(403);
+    const loserList = await (await loser.request.get('/api/projects')).json();
+    expect(loserList.some((p: { id: string }) => p.id === id)).toBeFalsy();
+
+    await alice.close();
+    await bob.close();
+  });
+
+  test('claim via the home-screen button unlocks owner controls', async ({ browser }) => {
+    const seeder = await browser.newContext();
+    await seeder.request.post('/api/auth/register', { data: { email: uniq(), password: 'password123' } });
+    const id = await seedOwnerless(seeder.request, 'Claim Me');
+    await seeder.close();
+
+    const ctx = await browser.newContext();
+    await ctx.addInitScript(() => localStorage.setItem('aldine.onboarded', '1'));
+    const page = await ctx.newPage();
+    await register(page, uniq());
+    const card = page.getByTestId(`project-card-${id}`);
+    await expect(card).toBeVisible();
+    await expect(page.getByTestId(`claim-${id}`)).toBeVisible();
+    await expect(page.getByTestId(`share-${id}`)).toHaveCount(0); // no owner controls pre-claim
+    page.on('dialog', (d) => d.accept());
+    await page.getByTestId(`claim-${id}`).click();
+    await expect(page.getByTestId(`share-${id}`)).toBeVisible(); // owner controls appear
+    await expect(page.getByTestId(`claim-${id}`)).toHaveCount(0);
+    await ctx.close();
+  });
+});

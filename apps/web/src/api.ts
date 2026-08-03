@@ -80,6 +80,7 @@ export const api = {
     req<ProjectSummary>(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteProject: (id: string, permanent = false) => req<{ ok: boolean }>(`/api/projects/${id}${permanent ? '?permanent=1' : ''}`, { method: 'DELETE' }),
   restoreProject: (id: string) => req<{ ok: boolean }>(`/api/projects/${id}/restore`, { method: 'POST' }),
+  claimProject: (id: string) => req<ProjectSummary>(`/api/projects/${id}/claim`, { method: 'POST' }),
   listTrash: () => req<{ id: string; name: string; deletedAt: string }[]>('/api/projects/trash'),
 
   listFiles: (id: string, branch: string) => req<TreeEntry[]>(`/api/projects/${id}/files?branch=${encodeURIComponent(branch)}`),

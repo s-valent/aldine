@@ -31,10 +31,14 @@ export function canAccess(meta: ProjectMeta, user: PublicUser | null): boolean {
   return !!user && meta.share?.mode === 'link';
 }
 
-/** Only the owner may change sharing / delete. */
+/** Only the owner may change sharing / delete. Ownerless legacy projects
+ *  (created before the operator enabled auth) have NO owner: they stay
+ *  readable/editable for everyone (isMember), but manage-actions require
+ *  claiming first (POST /:id/claim) — ownership is an explicit act, never
+ *  an implicit free-for-all. */
 export function isOwner(meta: ProjectMeta, user: PublicUser | null): boolean {
   if (!AUTH_ENABLED) return true;
-  if (!meta.ownerId) return true;
+  if (!meta.ownerId) return false;
   return !!user && meta.ownerId === user.id;
 }
 

@@ -84,6 +84,14 @@ export default function Home() {
     }
   };
 
+  const claim = async (e: React.MouseEvent, p: ProjectSummary) => {
+    e.stopPropagation();
+    if (!window.confirm(`Claim “${p.name}”? You become its owner and other users lose access.`)) return;
+    try { await api.claimProject(p.id); toast(`You now own ${p.name}`, 'ok'); }
+    catch (err: any) { toast(err.message, 'error'); } // e.g. someone claimed it first
+    load(); // winner sees owner controls; a loser sees the project disappear
+  };
+
   const restore = async (id: string, name: string) => {
     try { await api.restoreProject(id); toast(`Restored ${name}`, 'ok'); load(); }
     catch (err: any) { toast(err.message, 'error'); }
@@ -184,6 +192,11 @@ export default function Home() {
                 <span className="project-card__meta">
                   <span>{friendlyDate(p.createdAt)}</span>
                   {authEnabled && p.ownerId && !p.isOwner && <span title={`Shared by ${p.ownerName || 'someone'}`}>· shared</span>}
+                  {authEnabled && !p.ownerId && (
+                    <button className="btn btn--small" style={{ marginLeft: 'auto' }} data-testid={`claim-${p.id}`}
+                      title="This project predates accounts on this server and has no owner yet"
+                      onClick={(e) => claim(e, p)}>Claim</button>
+                  )}
                   {p.zotero && <span title="Zotero linked" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><IconLink /> Zotero</span>}
                   {authEnabled && p.isOwner && (
                     <button className="project-card__del" title={p.share?.mode === 'link' ? 'Shared by link — anyone signed in with the link can edit' : 'Share project'} style={{ marginLeft: 'auto' }} data-testid={`share-${p.id}`}
