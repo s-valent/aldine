@@ -116,6 +116,10 @@ export function citeHoverTooltip(projectId: string, branch: string): Extension {
         acc += k.length + 1;
       }
       key = key.trim();
+      // Render from whatever is cached, but kick off a refresh when the entry
+      // is stale/missing — the next hover then has current data. (loadBib is
+      // TTL-guarded, so hovering repeatedly doesn't hammer the server.)
+      void loadBib(projectId, branch);
       const entry = (bibCache?.entries || []).find((e) => e.key === key);
       const from = line.from + braceStart;
       return {

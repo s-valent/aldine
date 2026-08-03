@@ -124,6 +124,11 @@ export default function Editor() {
   const doCompile = useCallback(async () => {
     if (compilingRef.current) { pendingRef.current = true; return; }
     compilingRef.current = true;
+    // A typeset is where freshly typed \label/\cite content becomes relevant —
+    // drop the client index caches so the next autocomplete/hover refetches
+    // (cheap now: the server caches per content version).
+    invalidateBibCache();
+    invalidateLabelCache();
     setCompile((c) => ({ ...c, status: 'compiling' }));
     try {
       const result = await api.compile(id, branch);

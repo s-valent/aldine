@@ -89,6 +89,19 @@ const sha1 = (s: string) => crypto.createHash('sha1').update(s).digest('hex');
 export function tombstone(name: string): void { tombstoned.add(name); }
 export function untombstone(name: string): void { tombstoned.delete(name); }
 
+// Monotonic per-branch content version — the invalidation signal for derived
+// indexes (the /bib and /labels caches in routes.ts). Bumped by every path
+// that changes branch content on disk: Yjs doc stores, REST file mutations,
+// and git rewrites (merge/revert/pull → refreshBranchDocsFromDisk).
+const contentVersions = new Map<string, number>();
+export function bumpContentVersion(projectId: string, branch: string): void {
+  const k = `${projectId}::${branch}`;
+  contentVersions.set(k, (contentVersions.get(k) || 0) + 1);
+}
+export function contentVersion(projectId: string, branch: string): number {
+  return contentVersions.get(`${projectId}::${branch}`) || 0;
+}
+
 /** Ephemeral coordination docs (e.g. the comment-change signal) are never written to disk. */
 function isSignalDoc(filePath: string): boolean {
   return filePath.startsWith('.aldine/');
@@ -115,6 +128,7 @@ export function writeDocToDisk(name: string, document: Y.Doc): void {
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, text);
   lastWritten.set(name, hash);
+  bumpContentVersion(projectId, branch);
   scheduleAutoCommit(`${projectId}::${branch}`);
 }
 
@@ -271,6 +285,7 @@ export function flushBranchDocs(projectId: string, branch: string): number {
  * so connected editors update in place.
  */
 export function refreshBranchDocsFromDisk(projectId: string, branch: string): void {
+  bumpContentVersion(projectId, branch); // git just rewrote files under this branch
   hocuspocus.documents.forEach((doc: Y.Doc & { name: string }, name: string) => {
     const parsed = parseDocName(name);
     if (!parsed || parsed.projectId !== projectId || parsed.branch !== branch) return;
