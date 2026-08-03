@@ -99,6 +99,24 @@ resource "aws_iam_role_policy" "github_deploy" {
         Action   = ["ecs:UpdateService", "ecs:DescribeServices"]
         Resource = [aws_ecs_service.app.id]
       },
+      {
+        # SHA-pinned deploys: CI reads the live task def, swaps the image tags,
+        # and registers a new revision (these ECS actions don't support
+        # resource-level scoping).
+        Sid      = "TaskDefPinning"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"]
+        Resource = "*"
+      },
+      {
+        # Registering a task def that references the task/execution roles
+        # requires passing them — scoped to exactly those two, ECS only.
+        Sid      = "PassTaskRoles"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = [aws_iam_role.task.arn, aws_iam_role.execution.arn]
+        Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } }
+      },
     ]
   })
 }

@@ -1,0 +1,54 @@
+name: Rollback AWS deploy
+
+# Point the ECS service at a previous SHA-pinned task-definition revision.
+# Each revision is an immutable (server, compiler) image pair from one commit,
+# so a rollback restores exactly the code that revision shipped. Leave the
+# input empty to roll back to the revision before the current one.
+#
+# Find revisions:  aws ecs list-task-definitions --family-prefix papyr
+# What runs now:   aws ecs describe-services --cluster papyr --services papyr \
+#                    --query 'services[0].taskDefinition'
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Task-definition revision number (empty = previous)
+        required: false
+
+permissions:
+  id-token: write # OIDC
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Roll the service back
+        run: |
+          set -euo pipefail
+          CURRENT=$(aws ecs describe-services --cluster papyr --services papyr \
+            --query 'services[0].taskDefinition' --output text --region "${{ vars.AWS_REGION }}")
+          CUR_REV="${CURRENT##*:}"
+          REV="${{ inputs.revision }}"
+          if [ -z "$REV" ]; then REV=$((CUR_REV - 1)); fi
+          if [ "$REV" -lt 1 ] || [ "$REV" = "$CUR_REV" ]; then
+            echo "Nothing to do (current revision: $CUR_REV, requested: $REV)"; exit 1
+          fi
+          # Surface which commit this revision carries (the SHA image tag).
+          IMG=$(aws ecs describe-task-definition --task-definition "papyr:$REV" \
+            --query 'taskDefinition.containerDefinitions[?name==`server`].image' \
+            --output text --region "${{ vars.AWS_REGION }}")
+          echo "Rolling back: papyr:$CUR_REV → papyr:$REV ($IMG)"
+          aws ecs update-service --cluster papyr --service papyr \
+            --task-definition "papyr:$REV" --region "${{ vars.AWS_REGION }}"
+          aws ecs wait services-stable --cluster papyr --services papyr \
+            --region "${{ vars.AWS_REGION }}"
+          echo "## Rolled back" >> "$GITHUB_STEP_SUMMARY"
+          echo "- from: \`papyr:$CUR_REV\` → to: \`papyr:$REV\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- server image: \`$IMG\`" >> "$GITHUB_STEP_SUMMARY"

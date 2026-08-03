@@ -169,6 +169,10 @@ resource "aws_ecs_service" "app" {
   depends_on = [aws_lb_listener.https, aws_ecs_cluster_capacity_providers.main]
 
   lifecycle {
-    ignore_changes = [desired_count] # don't fight manual/console scaling
+    # desired_count: don't fight manual/console scaling.
+    # task_definition: CI registers SHA-pinned revisions on every deploy;
+    # without this, the next terraform apply would silently roll the service
+    # back to the :latest-pinned revision from this file.
+    ignore_changes = [desired_count, task_definition]
   }
 }
