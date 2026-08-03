@@ -1,3 +1,4 @@
+import { PROJECT_ID_RE } from '../util.js';
 import type { DataStore, User, SessionRow, ProjectMeta, Comment } from './types.js';
 
 /**
@@ -87,10 +88,17 @@ export class PgStore implements DataStore {
     return { id: r.id, email: r.email, name: r.name, salt: r.salt, hash: r.hash, createdAt: r.created_at, provider: r.provider ?? undefined };
   }
   async createUser(u: User) {
-    await this.pool.query(
-      `INSERT INTO users(id,email,name,salt,hash,created_at,provider) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-      [u.id, u.email, u.name, u.salt, u.hash, u.createdAt, u.provider ?? null],
-    );
+    try {
+      await this.pool.query(
+        `INSERT INTO users(id,email,name,salt,hash,created_at,provider) VALUES($1,$2,$3,$4,$5,$6,$7)`,
+        [u.id, u.email, u.name, u.salt, u.hash, u.createdAt, u.provider ?? null],
+      );
+    } catch (err: any) {
+      // Same message as the JSON backend, so register() surfaces one user-facing
+      // error regardless of datastore (unique_violation on users.email).
+      if (err?.code === '23505') throw new Error('An account with that email already exists');
+      throw err;
+    }
   }
   async updateUser(u: User) {
     await this.pool.query(
@@ -131,18 +139,25 @@ export class PgStore implements DataStore {
   async deleteReset(token: string) { await this.pool.query(`DELETE FROM resets WHERE token=$1`, [token]); }
 
   // ---- project meta ----
+  // Same id discipline as the JSON backend: reads treat a malformed id as
+  // absent, writes/deletes refuse it (matches JsonStore.metaPath semantics).
   async readMeta(id: string) {
+    if (!PROJECT_ID_RE.test(id)) return null;
     const { rows } = await this.pool.query(`SELECT data FROM project_meta WHERE id=$1`, [id]);
     return rows[0] ? (rows[0].data as ProjectMeta) : null;
   }
   async writeMeta(meta: ProjectMeta) {
+    if (!PROJECT_ID_RE.test(meta.id)) throw new Error('bad project id');
     await this.pool.query(
       `INSERT INTO project_meta(id,created_at,data) VALUES($1,$2,$3)
        ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data, created_at=EXCLUDED.created_at`,
       [meta.id, meta.createdAt, jsonb(meta)],
     );
   }
-  async deleteMeta(id: string) { await this.pool.query(`DELETE FROM project_meta WHERE id=$1`, [id]); }
+  async deleteMeta(id: string) {
+    if (!PROJECT_ID_RE.test(id)) throw new Error('bad project id');
+    await this.pool.query(`DELETE FROM project_meta WHERE id=$1`, [id]);
+  }
   async listMeta() {
     const { rows } = await this.pool.query(`SELECT data FROM project_meta ORDER BY created_at DESC`);
     return rows.map((r) => r.data as ProjectMeta);
@@ -150,10 +165,12 @@ export class PgStore implements DataStore {
 
   // ---- comments ----
   async loadComments(projectId: string) {
+    if (!PROJECT_ID_RE.test(projectId)) return [];
     const { rows } = await this.pool.query(`SELECT data FROM comments WHERE project_id=$1`, [projectId]);
     return rows[0] ? (rows[0].data as Comment[]) : [];
   }
   async saveComments(projectId: string, list: Comment[]) {
+    if (!PROJECT_ID_RE.test(projectId)) throw new Error('bad project id');
     await this.pool.query(
       `INSERT INTO comments(project_id,data) VALUES($1,$2)
        ON CONFLICT(project_id) DO UPDATE SET data=EXCLUDED.data`,

@@ -76,6 +76,12 @@ export class JsonStore implements DataStore {
     }
   }
 
+  // The flat-file cache holds live objects; returning (or storing) them by
+  // reference lets a caller's later mutation silently change the store before
+  // any write — the Postgres backend never aliases. Copy at the boundary so
+  // both backends behave identically ("mutating a returned row is a no-op").
+  private clone<T>(v: T): T { return v == null ? v : structuredClone(v); }
+
   // ---- users ----
   private users() { return this.read<Record<string, User>>(this.usersPath, {}); }
   async createUser(u: User) {
@@ -86,12 +92,12 @@ export class JsonStore implements DataStore {
     if (Object.values(m).some((x) => x.email === u.email && x.id !== u.id)) {
       throw new Error('An account with that email already exists');
     }
-    m[u.id] = u;
+    m[u.id] = this.clone(u);
     this.write(this.usersPath, m);
   }
-  async updateUser(u: User) { const m = this.users(); m[u.id] = u; this.write(this.usersPath, m); }
-  async getUser(id: string) { return this.users()[id] || null; }
-  async findUserByEmail(email: string) { return Object.values(this.users()).find((u) => u.email === email) || null; }
+  async updateUser(u: User) { const m = this.users(); m[u.id] = this.clone(u); this.write(this.usersPath, m); }
+  async getUser(id: string) { return this.clone(this.users()[id] || null); }
+  async findUserByEmail(email: string) { return this.clone(Object.values(this.users()).find((u) => u.email === email) || null); }
 
   // ---- sessions ----
   private sessions() { return this.read<Record<string, SessionRow>>(this.sessionsPath, {}); }
@@ -102,7 +108,7 @@ export class JsonStore implements DataStore {
     s[sid] = { userId, exp };
     this.write(this.sessionsPath, s);
   }
-  async getSession(sid: string) { const s = this.sessions()[sid]; return s || null; }
+  async getSession(sid: string) { return this.clone(this.sessions()[sid] || null); }
   async deleteSession(sid: string) { const s = this.sessions(); if (s[sid]) { delete s[sid]; this.write(this.sessionsPath, s); } }
   async deleteSessionsForUser(userId: string) {
     const s = this.sessions(); let changed = false;
@@ -119,7 +125,7 @@ export class JsonStore implements DataStore {
     r[token] = { userId, exp };
     this.write(this.resetsPath, r);
   }
-  async getReset(token: string) { return this.resets()[token] || null; }
+  async getReset(token: string) { return this.clone(this.resets()[token] || null); }
   async deleteReset(token: string) { const r = this.resets(); if (r[token]) { delete r[token]; this.write(this.resetsPath, r); } }
 
   // ---- project meta ----
@@ -147,10 +153,10 @@ export class JsonStore implements DataStore {
 
   // ---- connections ----
   private connections() { return this.read<Record<string, Record<string, Record<string, unknown>>>>(this.connectionsPath, {}); }
-  async getConnection(userId: string, provider: string) { return this.connections()[userId]?.[provider] || null; }
+  async getConnection(userId: string, provider: string) { return this.clone(this.connections()[userId]?.[provider] || null); }
   async setConnection(userId: string, provider: string, data: Record<string, unknown>) {
     const c = this.connections();
-    (c[userId] ||= {})[provider] = data;
+    (c[userId] ||= {})[provider] = this.clone(data);
     this.write(this.connectionsPath, c);
   }
   async deleteConnection(userId: string, provider: string) {

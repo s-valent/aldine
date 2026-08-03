@@ -8,7 +8,8 @@
     "start": "tsx src/index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test:github": "tsx test/github-sync.integration.mjs"
+    "test:github": "tsx test/github-sync.integration.mjs",
+    "test:db": "tsx test/datastore.conformance.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
