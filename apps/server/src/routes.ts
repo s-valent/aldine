@@ -9,6 +9,7 @@ import { compileProject, synctexLookup } from './compile.js';
 import * as usage from './usage.js';
 import * as github from './github.js';
 import { flushBranchDocs, refreshBranchDocsFromDisk, evictDoc, scheduleCommit, closeProjectConnections } from './collab.js';
+import { publishProjectEvent } from './events.js';
 import { parseBib, bibKeys, BibEntry } from './bib.js';
 import { listPlugins, pluginAssetPath } from './plugins.js';
 import { listTemplates, templateFiles } from './templates.js';
@@ -333,8 +334,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // Access is checked when a collab socket connects, so a session already
       // in the document would survive being revoked. Drop this project's
       // sockets: clients reconnect and re-authenticate, which re-runs the
-      // check — the still-allowed resume, the revoked are refused.
+      // check — the still-allowed resume, the revoked are refused. The event
+      // reaches peer nodes (multi-node deploys) with the same effect.
       closeProjectConnections(meta.id);
+      publishProjectEvent({ type: 'access-changed', projectId: meta.id });
       return publicMeta(meta, reqUser(req));
     });
 
@@ -406,6 +409,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (req.query.permanent === '1') await store.deleteProject(req.params.id);
     else await store.softDeleteProject(req.params.id);
     lastPushedHead.delete(req.params.id); // don't leak the push-dedup entry (or reuse a stale hash)
+    // Deleting revokes access just like un-sharing: drop live collab sessions
+    // (here and on peer nodes) so nobody keeps editing a trashed project.
+    closeProjectConnections(req.params.id);
+    publishProjectEvent({ type: 'access-changed', projectId: req.params.id });
     return { ok: true };
   });
 

@@ -1,3 +1,5 @@
+import { getSharedRedis, type RedisLike } from './redis.js';
+
 /**
  * Rate limiting. In-memory token buckets by default (perfect for a single node);
  * set REDIS_URL to share limits across multiple app nodes. The Redis path uses
@@ -7,22 +9,13 @@
 
 interface Bucket { tokens: number; last: number }
 
-let redis: { eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown> } | null = null;
+let redis: RedisLike | null = null;
 
-/** Connect Redis if REDIS_URL is set (optional dependency). Call once at startup. */
+/** Adopt the shared Redis client if REDIS_URL is set. Call once at startup. */
 export async function initRateLimit(): Promise<void> {
-  const url = process.env.REDIS_URL;
-  if (!url) return;
-  try {
-    const mod = await import('ioredis');
-    const IORedis = ((mod as any).default ?? (mod as any).Redis) as new (url: string, opts?: object) => any;
-    const client = new IORedis(url, { maxRetriesPerRequest: 2 });
-    client.on('error', (e: Error) => console.error('[aldine] redis error:', e.message));
-    redis = client as unknown as typeof redis;
-    console.log('[aldine] rate limiting: redis (shared across nodes)');
-  } catch {
-    console.warn('[aldine] REDIS_URL is set but ioredis is not installed — using in-memory rate limiting');
-  }
+  if (!process.env.REDIS_URL) return;
+  redis = getSharedRedis(); // null when ioredis is missing (redis.ts warned once)
+  if (redis) console.log('[aldine] rate limiting: redis (shared across nodes)');
 }
 
 // Atomic refill+consume. KEYS[1]=bucket, ARGV=capacity, refillPerSec, now(ms).

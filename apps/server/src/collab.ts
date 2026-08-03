@@ -10,6 +10,7 @@ import { commitAll, ensureWorktree } from './gitops.js';
 import { safeJoin, debouncePerKey } from './util.js';
 import { AUTH_ENABLED, userFromRequest } from './auth.js';
 import { canAccess } from './authz.js';
+import { redisAvailable, createDedicatedClient } from './redis.js';
 
 /**
  * Document naming: `${projectId}/${branch}/${filePath}`
@@ -131,9 +132,6 @@ const authHook = AUTH_ENABLED ? {
   },
 } : {};
 
-// Multi-node collaboration: when REDIS_URL is set, sync Yjs document updates and
-// awareness across every app instance via Redis pub/sub, so collaborators land
-// on different nodes and still edit the same live document (scaling wall #2).
 // Multi-node collaboration (scaling wall #2): with REDIS_URL, the Redis extension
 // syncs awareness across nodes and hands a document off cleanly on failover.
 // IMPORTANT: run the load balancer with sticky routing so each document lives on
@@ -144,21 +142,11 @@ const collabExtensions: unknown[] = [];
 if (process.env.REDIS_URL) {
   try {
     const { Redis } = await import('@hocuspocus/extension-redis');
-    const u = new URL(process.env.REDIS_URL);
-    // Forward the full connection through ioredis `options` so managed Redis
-    // works: honor the ACL username and rediss:// TLS (a bare host/port/password
-    // parse silently dropped both, breaking auth against e.g. Elasticache/Upstash).
-    collabExtensions.push(new Redis({
-      host: u.hostname,
-      port: Number(u.port || 6379),
-      options: {
-        username: u.username || undefined,
-        password: u.password || undefined,
-        db: Number((u.pathname || '/0').slice(1)) || 0,
-        maxRetriesPerRequest: 3,
-        ...(u.protocol === 'rediss:' ? { tls: {} } : {}),
-      },
-    } as never));
+    if (!redisAvailable()) throw new Error('ioredis missing');
+    // createClient lets redis.ts own ALL connection semantics (rediss:// TLS,
+    // ACL username, /db — ioredis parses the raw URL natively; a past hand-parse
+    // here silently dropped them, breaking managed Redis like Elasticache).
+    collabExtensions.push(new Redis({ createClient: () => createDedicatedClient('hocuspocus') } as never));
     console.log('[aldine] collab: redis sync across nodes (requires sticky routing)');
   } catch {
     console.warn('[aldine] REDIS_URL set but @hocuspocus/extension-redis is not installed — collab is single-node');

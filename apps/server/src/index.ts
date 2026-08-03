@@ -5,7 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { registerRoutes } from './routes.js';
-import { hocuspocus, flushAllDocs } from './collab.js';
+import { hocuspocus, flushAllDocs, closeProjectConnections } from './collab.js';
+import { initProjectEvents } from './events.js';
 import { commitAll } from './gitops.js';
 import * as store from './store.js';
 import { initObservability, captureError } from './observability.js';
@@ -19,6 +20,9 @@ process.on('unhandledRejection', (reason) => { console.error('[aldine] unhandled
 await initDb();
 // Connect Redis for cross-node rate limiting if REDIS_URL is set (else in-memory).
 await initRateLimit();
+// Cross-node revocation: when a peer node changes a project's access, close
+// our local collab sockets for it so clients re-authenticate. No-op without Redis.
+initProjectEvents({ onAccessChanged: closeProjectConnections });
 
 // trustProxy makes req.ip honor X-Forwarded-For — enable ONLY behind a trusted
 // reverse proxy (Caddy/nginx). Off by default so clients can't spoof their IP
