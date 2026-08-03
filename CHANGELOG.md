@@ -7,6 +7,13 @@ All notable changes to Aldine are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Claim for legacy projects** — on servers that enabled accounts after
+  projects already existed, those ownerless projects now show a Claim button
+  (first claim wins, resets sharing to private and ends other users' access).
+  Previously every signed-in user was treated as their owner.
+- **Rollback workflow for the AWS deploy** — deploys register SHA-pinned task
+  definitions; `rollback-aws.yml` restores any previous revision. Which commit
+  runs in production is now always answerable.
 - **Share from the editor** — the toolbar gains a Share button (owner-only,
   multi-user mode) opening the same dialog as the home-screen card. The dialog
   now shows the share URL with a Copy link button when link mode is on.
@@ -23,6 +30,17 @@ All notable changes to Aldine are documented here. The format follows
   invited collaborators.
 
 ### Fixed
+- The PDF preview renders only pages near the viewport instead of rasterizing
+  the whole document up front — long papers no longer hold hundreds of MB of
+  bitmaps (or gigabytes when zoomed), the first page appears without waiting
+  for the last, and zoom clicks debounce into one re-render.
+- `\cite`/`\ref` autocomplete no longer re-reads and re-parses every .bib/.tex
+  file in the project on each keystroke — the server caches the indexes per
+  branch and invalidates on any content change.
+- With `REDIS_URL` set (multi-node), revoking access or deleting a project now
+  ends live collaboration sessions on every node, not just the one that
+  handled the request. Deleting also closes local sessions (it previously
+  closed none).
 - Link-shared projects no longer appear in every signed-in user's project
   list. "Anyone with the link" now means exactly that: the project opens via
   its URL but is listed only for the owner and invited collaborators.

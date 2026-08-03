@@ -37,21 +37,30 @@ unaffected.
 
 1. **Flat-JSON stores + in-memory rate/quota state** — per-process, so two app
    nodes can't share them. *Blocks running more than one app node.*
-   → **Done:** Postgres backend for the datastore (`DATABASE_URL`) covers users,
+   → **Done for the datastore:** Postgres (`DATABASE_URL`) covers users,
    sessions, project metadata, comments, and usage/quotas; Redis (`REDIS_URL`)
    shares the rate limiters across nodes. The compile concurrency gate stays
    per-node by design (it protects each node's compiler; the shared ceiling is
-   the per-user compile quota). This wall is cleared — the app tier is now
-   horizontally scalable.
+   the per-user compile quota).
+   **Honest caveat:** several per-process caches survive this migration —
+   `lastWritten` (collab write-skip hashes), `tombstoned` (delete guards),
+   `lastPushedHead` (GitHub push dedup — self-healing, benign), the
+   bib/label index caches, and `compileChain` (serializes latexmk per branch;
+   with two nodes sharing one volume that serialization is gone and aux-file
+   corruption becomes reachable). The datastore is multi-node-ready; these
+   caches are not yet.
 2. **Single-process Hocuspocus** — each Yjs document's CRDT state lives in one
-   process's memory. → **Mostly done:** the Redis collab extension (`REDIS_URL`)
-   syncs awareness across nodes and hands a document off cleanly on failover
-   (verified: an edit on one node appears on another). **Deploy requirement:**
-   run the load balancer with **sticky routing** so each document lives on one
-   node at a time — route the `/collab` WebSocket by the project id in the doc
-   name (or a cookie). Without stickiness, two nodes would each seed the same
-   doc from disk and duplicate its content. Splitting collab into its own
-   separately-scaled service is a deploy change from here.
+   process's memory. → **Partially built, not yet a supported topology.** What
+   exists: the Redis collab extension (`REDIS_URL`) syncs awareness across
+   nodes and hands a document off on failover, and access revocation
+   (share changes, delete, claim) fans out over the `aldine:project-events`
+   channel so a revoked user's live session ends on every node. What does NOT
+   exist: document-affinity routing (the AWS deploy's ALB stickiness is
+   client-cookie-based — two collaborators on one project can land on
+   different nodes, which dual-seeds the doc), and the flush/refresh/evict
+   helpers that run before every compile/commit/merge only see the local
+   node's documents. **Until those exist, run one app node.** Splitting collab
+   into its own service remains the eventual path.
 3. **One shared compiler on one volume** — compiles are the cost driver. → a job
    queue + a fleet of stateless workers, autoscaled, with **per-compile
    isolation** (ephemeral containers / gVisor / Firecracker) for true
@@ -66,8 +75,10 @@ unaffected.
 Don't build the 10k-user architecture before the users exist. Do keep the seams
 (datastore, rate/session store, collab-service boundary, compile dispatcher) so
 each wall becomes "swap the implementation + add the infra" exactly when load
-justifies it. The datastore seam (wall 1) is done; the rest are scoped, not
-built.
+justifies it. The datastore seam (wall 1) is done and the cross-node event
+channel (wall 2's revocation piece) exists; the rest are scoped, not built.
+**The supported production topology today is one app node** — scale it
+vertically first.
 
 ## Cost & hosting
 

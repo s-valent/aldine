@@ -34,6 +34,13 @@ resource "aws_efs_mount_target" "main" {
 }
 
 # /data — project git repos + JSON store. Mounted by BOTH containers.
+#
+# uid/gid 0 is deliberate and COUPLED to the images: neither Dockerfile sets a
+# USER, so both containers run as root and these permissions line up. If a
+# container ever goes non-root, /data turns read-only and /secrets unreachable
+# for it — and note creation_info only applies when EFS first creates the
+# directory; changing owners here later is a no-op against a live filesystem
+# (you'd have to chown from a mounted container instead).
 resource "aws_efs_access_point" "data" {
   file_system_id = aws_efs_file_system.main.id
   root_directory {
