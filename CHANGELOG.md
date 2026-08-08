@@ -6,6 +6,8 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-03
+
 ### Added
 - **Claim for legacy projects** — on servers that enabled accounts after
   projects already existed, those ownerless projects now show a Claim button
