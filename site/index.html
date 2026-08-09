@@ -65,8 +65,8 @@
   .btn--primary { background: var(--accent-fill); border-color: transparent; color: var(--paper); }
   .btn--primary:hover { background: var(--accent-fill-hover); }
 
-  /* hero — left-biased against the centred paper below (one deliberate asymmetry) */
-  .hero { text-align: left; padding: 72px 0 24px; max-width: 720px; }
+  /* hero — centred over the centred paper: the pag’ spine is deliberate */
+  .hero { text-align: center; padding: 72px 0 24px; }
   .eyebrow {
     font-family: var(--sans); font-size: 11.5px; font-weight: 600; letter-spacing: .14em;
     text-transform: uppercase; color: var(--text-3);
@@ -75,7 +75,7 @@
     font-size: clamp(34px, 6vw, 54px); font-weight: 600; letter-spacing: -.015em;
     line-height: 1.12; margin: 14px 0 10px;
   }
-  .hero .sub { font-size: 18px; color: var(--text-2); max-width: 34em; }
+  .hero .sub { font-size: 18px; color: var(--text-2); max-width: 34em; margin: 0 auto; }
 
   /* the signature: the pitch, typeset as a paper */
   .paper-stage { padding: 44px 0 8px; }
@@ -150,18 +150,7 @@
   .honest p { color: var(--text-2); font-size: 16px; margin-bottom: 14px; }
   .honest strong { color: var(--text); font-weight: 600; }
 
-  /* visual-editing spec list — deliberately NOT the feature grid again:
-     term column + description, hairline rows */
-  .speclist { margin-top: 20px; border-top: 1px solid var(--hairline); }
-  .speclist > div {
-    display: grid; grid-template-columns: 200px 1fr; gap: 18px;
-    padding: 13px 0; border-bottom: 1px solid var(--hairline);
-  }
-  .speclist h4 { font-family: var(--sans); font-size: 14px; font-weight: 600; }
-  .speclist p { font-size: 14.5px; color: var(--text-2); line-height: 1.5; }
-  @media (max-width: 560px) {
-    .speclist > div { grid-template-columns: 1fr; gap: 4px; }
-  }
+  .visual-grid { margin-top: 16px; }
 
   /* quick start */
   .term {
@@ -276,13 +265,13 @@
       <div class="demo-frame visual-shot">
         <img src="assets/visual-dark.png" alt="Aldine’s visual editing mode: the paper rendered as formatted text with typeset math, next to the live PDF" loading="lazy">
       </div>
-      <div class="speclist">
-        <div><h4>WYSIWYG math</h4><p>Click an equation to edit it in a real math editor; your changes write back as precise LaTeX.</p></div>
-        <div><h4>Editable tables</h4><p>Tables render as a grid — edit cells, add rows and columns — all as exact source edits.</p></div>
-        <div><h4>Tracked changes</h4><p>Review suggestions show inline as strikethrough + proposed text, accepted or dismissed in place.</p></div>
-        <div><h4>Paste to LaTeX</h4><p>Paste rich text from Word or Docs and it converts to clean LaTeX on the way in.</p></div>
-        <div><h4>Live &amp; collab-safe</h4><p>The construct under your caret — or a co-author’s — reveals its source; everything else stays rendered.</p></div>
-        <div><h4>One keystroke away</h4><p>Toggle Source / Visual instantly, no reload. Off by default; enable it from the command palette.</p></div>
+      <div class="grid visual-grid">
+        <div class="cell"><h4>WYSIWYG math</h4><p>Click an equation to edit it in a real math editor; your changes write back as precise LaTeX.</p></div>
+        <div class="cell"><h4>Editable tables</h4><p>Tables render as a grid — edit cells, add rows and columns — all as exact source edits.</p></div>
+        <div class="cell"><h4>Tracked changes</h4><p>Review suggestions show inline as strikethrough + proposed text, accepted or dismissed in place.</p></div>
+        <div class="cell"><h4>Paste to LaTeX</h4><p>Paste rich text from Word or Docs and it converts to clean LaTeX on the way in.</p></div>
+        <div class="cell"><h4>Live &amp; collab-safe</h4><p>The construct under your caret — or a co-author’s — reveals its source; everything else stays rendered.</p></div>
+        <div class="cell"><h4>One keystroke away</h4><p>Toggle Source / Visual instantly, no reload. Off by default; enable it from the command palette.</p></div>
       </div>
     </div>
   </section>
