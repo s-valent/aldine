@@ -7,7 +7,7 @@
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/trahloff)
 
-Aldine is a slim, self-hosted, open-source LaTeX collaboration platform — an
+Aldine is a slim, self-hosted, open-source LaTeX collaboration platform, an
 Overleaf alternative built for speed and simplicity. Real-time multi-cursor
 editing, every project a real git repo with branches, native Zotero, ~2s warm
 recompiles. Two containers and flat files by default: no database to migrate,
@@ -23,80 +23,80 @@ nothing to babysit.
   <img alt="Aldine editor: LaTeX source on the left, live PDF on the right, collaborator cursors visible" src="e2e/shots/editor-light.png">
 </picture>
 
-Live collaboration, a recompile, and a SyncTeX jump — one real recording (compile wait trimmed):
+Live collaboration, a recompile, and a SyncTeX jump, in one real recording (compile wait trimmed):
 
 ![A collaborator's edits stream in live, the PDF recompiles in about two seconds, and double-clicking the PDF jumps the editor to the source line](e2e/shots/demo.gif)
 
 > **Status:** Aldine is young (v0.x). It compiles real papers daily and every
-> headline feature is exercised by a Playwright e2e suite in CI — but expect
+> headline feature is exercised by a Playwright e2e suite in CI, but expect
 > rough edges. File issues generously.
 
 ## Features
 
-- **Real-time collaboration** — CRDT-based (Yjs), multi-cursor with live
+- **Real-time collaboration**: CRDT-based (Yjs), multi-cursor with live
   presence, conflict-free by construction. Unlimited collaborators.
-- **Git-native with branches** — every project is a real git repository.
-  Create branches, edit them independently, merge back — from the UI. Clone a
+- **Git-native with branches**: every project is a real git repository.
+  Create branches, edit them independently, merge back from the UI. Clone a
   project and keep using VS Code; pushes show up in the web editor.
-- **Fast, sandboxed compiles** — TeX Live + latexmk with persistent
+- **Fast, sandboxed compiles**: TeX Live + latexmk with persistent
   incremental builds (~2s warm recompiles) in a no-egress container with
   restricted shell-escape; errors surfaced with line numbers and
   click-to-jump.
-- **GitHub sync** — import a repo as a project *or publish a local project to
+- **GitHub sync**: import a repo as a project *or publish a local project to
   a fresh repo*, push/pull with ahead/behind indicators, conflict resolution,
-  opt-in auto-sync, and open a pull request — all from the editor.
-- **Native Zotero integration** — link your whole Zotero library *or a single
+  opt-in auto-sync, and open a pull request, all from the editor.
+- **Native Zotero integration**: link your whole Zotero library *or a single
   collection*, no premium tier required; keep a `.bib` in sync with cheap
   version-aware refresh, insert citations from a search panel or via `\cite{`
   autocomplete.
 
 <details>
-<summary><strong>Everything else</strong> — visual editor, review mode, AI error fix, SyncTeX, plugins, auth, scaling…</summary>
+<summary><strong>Everything else</strong>: visual editor, review mode, AI error fix, SyncTeX, plugins, auth, scaling…</summary>
 
-- **Visual editing mode** (experimental) — LaTeX renders as formatted text
+- **Visual editing mode** (experimental): LaTeX renders as formatted text
   while the source stays authoritative and **byte-stable** (it never rewrites
   source you didn't deliberately edit). WYSIWYG math (click an equation to edit
   it in a MathLive popover), editable tables, inline tracked changes from review
   suggestions, paste-rich-text-to-LaTeX, image-previewing figure chips, and an
-  outline. Cursor-reveal shows raw source under the caret — including a remote
+  outline. Cursor-reveal shows raw source under the caret, including a remote
   collaborator's. Enable it in the command palette (⌘K), off by default.
-- **Review mode** — select text and leave an anchored, threaded comment;
+- **Review mode**: select text and leave an anchored, threaded comment;
   optionally attach a suggested replacement the author accepts with one click.
   Comments highlight in the editor, resolve/reopen, and track edits.
-- **AI error fix** (optional, BYO key) — on a failed typeset, get a
+- **AI error fix** (optional, BYO key): on a failed typeset, get a
   plain-English diagnosis and one-click fixes. Set `ANTHROPIC_API_KEY`,
   `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` on the server to enable (that
   precedence order if several are set; `ALDINE_AI_MODEL` overrides the model).
   The key stays server-side and never reaches the browser. Unset the key and
   Aldine is a 100% AI-free editor.
-- **Cite by DOI / arXiv** — paste an identifier, get BibTeX appended and the
+- **Cite by DOI / arXiv**: paste an identifier, get BibTeX appended and the
   `\cite` inserted (no account, free public APIs).
-- **SyncTeX both ways** — double-click the PDF to jump to source; ⌘J to jump
+- **SyncTeX both ways**: double-click the PDF to jump to source; ⌘J to jump
   the PDF to your cursor, with a highlight flash.
-- **Plugin system** — manifest + ES module plugins extend the sidebar,
+- **Plugin system**: manifest + ES module plugins extend the sidebar,
   editor, and commands. Zotero, references, and AI-fix ship as plugins;
   write your own.
-- **Templates & import** — article, IAC conference paper, beamer,
+- **Templates & import**: article, IAC conference paper, beamer,
   report/thesis; or import an existing project from an Overleaf ZIP.
-- **Editor niceties** — auto-typeset on idle, live word count, spellcheck,
+- **Editor niceties**: auto-typeset on idle, live word count, spellcheck,
   PDF zoom, drag-drop figure upload, plain-English error hints + raw log,
   command palette (⌘K).
-- **Multi-user auth** (optional) — set `AUTH_ENABLED=1` for login, per-project
+- **Multi-user auth** (optional): set `AUTH_ENABLED=1` for login, per-project
   ownership, and sharing (invite-only or link). Google & GitHub SSO, or
   email/password (scrypt-hashed, revocable HTTP-only-cookie sessions);
   `ALDINE_SSO_ONLY=1` disables passwords entirely. Off by default
   (single-tenant); the collab socket is access-checked.
-- **Scales when you need it** — flat-file storage by default; set
+- **Scales when you need it**: flat-file storage by default; set
   `DATABASE_URL` for Postgres and `REDIS_URL` to run multiple app nodes. See
   [docs/SCALING.md](docs/SCALING.md).
-- **Apple-style UI** — system fonts, hairline borders, light & dark mode,
+- **Apple-style UI**: system fonts, hairline borders, light & dark mode,
   keyboard-first (⌘S typeset, ⌘J jump, ⌘K command palette).
 
 </details>
 
 ## Quick start
 
-No clone, no build — save this as `docker-compose.yml` and run `docker compose up -d`:
+No clone, no build: save this as `docker-compose.yml` and run `docker compose up -d`:
 
 ```yaml
 services:
@@ -120,7 +120,7 @@ volumes:
   aldine-secrets:
 ```
 
-Open http://localhost:8080. That's it — projects live in the `aldine-data`
+Open http://localhost:8080. That's it. Projects live in the `aldine-data`
 volume, and everything else (auth, SSO, AI fix, email) is opt-in via
 environment variables when you want it.
 
@@ -128,16 +128,16 @@ The same file ships as the repo-root `docker-compose.yml`, so a clone works
 identically: `git clone https://github.com/trahloff/Aldine && cd Aldine &&
 docker compose up -d`.
 
-- **The first pull is big** (~2.5 GB — TeX Live is in the compiler image);
+- **The first pull is big** (~2.5 GB; TeX Live is in the compiler image);
   after that, starts take seconds. Ready when `curl localhost:8080/api/health`
   returns `{"ok":true}`. Images are published on release tags.
 - **Port 8080 taken?** Change the left side of `ports:`.
-- **Everything beyond the minimum** — building from source (latest `main`),
-  auth/SSO/AI/email options, TLS, Postgres/Redis, hardening — lives in
-  [`docker-compose.full.yml`](docker-compose.full.yml) (same volumes, so you
-  can switch without losing data):
-  `docker compose -f docker-compose.full.yml up -d --build` — the first build
-  installs LaTeX packages, expect 15–40 minutes.
+- **Everything beyond the minimum**: building from source (latest `main`),
+  auth/SSO/AI/email options, TLS, Postgres/Redis, hardening. All of it lives
+  in [`docker-compose.full.yml`](docker-compose.full.yml) (same volumes, so
+  you can switch without losing data):
+  `docker compose -f docker-compose.full.yml up -d --build`. The first build
+  installs LaTeX packages; expect 15–40 minutes.
 - **Need packages beyond the curated set?** Build the full file with all of
   CTAN preinstalled (~9 GB on disk):
   `ALDINE_TEXLIVE_SCHEME=full docker compose -f docker-compose.full.yml up -d --build`.
@@ -155,11 +155,11 @@ docker compose up -d`.
 | Warm recompile | ~2s (persistent latexmk cache) | Comparable | Fastest (local) |
 | Templates gallery | 4 built-in | Huge community gallery | CTAN / your own |
 | Package coverage | Curated set, or **all of CTAN** (`ALDINE_TEXLIVE_SCHEME=full`) | All of TeX Live | Whatever you install |
-| Rich-text / visual editing | ✅ experimental — byte-stable, WYSIWYG math, editable tables, tracked changes | ✅ (rewrites your source) | ❌ |
+| Rich-text / visual editing | ✅ experimental: byte-stable, WYSIWYG math, editable tables, tracked changes | ✅ (rewrites your source) | ❌ |
 | Maturity | Young (v0.x, 2026) | A decade in production | Very mature |
 | License | AGPL-3.0 | AGPL | MIT/varies |
 
-If Overleaf CE fits you, use it — it's good software. Aldine exists for people
+If Overleaf CE fits you, use it; it's good software. Aldine exists for people
 who want track changes, git, and Zotero without paid tiers, in a deployment
 they can hold in their head.
 
@@ -170,7 +170,7 @@ they can hold in their head.
   <img alt="Visual editing mode: the same LaTeX paper rendered as formatted text with typeset math, next to the live PDF" src="e2e/shots/visual-light.png">
 </picture>
 
-*Visual editing (experimental): the source rendered as formatted text — byte-stable, math and tables editable in place. Enable via ⌘K.*
+*Visual editing (experimental): the source rendered as formatted text, byte-stable, with math and tables editable in place. Enable via ⌘K.*
 
 | | |
 |---|---|
@@ -191,7 +191,7 @@ docker run -d -p 4020:4020 -v $PWD/.data:/data aldine-compiler
 
 ### Tests
 
-End-to-end (Playwright — covers compile, collab, branches, plugins, Zotero):
+End-to-end (Playwright; covers compile, collab, branches, plugins, Zotero):
 
 ```bash
 npx playwright install chromium
@@ -202,7 +202,7 @@ ALDINE_URL=http://localhost:8080 npm run test:e2e   # against docker compose
 ## Production deploy
 
 ```bash
-# Behind your existing reverse proxy (nginx, Traefik, …) — the usual setup.
+# Behind your existing reverse proxy (nginx, Traefik, …), the usual setup.
 # The prod overlay binds the app to 127.0.0.1:8080, trusts proxy headers,
 # sets secure cookies, and rotates logs; point your proxy at that port.
 # Sample nginx vhost (WebSocket + body-size gotchas handled): deploy/nginx.conf
@@ -213,7 +213,7 @@ docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml \
 # …or, if nothing else owns ports 80/443, add the bundled Caddy for
 # zero-config HTTPS: append `--profile tls` and set ALDINE_DOMAIN.
 
-# Optional features are env-gated and off by default — set what you want
+# Optional features are env-gated and off by default; set what you want
 # (usually in a .env file next to docker-compose.yml):
 #   AUTH_ENABLED=1                                   multi-user login
 #   GOOGLE_OAUTH_CLIENT_ID/SECRET                    Google SSO
@@ -268,12 +268,12 @@ vulnerabilities.
 
 Two separate concerns, behind two seams:
 
-- **Project files** — real git repos + worktrees on disk (`store.ts`). This is
+- **Project files**: real git repos + worktrees on disk (`store.ts`). This is
   what gives you branches and history.
-- **Relational/metadata** — users, sessions, project metadata, review comments,
-  and usage — go through the `DataStore` interface (`db/`). Two backends:
-  - **JSON files** (default, zero-dependency) — the slim single-node self-host.
-  - **Postgres** (set `DATABASE_URL`) — the horizontally-scalable backend, for
+- **Relational/metadata**: users, sessions, project metadata, review comments,
+  and usage go through the `DataStore` interface (`db/`). Two backends:
+  - **JSON files** (default, zero-dependency): the slim single-node self-host.
+  - **Postgres** (set `DATABASE_URL`): the horizontally-scalable backend, for
     running multiple app nodes. `pg` is an optional dependency; the same test
     suite passes on both.
 
@@ -296,7 +296,7 @@ The `aldine` API exposes `ui.registerSidebarPanel`, `editor.insertAtCursor`,
 
 ## License
 
-[AGPL-3.0](LICENSE) — self-host freely; if you offer a modified Aldine as a
+[AGPL-3.0](LICENSE): self-host freely; if you offer a modified Aldine as a
 service, share your changes. Third-party plugins interact with Aldine over its
 plugin API and may use any license. Overleaf is a trademark of its owners;
 Aldine is an independent project, not affiliated with or endorsed by Overleaf.
