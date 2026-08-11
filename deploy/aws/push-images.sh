@@ -11,7 +11,7 @@ TAG="${1:-latest}"
 # Region: env override → terraform.tfvars → default. Must match where terraform
 # created the ECR repos, or `docker push` fails with 'repository does not exist'.
 REGION="${AWS_REGION:-$( { [ -f terraform.tfvars ] && grep -E '^[[:space:]]*region[[:space:]]*=' terraform.tfvars | head -1 | sed -E 's/.*"([^"]+)".*/\1/'; } || true )}"
-REGION="${REGION:-eu-west-1}"
+REGION="${REGION:-eu-central-1}"
 PLATFORM="${PLATFORM:-linux/arm64}" # must match runtime_platform.cpu_architecture in ecs.tf
 REPO_ROOT="$(cd "../.." && pwd)"
 

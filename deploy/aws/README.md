@@ -6,7 +6,7 @@
 
 Deploys Aldine to `https://latex.example.com` on **AWS Fargate** — no servers
 to manage, everything as Terraform. This is the cheapest AWS shape that actually
-fits the app; see [Why this architecture](#why-this-architecture-and-not-lambda).
+fits the app; see [Why this architecture](#why-this-architecture-and-not-pure-lambda).
 
 ## What gets created
 
@@ -33,6 +33,10 @@ SSM      OAuth/API secrets (SecureString) ─► injected into the server
 ## Prerequisites
 
 1. **AWS account + SSO configured** (`aws configure sso`, then `aws sso login --profile papyr`).
+   Pick the region once, in `terraform.tfvars`. Terraform defaults to
+   `eu-central-1` and the helper scripts read the same file, so a region set in
+   only one of the two is the usual cause of `docker push` failing with
+   "repository does not exist".
 2. **The hosted zone `example.com` already exists in Route53** in this account.
    (Registering/delegating the domain is a one-time manual step Terraform doesn't do.)
 3. `terraform` (or `tofu`) ≥ 1.6, `docker` with buildx, `aws` CLI.
@@ -53,7 +57,7 @@ run the steps by hand instead:
 
 ```bash
 terraform init && terraform apply     # infra + empty ECR repos + the ECS service
-./push-images.sh                      # build server+compiler (amd64) → ECR → roll the service
+./push-images.sh                      # build server+compiler (arm64) → ECR → roll the service
 aws ecs wait services-stable --cluster papyr --services papyr
 ```
 
@@ -71,9 +75,23 @@ Set the corresponding client id/secret in `secret_env`.
 
 ## Updating the app later
 
-- **New app version:** `./push-images.sh` (or run the **Deploy to AWS** GitHub
-  Action — manual trigger, ships images via OIDC without touching infra).
+- **New app version:** run the **Deploy to AWS** GitHub Action (manual trigger,
+  ships images via OIDC without touching infra). It tags both images with the
+  commit SHA and registers a task definition pinned to those tags, so the
+  running revision always answers "which commit is this?":
+  ```bash
+  aws ecs describe-services --cluster papyr --services papyr \
+    --query 'services[0].taskDefinition'      # → the revision; its image tag is the SHA
+  ```
+  `./push-images.sh` is the fallback from an authenticated machine. It pushes
+  `:latest`, which is *not* SHA-pinned, so prefer the Action.
+- **Rolling back:** run the **Rollback AWS deploy** Action. An empty input takes
+  the previous task-definition revision; pass a revision number to go further
+  back. Nothing is rebuilt, so it takes about as long as one deploy cycle.
 - **Infra change:** edit the `.tf` files → `terraform apply`.
+
+The ECS deployment circuit breaker also rolls back on its own if the new tasks
+never reach a healthy state.
 
 ## Cost (eu-central-1, low traffic, ballpark)
 

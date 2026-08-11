@@ -1,4 +1,4 @@
-# Throwaway public demo box for Aldine (~€6/mo Hetzner cax11).
+# Throwaway public demo box for Aldine (~€4/mo Hetzner cx23; see variables.tf).
 #
 # Design: auth OFF (visitors get the full editor instantly), TLS via Caddy,
 # and a nightly wipe (volumes destroyed + stack recreated at 04:00 UTC) so

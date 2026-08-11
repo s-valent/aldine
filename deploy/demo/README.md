@@ -28,6 +28,11 @@ before `terraform apply` (or pass `-var repo_url=` pointing at a mirror).
 terraform destroy
 ```
 
-That's the whole lifecycle. If launch traffic melts a cax11, bump
-`-var server_type=cax21` (~€12/mo, 8 GB) and re-apply — the wipe timer makes
-the box stateless by design.
+That's the whole lifecycle. If launch traffic melts the default cx23
+(2 vCPU / 4 GB), bump `-var server_type=cx33` (4 vCPU / 8 GB) and re-apply. The
+wipe timer makes the box stateless by design, so resizing costs nothing but the
+rebuild.
+
+Note that this is deliberately below the 8 GB the [single-VPS
+runbook](../README.md) asks for: it is a demo with auth off and a nightly wipe,
+not a place to keep work.

@@ -56,6 +56,14 @@ All notable changes to Aldine are documented here. The format follows
   mid-sentence. One remains, linked from CONTRIBUTING, with each domain naming
   the suite that automates it and the delete story describing the 30-day trash
   the app actually implements.
+- The AWS runbook said the images build for amd64 (they are arm64, to match the
+  Graviton task), never mentioned the rollback workflow that 0.3.0 added, and
+  linked to a heading anchor that does not exist. Its helper scripts fell back
+  to a different region than Terraform's default, which surfaces as `docker
+  push` failing against a registry that was never created. The demo runbook
+  described resizing a server type that is no longer the default.
+- The landing page announced "Typeset in 0.4s" a paragraph above "about two
+  seconds"; the README says ~2s, so the page does now too.
 
 ## [0.3.0] — 2026-08-03
 
