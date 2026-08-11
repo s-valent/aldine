@@ -1,8 +1,7 @@
 # Minimal Aldine: prebuilt images, two services, done. This is all you need.
-# Everything else — building from source, auth/SSO/AI/email options, TLS,
-# Postgres/Redis, hardening, resource limits — lives in docker-compose.full.yml.
-# Both files share the same project name and volumes, so you can switch
-# between them without losing data.
+# Everything else (building from source, auth/SSO/AI/email options, TLS,
+# Postgres/Redis) lives in docker-compose.full.yml. Both files share the same
+# project name and volumes, so you can switch between them without losing data.
 name: aldine
 
 services:
@@ -13,13 +12,37 @@ services:
     volumes:
       - aldine-data:/data
       - aldine-secrets:/secrets
+    networks:
+      - frontend
+      - backend
+    init: true # reap orphaned git/compile children (node runs as PID 1 otherwise)
     restart: unless-stopped
 
   compiler:
     image: ghcr.io/trahloff/aldine-compiler:latest
     volumes:
       - aldine-data:/data
+    # Hardening: no external egress (internal network), drop all Linux caps, no
+    # privilege escalation, bounded memory and PIDs. Packages are baked into the
+    # image at build time, so the compiler never needs the network. LaTeX
+    # processes untrusted input; keep these. (docker-compose.full.yml adds a CPU
+    # cap on top; it is left out here because `cpus:` above the host's core
+    # count makes the container refuse to start.)
+    networks:
+      - backend
+    mem_limit: 2g
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    init: true # reap orphaned pdflatex/biber children left by killed latexmk runs
     restart: unless-stopped
+
+networks:
+  frontend: {}
+  backend:
+    internal: true # the compiler has no route to the internet
 
 volumes:
   aldine-data:

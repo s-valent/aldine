@@ -74,20 +74,23 @@ ALDINE_COMPILE_QUOTA_MIN=
 # error tracking (optional)
 SENTRY_DSN=
 
-# multi-node only: share rate limits + sync live collaboration across app
-# instances (see the `redis` profile). With multiple app nodes you MUST run the
-# load balancer with sticky routing so each project's /collab WebSocket lands on
-# a consistent node (e.g. hash by the project id in the path, or a cookie) — see
-# ../docs/SCALING.md. Single node needs none of this.
+# Shared rate limits and cross-node access-revocation events (the `redis`
+# profile). This does NOT make multiple app nodes a supported topology: routing
+# each project's /collab socket to a consistent node isn't built, and client
+# cookie stickiness is not a substitute (two collaborators on one project can
+# still land on different nodes and dual-seed the document). Run one app node
+# and scale it vertically; ../docs/SCALING.md has the details. A single node
+# needs none of this.
 #REDIS_URL=redis://redis:6379
 ```
 
 ## 3. Launch + ingress
 
-Start the stack (all options below use the same command — the prod overlay
-binds the app to `127.0.0.1:8080`, rotates logs, and sets `TRUST_PROXY=1` +
-`COOKIE_SECURE=1`; the compiler runs on an internal-only network with no
-egress and all Linux caps dropped):
+Start the stack. All options below use the same command: the prod overlay
+rotates logs and sets `TRUST_PROXY=1` + `COOKIE_SECURE=1`, the
+`ALDINE_APP_BIND=127.0.0.1` line from step 2 keeps the app port on loopback so
+only your proxy can reach it, and the compiler runs on an internal-only network
+with no egress and all Linux caps dropped.
 
 ```bash
 docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml up -d --build
@@ -116,9 +119,9 @@ live cursors never appear).
 
 ### 3b. Traefik
 
-If Traefik runs in Docker on the same host, skip the host port entirely: put
-the app on Traefik's network and route by labels. Add an overlay of your own
-(names depend on your Traefik setup):
+If Traefik runs in Docker on the same host, put the app on Traefik's network
+and route by labels. Add an overlay of your own (names depend on your Traefik
+setup):
 
 ```yaml
 # traefik.yml overlay — compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml -f traefik.yml up -d
@@ -138,6 +141,12 @@ networks:
 
 WebSockets pass through Traefik without extra config. Bump the body limit only
 if you set a global `buffering` middleware (none by default).
+
+Note that the app keeps publishing its host port: compose **merges** port lists
+across files, so an overlay cannot remove one by omission. With
+`ALDINE_APP_BIND=127.0.0.1` from step 2 that port is on loopback, which is
+usually what you want. To drop it entirely, add `ports: !override []` to the
+`app` service in your overlay (compose 2.24+).
 
 ### 3c. No proxy yet? Bundled Caddy
 
@@ -164,6 +173,12 @@ Restore with `deploy/restore.sh <backup.tar.gz>` after `docker compose down`.
 (If your compose project name isn't `aldine`, set `ALDINE_PROJECT` for both
 scripts.)
 
+Check that it took: `systemctl list-timers aldine-backup.timer` shows the next
+run, and `systemctl start aldine-backup.service` forces one now. If you
+installed these units before 0.4.0 they were named `papyr-backup.*`; disable
+the old ones with `sudo systemctl disable --now papyr-backup.timer` and delete
+them from `/etc/systemd/system/`, or you will run both.
+
 ## 5. Upgrade
 
 ```bash
@@ -178,11 +193,14 @@ docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml up -
   need HA. LaTeX compiles are the resource driver; if you host for a group,
   cap them per user with `ALDINE_COMPILE_QUOTA_MIN` and read `/api/usage` for a
   usage UI. Users over quota get HTTP 402 with `quotaExceeded: true`.
-- **When one box isn't enough**, keep the web/collab tier here and run
-  additional **compiler workers** on cheap burstable boxes pointed at the shared
-  data volume (NFS/object store) — the compiler is stateless per compile.
-- **Datastore**: the default is flat JSON files (fine for one node). To run
-  multiple app nodes, switch to Postgres — no code change, just config:
+- **When one box isn't enough**, move the compiler off the app box: run the
+  compiler container on a cheap burstable machine against the shared data volume
+  (NFS or similar) and set `COMPILER_URL` to point at it. The app knows exactly
+  one compiler URL, so a *fleet* of them needs a load balancer in front, and
+  that path isn't tested yet.
+- **Datastore**: the default is flat JSON files (fine for one node). Postgres is
+  the prerequisite for ever running more than one app node, and the switch is
+  config, not code:
   ```bash
   # in .env
   DATABASE_URL=postgres://aldine:aldine@db:5432/aldine
@@ -226,7 +244,7 @@ Everything is env-gated; blank/unset means "off" or the listed default.
 | `COOKIE_SECURE` | `1` = Secure session cookies (prod overlay sets it) |
 | `RL_LOGIN_BURST`, `RL_REGISTER_BURST`, `RL_AI_BURST`, `RL_AI_REFILL_PER_MIN`, `RL_REF_BURST` | Rate-limit tuning (sane defaults) |
 | `RL_COMPILE_CONCURRENCY` | Max concurrent compiles the app forwards (default 2) |
-| `COMPILE_TIMEOUT_MS`, `MAX_CONCURRENT_COMPILES` | Compiler-container limits (set on the `compiler` service) |
+| `COMPILE_TIMEOUT_MS`, `MAX_CONCURRENT_COMPILES` | Compiler-container limits: per-compile timeout (default 120000 ms) and compiles in flight (default 2). `docker-compose.full.yml` passes both through from `.env` |
 | `ALDINE_PROJECT` | Compose project name for `backup.sh`/`restore.sh` (default `aldine`) |
 | `ALDINE_TEXLIVE_SCHEME` | Compiler image build: `medium` (default, curated set) or `full` (all of CTAN, ~9 GB on disk) |
 | `ALDINE_TRASH_DAYS` | Days deleted projects stay restorable in the trash before the daily sweep purges them (default `30`) |

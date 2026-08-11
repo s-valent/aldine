@@ -6,6 +6,35 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- The minimal `docker-compose.yml` carries the compiler sandbox again: an
+  `internal: true` network with no route to the internet, `cap_drop: [ALL]`,
+  `no-new-privileges`, and memory/PID bounds. The 0.3.0 split had left all of it
+  in `docker-compose.full.yml` while SECURITY.md and the README went on
+  promising it, so quick-start instances were compiling untrusted LaTeX in a
+  container with full egress and every capability. The README quick start is the
+  same file, verbatim, including the `name: aldine` line that fixes the volume
+  names.
+
+### Changed
+- `deploy/papyr-backup.service` / `.timer` are renamed to `aldine-backup.*`, the
+  names the runbook has always used, so the install commands work as written. If
+  you installed the old units, disable and delete them or both timers will run.
+- `docker-compose.full.yml` passes `COMPILE_TIMEOUT_MS` and
+  `MAX_CONCURRENT_COMPILES` through from `.env` instead of hardcoding the
+  timeout.
+
+### Fixed
+- The production `.env` example in the README no longer produces broken values.
+  Lines like `AUTH_ENABLED=1    multi-user login` set the variable to the whole
+  string, which fails the strict `=== '1'` check, so auth stayed off on an
+  instance the operator believed was locked down.
+- The deploy runbook credited the prod overlay with binding the app to
+  `127.0.0.1`; it does not (compose merges port lists, so an overlay cannot
+  change a published port by omission). `ALDINE_APP_BIND` does it, and the
+  Traefik recipe's "skip the host port entirely" was impossible for the same
+  reason.
+
 ## [0.3.0] — 2026-08-03
 
 ### Added
