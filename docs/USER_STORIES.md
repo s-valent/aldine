@@ -1,9 +1,15 @@
 # Aldine — User Story Inventory
 
-The behaviors Aldine promises, written as user stories with acceptance
-criteria. This is the QA contract: every story should be demonstrably true in
-a running instance. Stories are grouped by domain; IDs are stable
-(`DOMAIN-n`) so test reports can cite them.
+The behaviors Aldine promises, written as user stories. This is the QA
+contract: every story should be demonstrably true in a running instance.
+Stories are grouped by domain; IDs are stable (`DOMAIN-n`) so test reports and
+issues can cite them.
+
+Each domain names the suite that automates most of it. The mapping is at the
+domain level on purpose: a story with no dedicated assertion is not a bug in
+this file, it is a gap in the suite, and per-story claims would hide that.
+Suites live in `e2e/tests/` (main), `e2e/auth-tests/` (auth), and
+`apps/server/test/` (API-level integration).
 
 Legend: **[auth]** needs `AUTH_ENABLED=1`; **[flag]** behind an experimental
 flag; everything else works in the default single-tenant deploy.
@@ -12,6 +18,8 @@ flag; everything else works in the default single-tenant deploy.
 
 ## Onboarding & projects (PROJ)
 
+*Automated in `01-home.spec.ts`.*
+
 - **PROJ-1** — As a new visitor, I land on the home screen and see a first-run
   onboarding overlay that I can dismiss, and it stays dismissed on return.
 - **PROJ-2** — I create a project from a template (article, IAC paper, beamer,
@@ -19,14 +27,18 @@ flag; everything else works in the default single-tenant deploy.
 - **PROJ-3** — I create a blank project and get a minimal `main.tex` +
   `references.bib`.
 - **PROJ-4** — I rename a project inline from the toolbar; the name persists.
-- **PROJ-5** — I delete a project from the home screen; it disappears and its
-  data is gone.
+- **PROJ-5** — I delete a project from the home screen; it disappears from the
+  list and stays restorable from the trash for `ALDINE_TRASH_DAYS` (30 by
+  default) before it is purged. `?permanent=1` skips the trash.
 - **PROJ-6** — I import an existing project from an Overleaf/generic ZIP; its
   files and folder structure arrive intact.
 - **PROJ-7** — My project list shows all my projects with names and opens the
   right one on click.
 
 ## Editing & files (EDIT)
+
+*Automated in `07-features.spec.ts`, `08-stretch.spec.ts`,
+`12-subdir-tree.spec.ts`.*
 
 - **EDIT-1** — I edit `.tex` source in a CodeMirror editor with LaTeX syntax
   highlighting; changes persist without an explicit save.
@@ -46,6 +58,8 @@ flag; everything else works in the default single-tenant deploy.
 
 ## Compile & preview (COMP)
 
+*Automated in `02-compile.spec.ts`; SyncTeX in `07-features.spec.ts`.*
+
 - **COMP-1** — I press ⌘S (or Typeset) and get a rendered PDF in the preview
   pane within a few seconds.
 - **COMP-2** — Auto-typeset recompiles a couple of seconds after edits settle,
@@ -61,6 +75,9 @@ flag; everything else works in the default single-tenant deploy.
 
 ## Collaboration (COLLAB)
 
+*Automated in `03-collab.spec.ts`; restart and reconnect behaviour in the
+`e2e/c2-shutdown.mjs` and `e2e/c3-reconnect-dup.mjs` harnesses.*
+
 - **COLLAB-1** — Two people editing the same file see each other's changes live,
   conflict-free (CRDT), with multiple cursors.
 - **COLLAB-2** — Each collaborator shows a presence indicator with name/color.
@@ -70,6 +87,8 @@ flag; everything else works in the default single-tenant deploy.
   document state.
 
 ## Versioning & branches (GIT)
+
+*Automated in `04-branches.spec.ts`, `11-diff.spec.ts`.*
 
 - **GIT-1** — Every project is a git repo; auto-checkpoints happen while I write.
 - **GIT-2** — I create a named checkpoint (commit) from the UI.
@@ -82,6 +101,9 @@ flag; everything else works in the default single-tenant deploy.
 
 ## GitHub sync (GH)
 
+*Automated at the API level in `apps/server/test/github-sync.integration.mjs`
+(hermetic, runs in CI). The editor-side flows are manual.*
+
 - **GH-1** — I import a GitHub repo as a project (OAuth or PAT).
 - **GH-2** — I push commits to GitHub with a message; ahead/behind indicators
   update.
@@ -93,6 +115,8 @@ flag; everything else works in the default single-tenant deploy.
 
 ## References & Zotero (REF)
 
+*Automated in `05-zotero.spec.ts` against `e2e/tests/mock-zotero.mjs`.*
+
 - **REF-1** — I cite by DOI or arXiv id; BibTeX is appended and `\cite`
   inserted, no account needed.
 - **REF-2** — I link a Zotero library or a single collection and validate the
@@ -102,6 +126,8 @@ flag; everything else works in the default single-tenant deploy.
 
 ## Review mode (REV)
 
+*Automated in `10-review.spec.ts`.*
+
 - **REV-1** — I select text and leave an anchored, threaded comment.
 - **REV-2** — I attach a suggested replacement; the author accepts it with one
   click and the text changes.
@@ -110,18 +136,25 @@ flag; everything else works in the default single-tenant deploy.
 
 ## AI error fix (AI)
 
+*Automated in `09-aifix.spec.ts` against a mock provider.*
+
 - **AI-1** — With a key configured, a failed compile offers a plain-English
   diagnosis and one-click fixes; without a key the feature is absent.
 - **AI-2** — The API key stays server-side and never reaches the browser.
 
 ## Plugins (PLUG)
 
+*Automated in `06-plugins.spec.ts`.*
+
 - **PLUG-1** — Built-in plugins (Zotero, references, AI-fix) load and register
-  sidebar panels / commands.
+  their sidebar panels.
 - **PLUG-2** — A plugin can insert text at the cursor, compile, toast, and
   fetch.
 
 ## Auth & sharing (AUTH) [auth]
+
+*Automated in `e2e/auth-tests/auth.spec.ts` (its own Playwright config,
+port 3200).*
 
 - **AUTH-1** — With auth on, I register, log in, log out, and my session
   persists; my projects are mine.
@@ -136,6 +169,9 @@ flag; everything else works in the default single-tenant deploy.
 - **AUTH-6** — Per-user compile quota returns HTTP 402 past the limit.
 
 ## Visual editor (VIS) [flag]
+
+*Automated in `13-visual.spec.ts`, including the byte-stability cursor tour
+that guards VIS-9.*
 
 - **VIS-1** — I enable the experimental visual editor and toggle Source|Visual;
   the switch is instant with no flicker or lost cursor.
@@ -155,6 +191,9 @@ flag; everything else works in the default single-tenant deploy.
   didn't deliberately edit (byte-stable).
 
 ## Cross-cutting (X)
+
+*No single suite owns these; they are asserted in passing across the others and
+checked by hand before a release.*
 
 - **X-1** — Light/dark theme: dark is the default; the toggle flips instantly
   and the choice persists.

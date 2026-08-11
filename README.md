@@ -28,16 +28,18 @@ Live collaboration, a recompile, and a SyncTeX jump, in one real recording (comp
 ![A collaborator's edits stream in live, the PDF recompiles in about two seconds, and double-clicking the PDF jumps the editor to the source line](e2e/shots/demo.gif)
 
 > **Status:** Aldine is young (v0.x). It compiles real papers daily and every
-> headline feature is exercised by a Playwright e2e suite in CI, but expect
-> rough edges. File issues generously.
+> headline feature has a Playwright end-to-end test, but expect rough edges.
+> (CI runs typecheck, build, and the integration suites; the browser tests run
+> locally, since they need a TeX Live container.) File issues generously.
 
 ## Features
 
 - **Real-time collaboration**: CRDT-based (Yjs), multi-cursor with live
   presence, conflict-free by construction. Unlimited collaborators.
 - **Git-native with branches**: every project is a real git repository.
-  Create branches, edit them independently, merge back from the UI. Clone a
-  project and keep using VS Code; pushes show up in the web editor.
+  Create branches, edit them independently, merge back from the UI. Publish a
+  project to GitHub and a co-author can clone it and keep using VS Code; their
+  commits come back with one Pull.
 - **Fast, sandboxed compiles**: TeX Live + latexmk with persistent
   incremental builds (~2s warm recompiles) in a no-egress container with
   restricted shell-escape; errors surfaced with line numbers and
@@ -64,8 +66,8 @@ Live collaboration, a recompile, and a SyncTeX jump, in one real recording (comp
   optionally attach a suggested replacement the author accepts with one click.
   Comments highlight in the editor, resolve/reopen, and track edits.
 - **AI error fix** (optional, BYO key): on a failed typeset, get a
-  plain-English diagnosis and one-click fixes. Set `ANTHROPIC_API_KEY`,
-  `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` on the server to enable (that
+  plain-English diagnosis and one-click fixes. Set `OPENROUTER_API_KEY`,
+  `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY` on the server to enable (that
   precedence order if several are set; `ALDINE_AI_MODEL` overrides the model).
   The key stays server-side and never reaches the browser. Unset the key and
   Aldine is a 100% AI-free editor.
@@ -73,8 +75,8 @@ Live collaboration, a recompile, and a SyncTeX jump, in one real recording (comp
   `\cite` inserted (no account, free public APIs).
 - **SyncTeX both ways**: double-click the PDF to jump to source; ⌘J to jump
   the PDF to your cursor, with a highlight flash.
-- **Plugin system**: manifest + ES module plugins extend the sidebar,
-  editor, and commands. Zotero, references, and AI-fix ship as plugins;
+- **Plugin system**: manifest + ES module plugins add sidebar panels and
+  write into the editor. Zotero, references, and AI-fix ship as plugins;
   write your own.
 - **Templates & import**: article, IAC conference paper, beamer,
   report/thesis; or import an existing project from an Overleaf ZIP.
@@ -87,8 +89,9 @@ Live collaboration, a recompile, and a SyncTeX jump, in one real recording (comp
   `ALDINE_SSO_ONLY=1` disables passwords entirely. Off by default
   (single-tenant); the collab socket is access-checked.
 - **Scales when you need it**: flat-file storage by default; set
-  `DATABASE_URL` for Postgres and `REDIS_URL` to run multiple app nodes. See
-  [docs/SCALING.md](docs/SCALING.md).
+  `DATABASE_URL` for Postgres and `REDIS_URL` for shared rate limits and
+  cross-node collab events. One app node is still the supported topology;
+  [docs/SCALING.md](docs/SCALING.md) says exactly what is and isn't built.
 - **Apple-style UI**: system fonts, hairline borders, light & dark mode,
   keyboard-first (⌘S typeset, ⌘J jump, ⌘K command palette).
 
@@ -99,6 +102,8 @@ Live collaboration, a recompile, and a SyncTeX jump, in one real recording (comp
 No clone, no build: save this as `docker-compose.yml` and run `docker compose up -d`:
 
 ```yaml
+name: aldine
+
 services:
   app:
     image: ghcr.io/trahloff/aldine-app:latest
@@ -107,13 +112,27 @@ services:
     volumes:
       - aldine-data:/data
       - aldine-secrets:/secrets
+    networks: [frontend, backend]
+    init: true
     restart: unless-stopped
 
   compiler:
     image: ghcr.io/trahloff/aldine-compiler:latest
     volumes:
       - aldine-data:/data
+    # The compiler runs untrusted LaTeX. Keep this block.
+    networks: [backend]
+    mem_limit: 2g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges]
+    init: true
     restart: unless-stopped
+
+networks:
+  frontend: {}
+  backend:
+    internal: true # no route to the internet
 
 volumes:
   aldine-data:
@@ -124,18 +143,21 @@ Open http://localhost:8080. That's it. Projects live in the `aldine-data`
 volume, and everything else (auth, SSO, AI fix, email) is opt-in via
 environment variables when you want it.
 
-The same file ships as the repo-root `docker-compose.yml`, so a clone works
+That is the repo-root `docker-compose.yml` verbatim, so a clone works
 identically: `git clone https://github.com/trahloff/Aldine && cd Aldine &&
-docker compose up -d`.
+docker compose up -d`. Keep the `name: aldine` line wherever you save it: it
+fixes the volume names, which is what lets you switch compose files later and
+what `deploy/backup.sh` looks for.
 
 - **The first pull is big** (~2.5 GB; TeX Live is in the compiler image);
   after that, starts take seconds. Ready when `curl localhost:8080/api/health`
-  returns `{"ok":true}`. Images are published on release tags.
+  returns `{"ok":true,"name":"aldine"}`. Images are published on release tags.
 - **Port 8080 taken?** Change the left side of `ports:`.
 - **Everything beyond the minimum**: building from source (latest `main`),
-  auth/SSO/AI/email options, TLS, Postgres/Redis, hardening. All of it lives
-  in [`docker-compose.full.yml`](docker-compose.full.yml) (same volumes, so
-  you can switch without losing data):
+  auth/SSO/AI/email options, TLS, Postgres/Redis. All of it lives
+  in [`docker-compose.full.yml`](docker-compose.full.yml), which carries the
+  same compiler sandbox and the same volumes, so you can switch without
+  losing data:
   `docker compose -f docker-compose.full.yml up -d --build`. The first build
   installs LaTeX packages; expect 15–40 minutes.
 - **Need packages beyond the curated set?** Build the full file with all of
@@ -191,43 +213,80 @@ docker run -d -p 4020:4020 -v $PWD/.data:/data aldine-compiler
 
 ### Tests
 
-End-to-end (Playwright; covers compile, collab, branches, plugins, Zotero):
+```bash
+npm run typecheck -w apps/web && npm run test -w apps/web   # tsc + vitest
+npm run test:github -w apps/server                          # GitHub-sync integration
+npm run test:db -w apps/server                              # datastore conformance
+```
+
+End-to-end (Playwright; covers compile, collab, branches, plugins, Zotero). The
+suite starts its own app on :3100 but not the compiler, and it runs against
+`.data-e2e`, so the compiler has to point at that directory or every compile
+test fails against a healthy-looking compiler:
 
 ```bash
 npx playwright install chromium
-npm run test:e2e                          # self-starting stack on :3100
-ALDINE_URL=http://localhost:8080 npm run test:e2e   # against docker compose
+DATA_DIR=$(pwd)/.data-e2e PORT=4020 node apps/compiler/server.js &   # or a container on the same dir
+npm run test:e2e
+ALDINE_URL=http://localhost:8080 npm run test:e2e   # against a running compose stack instead
 ```
 
 ## Production deploy
 
+Settings live in a `.env` file next to the compose files, so every later
+`docker compose` call picks them up. Give each comment its own line: anything
+after a value becomes part of the value, and `AUTH_ENABLED=1  multi-user login`
+is not `1`, so auth silently stays off.
+
+```dotenv
+# app on loopback only; your reverse proxy fronts it
+ALDINE_APP_BIND=127.0.0.1
+# absolute origin used in OAuth callbacks and password-reset links
+ALDINE_PUBLIC_URL=https://aldine.example.com
+
+# Everything below is optional and off unless set.
+# multi-user login, ownership and sharing (unset = single-tenant)
+AUTH_ENABLED=1
+# Google SSO
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
+# GitHub SSO
+GITHUB_LOGIN_CLIENT_ID=
+GITHUB_LOGIN_CLIENT_SECRET=
+# GitHub repo sync: a separate OAuth app with repo scope
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+# AI error fix, bring your own key
+OPENROUTER_API_KEY=
+# password-reset email: SMTP, or SES_FROM + AWS_REGION instead
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=
+# error tracking
+SENTRY_DSN=
+```
+
 ```bash
-# Behind your existing reverse proxy (nginx, Traefik, …), the usual setup.
-# The prod overlay binds the app to 127.0.0.1:8080, trusts proxy headers,
-# sets secure cookies, and rotates logs; point your proxy at that port.
+# Behind your existing reverse proxy (nginx, Traefik, …), the usual setup. The
+# prod overlay trusts proxy headers, sets secure cookies, and rotates logs;
+# point your proxy at 127.0.0.1:8080.
 # Sample nginx vhost (WebSocket + body-size gotchas handled): deploy/nginx.conf
-ALDINE_APP_BIND=127.0.0.1 \
 docker compose -f docker-compose.full.yml -f deploy/docker-compose.prod.yml \
   up -d --build
 
 # …or, if nothing else owns ports 80/443, add the bundled Caddy for
-# zero-config HTTPS: append `--profile tls` and set ALDINE_DOMAIN.
+# zero-config HTTPS: append `--profile tls` and set ALDINE_DOMAIN in .env.
 
-# Optional features are env-gated and off by default; set what you want
-# (usually in a .env file next to docker-compose.yml):
-#   AUTH_ENABLED=1                                   multi-user login
-#   GOOGLE_OAUTH_CLIENT_ID/SECRET                    Google SSO
-#   GITHUB_LOGIN_CLIENT_ID/SECRET                    GitHub SSO
-#   GITHUB_CLIENT_ID/SECRET                          GitHub repo sync
-#   OPENROUTER_API_KEY (or ANTHROPIC/OPENAI)         AI error fix
-#   SMTP_HOST/PORT/USER/PASS/FROM or SES_FROM        password-reset email
-#   ALDINE_PUBLIC_URL=https://aldine.example.com       absolute links (resets, OAuth)
-#   SENTRY_DSN                                       error tracking
-
-# Back up (data + secrets volumes) / restore
+# Back up the data + secrets volumes:
 deploy/backup.sh aldine-backup.tar.gz
-deploy/restore.sh aldine-backup.tar.gz   # stop the stack first: docker compose down
+# Restore, after stopping the stack with `docker compose down`:
+#   deploy/restore.sh aldine-backup.tar.gz
 ```
+
+Every variable Aldine reads is listed in
+[deploy/README.md](deploy/README.md#all-configuration).
 
 **Isolation & limits.** The compiler runs on an internal-only Docker network
 (no internet egress), drops all Linux capabilities, and is bounded on CPU /
@@ -273,9 +332,9 @@ Two separate concerns, behind two seams:
 - **Relational/metadata**: users, sessions, project metadata, review comments,
   and usage go through the `DataStore` interface (`db/`). Two backends:
   - **JSON files** (default, zero-dependency): the slim single-node self-host.
-  - **Postgres** (set `DATABASE_URL`): the horizontally-scalable backend, for
-    running multiple app nodes. `pg` is an optional dependency; the same test
-    suite passes on both.
+  - **Postgres** (set `DATABASE_URL`): the horizontally-scalable backend, and
+    the prerequisite for ever running multiple app nodes. `pg` is an optional
+    dependency; the same conformance suite runs against both.
 
 For how this scales past one box (and what the remaining walls are), see
 [docs/SCALING.md](docs/SCALING.md).

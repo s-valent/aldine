@@ -34,6 +34,28 @@ All notable changes to Aldine are documented here. The format follows
   change a published port by omission). `ALDINE_APP_BIND` does it, and the
   Traefik recipe's "skip the host port entirely" was impossible for the same
   reason.
+- Documentation that the code did not back: the AI provider precedence was
+  printed backwards (it is OpenRouter, then OpenAI, then Anthropic), plugins
+  were said to extend "commands" when the API offers sidebar panels and editor
+  insertion, `/api/health` returns a `name` field too, "clone a project and keep
+  using VS Code" described a git endpoint that does not exist (the route is
+  publish-to-GitHub, then Pull), and the status badge claimed the Playwright
+  suite gates CI when CI runs typecheck, build, and the integration suites.
+- Multi-node guidance now matches `docs/SCALING.md`: Postgres plus Redis is the
+  prerequisite for more than one app node, not permission to run one. Cookie
+  stickiness is no longer suggested, since it lets two collaborators on the same
+  project land on different nodes and dual-seed the document.
+- The contributor setup pointed the compiler at `./.data` while the Playwright
+  suites run against `.data-e2e`, which fails every compile test against a
+  compiler whose `/health` is green. Both READMEs now say which directory.
+- Package manifests said `0.1.0` two releases after v0.3.0, and the release
+  procedure neither bumped them nor mentioned that the workflow publishes a
+  release immediately rather than drafting one. `CHANGELOG` also had no link
+  definitions for 0.2.0 and 0.3.0.
+- `docs/` carried two competing user-story inventories, one committed truncated
+  mid-sentence. One remains, linked from CONTRIBUTING, with each domain naming
+  the suite that automates it and the delete story describing the 30-day trash
+  the app actually implements.
 
 ## [0.3.0] — 2026-08-03
 
@@ -196,5 +218,7 @@ First public release. Everything below is new.
   timer, Terraform for a full serverless-ish AWS deployment (deploy/aws).
 - Templates: article, IAC conference paper, beamer, report/thesis.
 
-[Unreleased]: https://github.com/trahloff/Aldine/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/trahloff/Aldine/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/trahloff/Aldine/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/trahloff/Aldine/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/trahloff/Aldine/releases/tag/v0.1.0

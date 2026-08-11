@@ -50,11 +50,16 @@ representing the community in public spaces.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the maintainers via GitHub's "Report content" feature or privately
-through the contact listed on the maintainer's GitHub profile. All complaints
-will be reviewed and investigated promptly and fairly. All maintainers are
-obligated to respect the privacy and security of the reporter of any incident.
+Report abusive, harassing, or otherwise unacceptable behavior privately through
+the repository's **Security tab → "Report a vulnerability"**. That form is the
+private channel that reaches the maintainers directly; say up front that it is a
+conduct report, not a security issue. Content that violates GitHub's own terms
+can additionally be reported to GitHub with the "Report content" option on any
+issue, pull request, or comment.
+
+All complaints will be reviewed and investigated promptly and fairly. All
+maintainers are obligated to respect the privacy and security of the reporter of
+any incident.
 
 ## Attribution
 

@@ -6,7 +6,7 @@ Guidance for AI agents (and a fast orientation for humans) working in this repo.
 
 Aldine — a slim, self-hosted collaborative LaTeX platform (Overleaf
 alternative). Fastify server with embedded Hocuspocus/Yjs collab, per-project
-git repos (worktree per branch), sandboxed TeX Live compiler service, React 18
+git repos (worktree per branch), sandboxed TeX Live compiler service, React 19
 + Vite + CodeMirror 6 frontend. AGPL-3.0.
 
 ## Layout

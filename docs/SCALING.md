@@ -19,8 +19,8 @@ and infrastructure, not a rewrite.
 | Users, sessions, reset tokens | DataStore | `db/` (`JsonStore` \| `PgStore`) |
 | Project metadata, sharing | DataStore | `db/` |
 | Review comments | DataStore | `db/` |
-| Compile-minutes usage (quotas) | DataStore | `db/` |
-| Rate-limit / quota counters | in-memory (per process) | `ratelimit.ts` |
+| Rate-limit counters | in-memory per process, or Redis when `REDIS_URL` is set | `ratelimit.ts` |
+| Compile-quota counters | DataStore (monthly seconds per user) | `usage.ts` |
 | Live collaboration state (Yjs CRDT) | in-process (Hocuspocus) | `collab.ts` |
 
 Switch the datastore with one env var:
