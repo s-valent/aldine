@@ -61,6 +61,24 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
     return () => clearTimeout(t);
   }, [zoom]);
 
+  // Same debounce for the pane width: dragging the resizer fires a ResizeObserver
+  // every frame, but the layout only needs to re-fit once it settles. 1 = fit width.
+  const [areaWidth, setAreaWidth] = useState(0);
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    let t = 0;
+    const set = () => setAreaWidth(scroller.clientWidth);
+    set();
+    const ro = new ResizeObserver(() => { clearTimeout(t); t = window.setTimeout(set, 150); });
+    ro.observe(scroller);
+    return () => { ro.disconnect(); clearTimeout(t); };
+  }, []);
+
+  // pdf.js document kept across re-layouts (resize/zoom), so fitting to the
+  // pane width never re-downloads the PDF.
+  const docCache = useRef<{ url: string; doc: Awaited<ReturnType<typeof pdfjs.getDocument>['promise']> | null } | null>(null);
+
   useEffect(() => {
     if (!pdfUrl || !innerRef.current) return;
     const my = ++renderTask.current;
@@ -69,7 +87,6 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
     const prevScroll = scroller.scrollTop;
     let doc: Awaited<ReturnType<typeof pdfjs.getDocument>['promise']> | null = null;
     let observer: IntersectionObserver | null = null;
-
     // Virtualized rendering: every page gets a correctly-sized canvas
     // immediately (layout only — getViewport, no rasterization), so scroll
     // geometry, SyncTeX offsets, and test selectors are all valid from the
@@ -118,9 +135,17 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
 
     (async () => {
       try {
-        doc = await pdfjs.getDocument(pdfUrl).promise;
-        if (my !== renderTask.current) { try { doc.destroy(); } catch { /* noop */ } return; }
-        const width = Math.max(320, scroller.clientWidth - 36) * layoutZoom;
+        const cached = docCache.current;
+        if (cached?.url === pdfUrl) {
+          doc = cached.doc;
+        } else {
+          doc = await pdfjs.getDocument(pdfUrl).promise;
+          if (my !== renderTask.current) { try { doc.destroy(); } catch { /* noop */ } return; }
+          if (docCache.current?.doc) try { docCache.current.doc.destroy(); } catch { /* noop */ }
+          docCache.current = { url: pdfUrl, doc };
+        }
+        if (!doc) return;
+        const width = Math.max(320, (areaWidth || scroller.clientWidth) - 36) * layoutZoom;
         const frag = document.createDocumentFragment();
         const info: Array<{ el: HTMLCanvasElement; scale: number; height: number }> = [];
         for (let i = 1; i <= doc.numPages; i++) {
@@ -165,14 +190,15 @@ const PdfPane = forwardRef<PdfPaneHandle, Props>(function PdfPane({ pdfUrl, stat
       }
     })();
     // Invalidate any in-flight render (so its guarded loop bails before touching
-    // the DOM/state) and release the pdf.js document — each compile is a unique
-    // URL, so without this the worker's document memory accretes every typeset.
+    // the DOM/state) and release the pdf.js document when it isn't the cached
+    // one (a resize/zoom re-layout reuses the cache; each compile is a unique
+    // URL that replaces it, so worker memory never accretes).
     return () => {
       renderTask.current++;
       observer?.disconnect();
-      Promise.resolve(doc).then((d) => { try { d?.destroy(); } catch { /* already gone */ } });
+      if (docCache.current?.doc !== doc) Promise.resolve(doc).then((d) => { try { d?.destroy(); } catch { /* already gone */ } });
     };
-  }, [pdfUrl, layoutZoom]);
+  }, [pdfUrl, layoutZoom, areaWidth]);
 
   const handleDblClick = (e: React.MouseEvent) => {
     if (!onInverse) return;
