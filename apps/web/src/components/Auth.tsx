@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type JSX } from 'react';
-import { api, AuthUser, OAuthProviderInfo } from '../api';
+import { api, AuthUser, OAuthProviderInfo, setCurrentIdentity } from '../api';
 
 interface AuthState {
   loading: boolean;
@@ -36,6 +36,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => { refresh(); }, []);
+
+  useEffect(() => {
+    if (user) {
+      // deterministic color from the email so the same account keeps its
+      // presence color across sessions and browsers
+      const palette = ['#e8554d', '#f0a202', '#2e933c', '#2e62e9', '#8f3ec9', '#d63384', '#0aa2c0'];
+      let h = 0;
+      for (let i = 0; i < user.email.length; i++) h = (h * 31 + user.email.charCodeAt(i)) >>> 0;
+      setCurrentIdentity({ name: user.email, color: palette[h % palette.length] });
+    } else {
+      setCurrentIdentity(null);
+    }
+  }, [user]);
 
   if (loading) return <div style={{ height: '100%' }} />;
 

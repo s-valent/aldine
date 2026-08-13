@@ -178,8 +178,17 @@ export const api = {
     req<ProjectSummary>(`/api/projects/${id}/share`, { method: 'POST', body: JSON.stringify({ mode, collaborators }) }),
 };
 
+/** Signed-in identity for presence + commit attribution, set by the auth layer.
+ *  Preferring the email over the "Writer N" guest fallback so collaborators see
+ *  who is really editing. */
+let currentIdentity: { name: string; color: string } | null = null;
+export function setCurrentIdentity(identity: { name: string; color: string } | null) {
+  currentIdentity = identity;
+}
+
 /** Local identity for presence + commit attribution. */
 export function localUser(): { name: string; color: string } {
+  if (currentIdentity) return currentIdentity;
   let name = localStorage.getItem('aldine.name');
   if (!name) {
     name = `Writer ${Math.floor(100 + Math.random() * 900)}`;
@@ -192,4 +201,11 @@ export function localUser(): { name: string; color: string } {
     localStorage.setItem('aldine.color', color);
   }
   return { name, color };
+}
+
+/** Stable per-account key for presence/cursor dedupe; undefined for guests.
+ *  A user's previous session keeps its own Yjs clientID, so without this key
+ *  the old session's cursor would linger forever alongside the new one. */
+export function accountKey(): string | undefined {
+  return currentIdentity ? currentIdentity.name : undefined;
 }

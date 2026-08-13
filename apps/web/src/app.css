@@ -481,6 +481,34 @@
 }
 .cm-ySelectionCaret:hover .cm-ySelectionInfo { opacity: 1; }
 .cm-ySelectionCaretDot { display: none; }
+/* caret stays inside its own line — painting above it ghosts in Safari */
+.ycaret {
+  position: relative;
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+}
+.ycaret__name {
+  position: absolute;
+  top: -1.35em;
+  left: 0;
+  padding: 1px 5px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  border-radius: 4px 4px 4px 0;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms var(--ease);
+  z-index: 10;
+}
+.ycaret:hover .ycaret__name { opacity: 1; }
+.cm-yRedraw { }
 
 /* pdf pane */
 .pdf-pane { flex: 1; overflow: auto; background: var(--bg-app); position: relative; }

@@ -10,10 +10,11 @@ import { latex } from 'codemirror-lang-latex';
 import * as Y from 'yjs';
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next';
 import { HocuspocusProvider } from '@hocuspocus/provider';
-import { localUser } from '../api';
+import { localUser, accountKey } from '../api';
 import { citeCompletionSource, refCompletionSource, citeHoverTooltip, warmBib } from '../editor/latexExtras';
 import { setComments, CommentRange } from '../editor/commentsEffect';
 import { visualExtensions, type VisualDeps } from '../editor/visual';
+import { remoteCursors } from '../editor/remoteCursors';
 import { toggleStyle, setSectionLevel, toggleItemize } from '../editor/visual/commands';
 import { documentOutline, OutlineEntry } from '../editor/visual/outline';
 import type { PresenceUser } from './Presence';
@@ -272,20 +273,38 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
     });
     const ytext = ydoc.getText('content');
     const user = localUser();
-    provider.setAwarenessField('user', { name: user.name, color: user.color, colorLight: user.color + '55' });
+    const userField: { name: string; color: string; colorLight: string; account?: string } = {
+      name: user.name,
+      color: user.color,
+      colorLight: user.color + '55',
+    };
+    const account = accountKey();
+    if (account) userField.account = account;
+    provider.setAwarenessField('user', userField);
 
     const awareness = provider.awareness!;
     const modeComp = new Compartment();
     const spellComp = new Compartment();
     const deps: VisualDeps = { projectId, branch, ydoc, awareness };
     const reportUsers = () => {
-      // key by Yjs clientID so two collaborators with the same display name stay distinct
-      const byClient = new Map<number, PresenceUser>();
+      // one entry per account — a user's stale session mints its own clientID;
+      // guests (no account key, name without @) stay distinct per session
+      const accountOf = (s: { user?: PresenceUser & { account?: string } }) => {
+        const u = s.user;
+        if (u?.account) return u.account;
+        if (u?.name && u.name.includes('@')) return u.name;
+        return undefined;
+      };
+      const best = new Map<string | number, { user: PresenceUser; stamp: number }>();
       awareness.getStates().forEach((s, clientId) => {
-        const u = (s as { user?: PresenceUser }).user;
-        if (u?.name) byClient.set(clientId, u);
+        const u = (s as { user?: PresenceUser & { account?: string } }).user;
+        if (!u?.name) return;
+        const key = accountOf(s) ?? clientId;
+        const stamp = awareness.meta.get(clientId)?.lastUpdated ?? 0;
+        const cur = best.get(key);
+        if (!cur || stamp > cur.stamp) best.set(key, { user: u, stamp });
       });
-      onUsers(Array.from(byClient.values()));
+      onUsers(Array.from(best.values(), (b) => b.user));
     };
     awareness.on('change', reportUsers);
     reportUsers();
@@ -358,7 +377,11 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           // browser-native spellcheck on prose (only meaningful for .tex/.md)
           spellComp.of(spellcheckAttrs(spellcheck, filePath)),
           modeComp.of(mode === 'visual' ? visualExtensions(deps) : []),
-          yCollab(ytext, provider.awareness),
+          // yCollab WITHOUT awareness: the library bundles yRemoteSelections,
+          // whose reused/moved caret DOM ghosts at old positions in Safari.
+          // remoteCursors() below does the cursor work with fresh DOM per update.
+          yCollab(ytext, undefined),
+          ...remoteCursors(ytext, awareness),
         ],
       }),
     });
