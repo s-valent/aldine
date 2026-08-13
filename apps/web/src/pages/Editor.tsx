@@ -13,7 +13,7 @@ import ReviewPanel from '../components/ReviewPanel';
 import Presence, { PresenceUser } from '../components/Presence';
 import { PluginHost, PluginPanel } from '../plugins/host';
 import { hintFor } from '../editor/errorHints';
-import { IconChevronLeft } from '../components/Icons';
+import { IconChevronLeft, IconPanel, IconCode } from '../components/Icons';
 import CommandPalette, { Command } from '../components/CommandPalette';
 import { invalidateBibCache, invalidateLabelCache } from '../editor/latexExtras';
 import { useCommentSignal } from '../editor/commentSignal';
@@ -39,6 +39,10 @@ export default function Editor() {
   const [tab, setTab] = useState<'files' | 'history' | string>('files');
   const [compile, setCompile] = useState<{ status: CompileStatus; result: CompileResult | null }>({ status: 'idle', result: null });
   const [pdfWidth, setPdfWidth] = useState(() => Math.max(360, Math.round(window.innerWidth * 0.4)));
+  const [showSidebar, setShowSidebar] = useState(() => localStorage.getItem('aldine.showSidebar') !== '0');
+  const [showCode, setShowCode] = useState(() => localStorage.getItem('aldine.showCode') !== '0');
+  const toggleSidebar = () => setShowSidebar((v) => { localStorage.setItem('aldine.showSidebar', v ? '0' : '1'); return !v; });
+  const toggleCode = () => setShowCode((v) => { localStorage.setItem('aldine.showCode', v ? '0' : '1'); return !v; });
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [pluginPanels, setPluginPanels] = useState<PluginPanel[]>([]);
   const [auto, setAuto] = useState(() => localStorage.getItem('aldine.autoTypeset') !== '0');
@@ -410,6 +414,26 @@ export default function Editor() {
           onSwitch={switchBranch}
           onChanged={() => { loadProject(); loadFiles(); }}
         />
+        <div className="toolbar__group" style={{ marginLeft: 2 }}>
+          <button
+            className={`btn btn--icon ${showSidebar ? 'btn--pressed' : ''}`}
+            onClick={toggleSidebar}
+            aria-pressed={showSidebar}
+            data-testid="toggle-sidebar"
+            title={showSidebar ? 'Hide the file sidebar' : 'Show the file sidebar'}
+          >
+            <IconPanel />
+          </button>
+          <button
+            className={`btn btn--icon ${showCode ? 'btn--pressed' : ''}`}
+            onClick={toggleCode}
+            aria-pressed={showCode}
+            data-testid="toggle-code"
+            title={showCode ? 'Hide the source editor (show only the PDF)' : 'Show the source editor'}
+          >
+            <IconCode />
+          </button>
+        </div>
         {visualEnabled && (
           <div className="seg" role="tablist" aria-label="Editing mode" data-testid="mode-toggle">
             <button role="tab" aria-selected={mode === 'source'} className={`seg__btn ${mode === 'source' ? 'seg__btn--active' : ''}`} onClick={() => switchMode('source')}>Source</button>
@@ -441,14 +465,14 @@ export default function Editor() {
             data-testid="typeset-button"
             title="Typeset (⌘S)"
           >
-            {compile.status === 'compiling' ? <span className="spinner" /> : null}
             Typeset
           </button>
         </div>
       </header>
 
       <div className="workspace">
-        <aside className="pane sidebar">
+        {showSidebar && (
+          <aside className="pane sidebar">
           <div className="sidebar__tabs" role="tablist">
             <button className={`sidebar__tab ${tab === 'files' ? 'sidebar__tab--active' : ''}`} onClick={() => setTab('files')} role="tab">Files</button>
             <button className={`sidebar__tab ${tab === 'history' ? 'sidebar__tab--active' : ''}`} onClick={() => setTab('history')} role="tab">History</button>
@@ -522,7 +546,9 @@ export default function Editor() {
             ))}
           </div>
         </aside>
+        )}
 
+        {showCode && (
         <main className="pane" style={{ flex: 1 }}>
           {activeFile ? (
             <>
@@ -585,7 +611,9 @@ export default function Editor() {
             </div>
           )}
         </main>
+        )}
 
+        {showCode && (
         <div
           className="resizer"
           onMouseDown={(e) => {
@@ -602,8 +630,9 @@ export default function Editor() {
             window.addEventListener('mouseup', up);
           }}
         />
+        )}
 
-        <section className="pane" style={{ width: pdfWidth, flex: 'none' }}>
+        <section className="pane" style={showCode ? { width: pdfWidth, flex: 'none' } : { flex: 1 }}>
           <div className="pane__header">
             <span>Preview</span>
             <span className="pdf-status" data-testid="pdf-status" style={{ marginLeft: 10 }}>
