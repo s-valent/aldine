@@ -17,6 +17,10 @@ services:
     environment:
       AUTH_ENABLED: ${AUTH_ENABLED:-}
       ALDINE_SSO_ONLY: ${ALDINE_SSO_ONLY:-}
+      # Invite-only registration (new accounts need an admin-created invite link).
+      ALDINE_INVITE_ONLY: ${ALDINE_INVITE_ONLY:-}
+      # Comma-separated admin emails — the only users who can create invite links.
+      ALDINE_ADMIN_EMAILS: ${ALDINE_ADMIN_EMAILS:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GITHUB_LOGIN_CLIENT_ID: ${GITHUB_LOGIN_CLIENT_ID:-}

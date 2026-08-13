@@ -10,6 +10,7 @@ import AccountSettings from '../components/AccountSettings';
 import { getTheme, toggleTheme } from '../theme';
 import GithubImport from '../components/GithubImport';
 import Onboarding from '../components/Onboarding';
+import InvitesModal from '../components/InvitesModal';
 import { friendlyDate } from '../util/dates';
 
 export default function Home() {
@@ -29,7 +30,8 @@ export default function Home() {
   const dismissOnboarding = () => { localStorage.setItem('aldine.onboarded', '1'); setShowOnboarding(false); };
   const navigate = useNavigate();
   const toast = useToast();
-  const { authEnabled, user, setUser } = useAuth();
+  const { authEnabled, user, setUser, isAdmin } = useAuth();
+  const [invitesOpen, setInvitesOpen] = useState(false);
 
   const load = () => {
     api.listTrash().then(setTrash).catch(() => setTrash([]));
@@ -138,6 +140,9 @@ export default function Home() {
                 <button className="user-chip__name" data-testid="user-name" onClick={() => setShowAccount(true)} title="Account settings">{user.name}</button>
                 <button className="btn btn--small" data-testid="logout" onClick={async () => { await api.logout(); setUser(null); }}>Sign out</button>
               </span>
+            )}
+            {isAdmin && (
+              <button className="btn" onClick={() => setInvitesOpen(true)} data-testid="admin-invites" title="Create and manage invite links (invite-only registration)">Invites</button>
             )}
             <label className="btn" data-testid="import-zip">
               Import ZIP
@@ -255,6 +260,7 @@ export default function Home() {
       {showAccount && user && (
         <AccountSettings user={user} onClose={() => setShowAccount(false)} />
       )}
+      {invitesOpen && <InvitesModal onClose={() => setInvitesOpen(false)} />}
       {showGithub && (
         <GithubImport onClose={() => setShowGithub(false)} onImported={(id) => navigate(`/p/${id}`)} />
       )}

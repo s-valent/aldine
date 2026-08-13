@@ -1,5 +1,5 @@
 import { PROJECT_ID_RE } from '../util.js';
-import type { DataStore, User, SessionRow, ProjectMeta, Comment } from './types.js';
+import type { DataStore, User, SessionRow, ProjectMeta, Comment, Invite } from './types.js';
 
 /**
  * Postgres DataStore — the horizontally-scalable backend. Multiple app nodes
@@ -12,7 +12,7 @@ import type { DataStore, User, SessionRow, ProjectMeta, Comment } from './types.
  * wholesale); usage is an upsert with an atomic increment.
  */
 interface PgPool {
-  query(text: string, params?: unknown[]): Promise<{ rows: any[] }>;
+  query(text: string, params?: unknown[]): Promise<{ rows: any[]; rowCount?: number }>;
   end(): Promise<void>;
 }
 
@@ -65,6 +65,11 @@ export class PgStore implements DataStore {
       CREATE TABLE IF NOT EXISTS resets (
         token text PRIMARY KEY, user_id text NOT NULL, exp bigint NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS invites (
+        token text PRIMARY KEY, email text, created_by text NOT NULL,
+        created_at text NOT NULL, expires_at bigint, used_at text
+      );
+      CREATE INDEX IF NOT EXISTS invites_email_idx ON invites(email);
       CREATE TABLE IF NOT EXISTS project_meta (
         id text PRIMARY KEY, created_at text NOT NULL, data jsonb NOT NULL
       );
@@ -137,6 +142,46 @@ export class PgStore implements DataStore {
     return rows[0] ? { userId: rows[0].user_id, exp: Number(rows[0].exp) } : null;
   }
   async deleteReset(token: string) { await this.pool.query(`DELETE FROM resets WHERE token=$1`, [token]); }
+
+  // ---- invites ----
+  private rowToInvite(r: any): Invite {
+    return {
+      token: r.token, email: r.email ?? undefined, createdBy: r.created_by,
+      createdAt: r.created_at, expiresAt: r.expires_at != null ? Number(r.expires_at) : undefined,
+      usedAt: r.used_at ?? undefined,
+    };
+  }
+  async createInvite(inv: Invite) {
+    await this.pool.query(
+      `INSERT INTO invites(token,email,created_by,created_at,expires_at,used_at) VALUES($1,$2,$3,$4,$5,$6)`,
+      [inv.token, inv.email ?? null, inv.createdBy, inv.createdAt, inv.expiresAt ?? null, inv.usedAt ?? null],
+    );
+  }
+  async getInvite(token: string) {
+    const { rows } = await this.pool.query(`SELECT * FROM invites WHERE token=$1`, [token]);
+    return rows[0] ? this.rowToInvite(rows[0]) : null;
+  }
+  async listInvites() {
+    const { rows } = await this.pool.query(`SELECT * FROM invites ORDER BY created_at DESC`);
+    return rows.map((r) => this.rowToInvite(r));
+  }
+  async consumeInvite(token: string, emailLower: string, usedAt: string): Promise<'ok' | 'invalid' | 'expired' | 'used' | 'email'> {
+    // One atomic UPDATE: only a valid, unused, unexpired, matching invite flips
+    // used_at, so concurrent registrations can never double-consume.
+    const now = Date.now();
+    const { rowCount } = await this.pool.query(
+      `UPDATE invites SET used_at=$3
+       WHERE token=$1 AND used_at IS NULL AND (expires_at IS NULL OR expires_at > $4) AND (email IS NULL OR lower(email)=$2)`,
+      [token, emailLower, usedAt, now],
+    );
+    if (rowCount && rowCount > 0) return 'ok';
+    const inv = await this.getInvite(token);
+    if (!inv) return 'invalid';
+    if (inv.usedAt) return 'used';
+    if (inv.expiresAt != null && inv.expiresAt <= now) return 'expired';
+    return 'email';
+  }
+  async deleteInvite(token: string) { await this.pool.query(`DELETE FROM invites WHERE token=$1`, [token]); }
 
   // ---- project meta ----
   // Same id discipline as the JSON backend: reads treat a malformed id as

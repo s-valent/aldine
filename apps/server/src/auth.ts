@@ -14,6 +14,16 @@ import type { User } from './db/types.js';
 export const AUTH_ENABLED = process.env.AUTH_ENABLED === '1' || process.env.AUTH_ENABLED === 'true';
 /** SSO-only mode: disable all password endpoints (register/login/reset/change) — sign-in is exclusively via a configured OAuth provider. */
 export const SSO_ONLY = process.env.ALDINE_SSO_ONLY === '1' || process.env.ALDINE_SSO_ONLY === 'true';
+/**
+ * Invite-only registration: new accounts need a valid single-use invite token,
+ * except for emails listed in ALDINE_ADMIN_EMAILS (the operator bootstrap — they
+ * can self-register once, then create invites for everyone else). Login stays open.
+ */
+export const INVITE_ONLY = process.env.ALDINE_INVITE_ONLY === '1' || process.env.ALDINE_INVITE_ONLY === 'true';
+/** Comma-separated emails that count as administrators (can create/revoke invites). */
+const ADMIN_EMAILS = new Set(
+  (process.env.ALDINE_ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
 export const COOKIE = 'aldine_session';
 const SESSION_DAYS = 30;
 const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -26,6 +36,22 @@ export const SECURE_COOKIES = (process.env.ALDINE_PUBLIC_URL || '').startsWith('
 
 export function pub(u: User): PublicUser { return { id: u.id, email: u.email, name: u.name, provider: u.provider }; }
 
+/** Env-configured administrators (the only users who can create invites). */
+export function isAdmin(user: PublicUser | null | undefined): boolean {
+  return !!user && ADMIN_EMAILS.has(user.email.toLowerCase());
+}
+
+/** Validate + consume a single-use invite for an email/password registration. */
+export async function requireInvite(token: string, email: string): Promise<void> {
+  if (!token) throw new Error('Registration is by invite only — enter the invite code from the link you received.');
+  const status = await db().consumeInvite(token.trim(), email.trim().toLowerCase(), new Date().toISOString());
+  if (status === 'ok') return;
+  if (status === 'used') throw new Error('That invite has already been used.');
+  if (status === 'expired') throw new Error('That invite has expired.');
+  if (status === 'email') throw new Error('That invite is for a different email address.');
+  throw new Error('That invite code is not valid.');
+}
+
 function hashPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
@@ -36,11 +62,16 @@ function verifyPassword(password: string, user: User): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-export async function register(email: string, password: string, name?: string, provider?: string): Promise<PublicUser> {
+export async function register(email: string, password: string, name?: string, provider?: string, invite?: string): Promise<PublicUser> {
   email = email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address');
   if (!provider && password.length < 8) throw new Error('Password must be at least 8 characters');
   if (await db().findUserByEmail(email)) throw new Error('An account with that email already exists');
+  // Invite-only gate. Listed admin emails can self-register (the operator
+  // bootstrap); everyone else needs a valid single-use invite. NOTE: registration
+  // doesn't verify email, so treat ALDINE_ADMIN_EMAILS as a trust anchor — an
+  // operator should claim those addresses before sharing them widely.
+  if (INVITE_ONLY && !ADMIN_EMAILS.has(email)) await requireInvite(invite || '', email);
   const salt = crypto.randomBytes(16).toString('hex');
   const user: User = {
     id: crypto.randomBytes(9).toString('base64url'),
@@ -71,14 +102,14 @@ export function getUser(id: string): Promise<User | null> {
  * (registration doesn't verify email) an attacker could pre-create for the
  * victim's address. Prevents pre-account-hijacking.
  */
-export async function findOrCreateOAuth(email: string, name: string, provider: string): Promise<PublicUser> {
+export async function findOrCreateOAuth(email: string, name: string, provider: string, invite?: string): Promise<PublicUser> {
   const existing = await db().findUserByEmail(email.trim().toLowerCase());
   if (existing) {
     if (existing.provider === provider) return pub(existing);
     const how = existing.provider ? `sign in with ${existing.provider}` : 'sign in with your password';
     throw new Error(`An account with this email already exists — ${how} instead.`);
   }
-  return register(email, '', name, provider);
+  return register(email, '', name, provider, invite);
 }
 
 export async function changePassword(userId: string, current: string, next: string): Promise<void> {

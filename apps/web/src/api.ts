@@ -1,5 +1,14 @@
 export interface AuthUser { id: string; email: string; name: string; provider?: string }
 export interface OAuthProviderInfo { id: string; label: string }
+export interface InviteInfo {
+  token: string;
+  email?: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt?: number;
+  usedAt?: string;
+  url: string;
+}
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -162,7 +171,7 @@ export const api = {
   deleteComment: (id: string, cid: string) =>
     req<{ ok: boolean }>(`/api/projects/${id}/comments/${cid}`, { method: 'DELETE' }),
 
-  me: () => req<{ authEnabled: boolean; passwordAuth: boolean; user: AuthUser | null; providers: OAuthProviderInfo[] }>('/api/auth/me'),
+  me: () => req<{ authEnabled: boolean; passwordAuth: boolean; inviteOnly: boolean; isAdmin: boolean; user: AuthUser | null; providers: OAuthProviderInfo[] }>('/api/auth/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     req<{ ok: boolean }>('/api/auth/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
   resetRequest: (email: string) =>
@@ -171,11 +180,19 @@ export const api = {
     req<{ ok: boolean }>('/api/auth/reset', { method: 'POST', body: JSON.stringify({ token, newPassword }) }),
   login: (email: string, password: string) =>
     req<{ user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  register: (email: string, password: string, name?: string) =>
-    req<{ user: AuthUser }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) }),
+  register: (email: string, password: string, name?: string, invite?: string) =>
+    req<{ user: AuthUser }>('/api/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name, invite }) }),
   logout: () => req<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
   share: (id: string, mode: 'private' | 'link', collaborators: string[]) =>
     req<ProjectSummary>(`/api/projects/${id}/share`, { method: 'POST', body: JSON.stringify({ mode, collaborators }) }),
+
+  // admin: invite management (invite-only registration)
+  createInvite: (email?: string, expiresInDays?: number) =>
+    req<{ token: string; url: string }>('/api/admin/invites', { method: 'POST', body: JSON.stringify({ email, expiresInDays }) }),
+  listInvites: () =>
+    req<{ invites: InviteInfo[] }>('/api/admin/invites'),
+  revokeInvite: (token: string) =>
+    req<{ ok: boolean }>(`/api/admin/invites/${encodeURIComponent(token)}`, { method: 'DELETE' }),
 };
 
 /** Signed-in identity for presence + commit attribution, set by the auth layer.

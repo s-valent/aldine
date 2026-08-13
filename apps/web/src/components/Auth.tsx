@@ -6,11 +6,13 @@ interface AuthState {
   authEnabled: boolean;
   user: AuthUser | null;
   providers: OAuthProviderInfo[];
+  inviteOnly: boolean;
+  isAdmin: boolean;
   setUser(u: AuthUser | null): void;
   refresh(): Promise<void>;
 }
 
-const Ctx = createContext<AuthState>({ loading: true, authEnabled: false, user: null, providers: [], setUser: () => {}, refresh: async () => {} });
+const Ctx = createContext<AuthState>({ loading: true, authEnabled: false, user: null, providers: [], inviteOnly: false, isAdmin: false, setUser: () => {}, refresh: async () => {} });
 
 export function useAuth() { return useContext(Ctx); }
 
@@ -20,6 +22,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [providers, setProviders] = useState<OAuthProviderInfo[]>([]);
   const [passwordAuth, setPasswordAuth] = useState(true);
+  const [inviteOnly, setInviteOnly] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const refresh = async () => {
     try {
@@ -28,14 +32,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(me.user);
       setProviders(me.providers || []);
       setPasswordAuth(me.passwordAuth !== false);
+      setInviteOnly(!!me.inviteOnly);
+      setIsAdmin(!!me.isAdmin);
     } catch {
       setAuthEnabled(false);
       setUser(null);
     }
     setLoading(false);
   };
-
-  useEffect(() => { refresh(); }, []);
 
   useEffect(() => {
     if (user) {
@@ -50,14 +54,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user]);
 
+  useEffect(() => { refresh(); }, []);
+
   if (loading) return <div style={{ height: '100%' }} />;
 
   // Show the login/reset screen when signed out, OR when a reset link was opened
   // in an already-signed-in session (otherwise the ?reset_token= link does nothing).
   const hasResetToken = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('reset_token');
-  if (authEnabled && (!user || hasResetToken)) return <LoginScreen providers={providers} passwordAuth={passwordAuth} onAuthed={(u) => setUser(u)} />;
+  if (authEnabled && (!user || hasResetToken)) return <LoginScreen providers={providers} passwordAuth={passwordAuth} inviteOnly={inviteOnly} onAuthed={(u) => setUser(u)} />;
 
-  return <Ctx.Provider value={{ loading, authEnabled, user, providers, setUser, refresh }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ loading, authEnabled, user, providers, inviteOnly, isAdmin, setUser, refresh }}>{children}</Ctx.Provider>;
 }
 
 type Mode = 'login' | 'register' | 'forgot' | 'reset';
@@ -71,11 +77,12 @@ const PROVIDER_ICON: Record<string, JSX.Element> = {
   ),
 };
 
-function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthProviderInfo[]; passwordAuth: boolean; onAuthed(u: AuthUser): void }) {
+function LoginScreen({ providers, passwordAuth, inviteOnly, onAuthed }: { providers: OAuthProviderInfo[]; passwordAuth: boolean; inviteOnly: boolean; onAuthed(u: AuthUser): void }) {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
+  const [invite, setInvite] = useState('');
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -83,19 +90,28 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
 
   const reset = () => { setError(''); setInfo(''); };
 
-  // Arriving from a password-reset email link (…/?reset_token=…): pre-fill the
-  // token and jump straight to the "set a new password" step.
+  // Arriving from an invite link (…/?invite=…) or a password-reset email link
+  // (…/?reset_token=…): pre-fill and jump straight to the relevant step.
   useEffect(() => {
     const url = new URL(window.location.href);
     const t = url.searchParams.get('reset_token');
+    const inv = url.searchParams.get('invite');
     if (t) {
       setToken(t);
       setMode('reset');
       setInfo('Set a new password below.');
-      // strip only reset_token, preserving any co-arriving query params / hash
+    }
+    if (inv) {
+      setInvite(inv);
+      if (mode === 'login' || mode === 'register') setMode('register');
+      setInfo(inviteOnly ? 'This invite is ready — create your account below.' : '');
+    }
+    if (t || inv) {
       url.searchParams.delete('reset_token');
+      url.searchParams.delete('invite');
       window.history.replaceState({}, '', url.pathname + url.search + url.hash);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const submit = async () => {
@@ -103,7 +119,7 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
     setBusy(true);
     try {
       if (mode === 'login') onAuthed((await api.login(email.trim(), password)).user);
-      else if (mode === 'register') onAuthed((await api.register(email.trim(), password, name.trim() || undefined)).user);
+      else if (mode === 'register') onAuthed((await api.register(email.trim(), password, name.trim() || undefined, invite.trim() || undefined)).user);
       else if (mode === 'forgot') {
         const r = await api.resetRequest(email.trim());
         if (r.token) { setToken(r.token); setMode('reset'); setInfo('Reset token issued (self-host mode). Set a new password below.'); }
@@ -134,7 +150,7 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
         <p className="home__tag" style={{ marginBottom: 18 }}>{title}</p>
 
         {providers.map((p) => (
-          <a key={p.id} className="btn login__oauth" href={`/api/auth/oauth/${p.id}`} data-testid={`oauth-${p.id}`}>
+          <a key={p.id} className="btn login__oauth" href={invite ? `/api/auth/oauth/${p.id}?invite=${encodeURIComponent(invite)}` : `/api/auth/oauth/${p.id}`} data-testid={`oauth-${p.id}`}>
             {PROVIDER_ICON[p.id]}
             Continue with {p.label}
           </a>
@@ -153,6 +169,9 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
             {mode !== 'reset' && (
               <input className="input login__input" type="email" placeholder="Email" value={email} data-testid="auth-email" autoFocus onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
             )}
+            {mode === 'register' && inviteOnly && (
+              <input className="input login__input" placeholder="Invite code" value={invite} data-testid="auth-invite" onChange={(e) => setInvite(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+            )}
             {mode === 'reset' && (
               <input className="input login__input" placeholder="Reset token" value={token} data-testid="auth-token" onChange={(e) => setToken(e.target.value)} />
             )}
@@ -168,7 +187,7 @@ function LoginScreen({ providers, passwordAuth, onAuthed }: { providers: OAuthPr
             </button>
 
             {(mode === 'login' || mode === 'register') && (
-              <button className="btn btn--ghost login__switch" data-testid="auth-switch" onClick={() => { reset(); setMode(mode === 'login' ? 'register' : 'login'); }}>
+              <button className="btn btn--ghost login__switch" data-testid="auth-switch" onClick={() => { reset(); if (mode === 'login') { setMode('register'); if (inviteOnly) setInfo('Registration is by invite only — paste the invite code from the link you received.'); } else { setMode('login'); } }}>
                 {mode === 'login' ? 'Need an account? Sign up' : 'Have an account? Sign in'}
               </button>
             )}

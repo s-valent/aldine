@@ -64,6 +64,20 @@ export interface ProjectMeta {
 
 export interface SessionRow { userId: string; exp: number }
 
+/** One invitation to register (used by invite-only mode, ALDINE_INVITE_ONLY=1). */
+export interface Invite {
+  token: string;
+  /** Bind the invite to one address — registration must use this email. */
+  email?: string;
+  /** Admin user id that created the invite. */
+  createdBy: string;
+  createdAt: string;
+  /** Epoch ms; unset = never expires. */
+  expiresAt?: number;
+  /** Set when a registration consumed the invite (single-use). */
+  usedAt?: string;
+}
+
 /**
  * Every method is async so a network-backed implementation (Postgres) is a
  * drop-in for the file-backed one. Implementations must be safe for concurrent
@@ -90,6 +104,14 @@ export interface DataStore {
   createReset(token: string, userId: string, exp: number): Promise<void>;
   getReset(token: string): Promise<SessionRow | null>;
   deleteReset(token: string): Promise<void>;
+
+  // invite tokens (ALDINE_INVITE_ONLY registration)
+  createInvite(inv: Invite): Promise<void>;
+  getInvite(token: string): Promise<Invite | null>;
+  listInvites(): Promise<Invite[]>;
+  /** Atomically validate + mark-used a single-use invite. 'ok' consumes it. */
+  consumeInvite(token: string, emailLower: string, usedAt: string): Promise<'ok' | 'invalid' | 'expired' | 'used' | 'email'>;
+  deleteInvite(token: string): Promise<void>;
 
   // project metadata
   readMeta(id: string): Promise<ProjectMeta | null>;

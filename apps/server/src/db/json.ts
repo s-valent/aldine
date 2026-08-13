@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { PROJECT_ID_RE } from '../util.js';
-import type { DataStore, User, SessionRow, ProjectMeta, Comment } from './types.js';
+import type { DataStore, User, SessionRow, ProjectMeta, Comment, Invite } from './types.js';
 
 /**
  * Flat-JSON DataStore — the slim, zero-dependency default for single-node
@@ -20,6 +20,7 @@ export class JsonStore implements DataStore {
   private resetsPath: string;
   private usagePath: string;
   private connectionsPath: string;
+  private invitesPath: string;
   private metaDir: string;
   private commentsDir: string;
   private flat: Set<string>;
@@ -30,9 +31,10 @@ export class JsonStore implements DataStore {
     this.resetsPath = path.join(metaRoot, 'resets.json');
     this.usagePath = path.join(metaRoot, 'usage.json');
     this.connectionsPath = path.join(metaRoot, 'connections.json');
+    this.invitesPath = path.join(metaRoot, 'invites.json');
     this.metaDir = path.join(metaRoot, 'meta');
     this.commentsDir = path.join(metaRoot, 'comments');
-    this.flat = new Set([this.usersPath, this.sessionsPath, this.resetsPath, this.usagePath, this.connectionsPath]);
+    this.flat = new Set([this.usersPath, this.sessionsPath, this.resetsPath, this.usagePath, this.connectionsPath, this.invitesPath]);
   }
 
   async init(): Promise<void> {
@@ -127,6 +129,26 @@ export class JsonStore implements DataStore {
   }
   async getReset(token: string) { return this.clone(this.resets()[token] || null); }
   async deleteReset(token: string) { const r = this.resets(); if (r[token]) { delete r[token]; this.write(this.resetsPath, r); } }
+
+  // ---- invites ----
+  private invites() { return this.read<Record<string, Invite>>(this.invitesPath, {}); }
+  async createInvite(inv: Invite) { const m = this.invites(); m[inv.token] = this.clone(inv); this.write(this.invitesPath, m); }
+  async getInvite(token: string) { return this.clone(this.invites()[token] || null); }
+  async listInvites() { return Object.values(this.invites()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
+  async consumeInvite(token: string, emailLower: string, usedAt: string): Promise<'ok' | 'invalid' | 'expired' | 'used' | 'email'> {
+    // Synchronous read-check-write (no await between them): one process, so two
+    // interleaved registrations can't both consume the same single-use invite.
+    const m = this.invites();
+    const inv = m[token];
+    if (!inv) return 'invalid';
+    if (inv.usedAt) return 'used';
+    if (inv.expiresAt != null && inv.expiresAt < Date.now()) return 'expired';
+    if (inv.email && inv.email.toLowerCase() !== emailLower) return 'email';
+    inv.usedAt = usedAt;
+    this.write(this.invitesPath, m);
+    return 'ok';
+  }
+  async deleteInvite(token: string) { const m = this.invites(); if (m[token]) { delete m[token]; this.write(this.invitesPath, m); } }
 
   // ---- project meta ----
   private metaPath(id: string) { if (!PROJECT_ID_RE.test(id)) throw new Error('bad project id'); return path.join(this.metaDir, `${id}.json`); }

@@ -23,6 +23,8 @@ import * as email from './email.js';
 import { canAccess, isListed, isMember, isOwner, ownerName } from './authz.js';
 import { loginLimiter, registerLimiter, aiLimiter, refLimiter, compileGate, clientKey } from './ratelimit.js';
 import { safeJoin, isTextFile, newId, BRANCH_RE } from './util.js';
+import { db } from './db/index.js';
+import type { Invite } from './db/types.js';
 
 type Q = { branch?: string; path?: string; name?: string; force?: string };
 
@@ -124,19 +126,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/health', async () => ({ ok: true, name: 'aldine' }));
 
   // ---------- auth (env-gated) ----------
-  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, passwordAuth: !auth.SSO_ONLY, user: reqUser(req), providers: oauthProviders() }));
+  app.get('/api/auth/me', async (req) => ({ authEnabled: auth.AUTH_ENABLED, passwordAuth: !auth.SSO_ONLY, inviteOnly: auth.INVITE_ONLY, isAdmin: auth.isAdmin(reqUser(req)), user: reqUser(req), providers: oauthProviders() }));
 
   /** 403 when password sign-in is disabled (SSO-only mode). */
   const passwordDisabled = (reply: any) => reply.code(403).send({ error: 'Password sign-in is disabled — use single sign-on.' });
 
-  app.post<{ Body: { email: string; password: string; name?: string } }>('/api/auth/register', async (req, reply) => {
+  app.post<{ Body: { email: string; password: string; name?: string; invite?: string } }>('/api/auth/register', async (req, reply) => {
     if (!auth.AUTH_ENABLED) return reply.code(400).send({ error: 'Auth is not enabled' });
     if (auth.SSO_ONLY) return passwordDisabled(reply);
     if (!(await registerLimiter.take(clientKey(req)))) return reply.code(429).send({ error: 'Too many accounts created — try again later' });
     const bad = badCredentials(req.body);
     if (bad) return reply.code(400).send({ error: bad });
     try {
-      const user = await auth.register(req.body.email, req.body.password, req.body.name);
+      const user = await auth.register(req.body.email, req.body.password, req.body.name, undefined, req.body.invite);
       reply.header('set-cookie', auth.sessionCookie(await auth.createSession(user.id)));
       // Fire-and-forget a simple welcome email (no verification step). Never let
       // a mail failure affect the signup response.
@@ -227,11 +229,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---------- SSO / OAuth (each provider gated on its client id/secret) ----------
-  app.get<{ Params: { provider: string } }>('/api/auth/oauth/:provider', async (req, reply) => {
+  app.get<{ Params: { provider: string }; Querystring: { invite?: string } }>('/api/auth/oauth/:provider', async (req, reply) => {
     const provider = auth.AUTH_ENABLED ? oauth.getProvider(req.params.provider) : undefined;
     if (!provider) return reply.code(404).send({ error: 'This sign-in provider is not configured' });
     const state = crypto.randomBytes(12).toString('hex');
-    reply.header('set-cookie', `aldine_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`);
+    // An optional ?invite= rides along as a short-lived HttpOnly cookie (never the
+    // state itself), so a new SSO account can be created while invite-only is on.
+    const inviteCookie = req.query.invite ? [`aldine_invite=${encodeURIComponent(req.query.invite)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`] : [];
+    reply.header('set-cookie', [`aldine_oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=600${auth.SECURE_COOKIES ? '; Secure' : ''}`, ...inviteCookie]);
     const redirect = `${publicBase(req)}/api/auth/oauth/${provider.id}/callback`;
     return reply.redirect(provider.authorizeUrl(state, redirect));
   });
@@ -246,8 +251,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       try {
         const profile = await provider.exchange(req.query.code, `${publicBase(req)}/api/auth/oauth/${provider.id}/callback`);
-        const user = await auth.findOrCreateOAuth(profile.email, profile.name, provider.id);
-        reply.header('set-cookie', [auth.sessionCookie(await auth.createSession(user.id)), 'aldine_oauth_state=; Path=/; Max-Age=0']);
+        const invite = cookies.aldine_invite ? decodeURIComponent(cookies.aldine_invite) : undefined;
+        const user = await auth.findOrCreateOAuth(profile.email, profile.name, provider.id, invite);
+        reply.header('set-cookie', [auth.sessionCookie(await auth.createSession(user.id)), 'aldine_oauth_state=; Path=/; Max-Age=0', 'aldine_invite=; Path=/; Max-Age=0']);
         return reply.redirect('/');
       } catch (err: any) {
         return reply.code(400).send({ error: `${provider.label} sign-in failed: ${err.message}` });
@@ -258,6 +264,53 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // so reqUser() is a synchronous read everywhere downstream.
   app.addHook('onRequest', async (req) => {
     (req as any)._user = auth.AUTH_ENABLED ? await auth.userFromRequest(req.headers.cookie) : null;
+  });
+
+  // ---------- admin: invite management (ALDINE_INVITE_ONLY registration) ----------
+  // Env-configured admin emails (ALDINE_ADMIN_EMAILS) create single-use invite
+  // links; anyone with a link can register. Login and project access are untouched.
+  const inviteUrl = (req: FastifyRequest, token: string) => {
+    const base = (process.env.ALDINE_PUBLIC_URL?.replace(/\/$/, '') || publicBase(req));
+    return `${base}/?invite=${encodeURIComponent(token)}`;
+  };
+  const requireAdmin = (req: FastifyRequest, reply: any): auth.PublicUser | null => {
+    const user = reqUser(req);
+    if (!user) { reply.code(401).send({ error: 'Sign in required' }); return null; }
+    if (!auth.isAdmin(user)) { reply.code(403).send({ error: 'Admin privileges required' }); return null; }
+    return user;
+  };
+
+  app.post<{ Body: { email?: string; expiresInDays?: number } }>('/api/admin/invites', async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    const email = (req.body?.email || '').trim().toLowerCase();
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return reply.code(400).send({ error: 'Enter a valid email address' });
+    const days = req.body?.expiresInDays;
+    if (days != null && (!Number.isFinite(days) || days <= 0 || days > 365)) return reply.code(400).send({ error: 'Expiry must be between 1 and 365 days' });
+    const token = crypto.randomBytes(9).toString('base64url');
+    const inv: Invite = {
+      token,
+      email: email || undefined,
+      createdBy: admin.id,
+      createdAt: new Date().toISOString(),
+      expiresAt: days ? Date.now() + days * 864e5 : undefined,
+    };
+    await db().createInvite(inv);
+    return { token, url: inviteUrl(req, token) };
+  });
+
+  app.get('/api/admin/invites', async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    const invites = await db().listInvites();
+    return { invites: invites.map((inv) => ({ ...inv, url: inviteUrl(req, inv.token) })) };
+  });
+
+  app.delete<{ Params: { token: string } }>('/api/admin/invites/:token', async (req, reply) => {
+    const admin = requireAdmin(req, reply);
+    if (!admin) return;
+    await db().deleteInvite(req.params.token);
+    return { ok: true };
   });
 
   // Global guard: enforce project access when auth is on. Runs after routing,

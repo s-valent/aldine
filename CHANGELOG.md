@@ -6,6 +6,15 @@ All notable changes to Aldine are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Invite-only registration: with `ALDINE_INVITE_ONLY=1`, new accounts need a
+  single-use invite link instead of being open to anyone. Admins are configured
+  by `ALDINE_ADMIN_EMAILS` (comma-separated) and can create, list, copy, and
+  revoke invites from an "Invites" dialog in the editor toolbar; invites can be
+  bound to one email and/or expire. Admin emails can still self-register, so a
+  fresh instance is always bootstrapable. Applies to both password sign-up and
+  OAuth sign-up (`?invite=` is carried through the authorize flow).
+
 ### Security
 - The minimal `docker-compose.yml` carries the compiler sandbox again: an
   `internal: true` network with no route to the internet, `cap_drop: [ALL]`,
