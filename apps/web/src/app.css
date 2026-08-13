@@ -442,7 +442,7 @@
 
 /* editor pane */
 .code-pane { flex: 1; min-height: 0; overflow: hidden; position: relative; }
-.code-pane .cm-editor { height: 100%; font-size: 13.5px; }
+.code-pane .cm-editor { height: 100%; font-size: 14.5px; }
 .code-pane .cm-editor.cm-focused { outline: none; }
 .code-pane .cm-scroller { font-family: var(--font-mono); line-height: 1.55; }
 .code-pane .cm-gutters { background: var(--bg-panel); border-right: 1px solid var(--hairline); color: var(--text-3); }

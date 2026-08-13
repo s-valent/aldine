@@ -1,9 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars, Decoration, DecorationSet } from '@codemirror/view';
-import { EditorState, StateField, StateEffect, Compartment } from '@codemirror/state';
-import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle } from '@codemirror/language';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, rectangularSelection, highlightSpecialChars, Decoration, DecorationSet, type Command } from '@codemirror/view';
+import { EditorState, StateField, StateEffect, Compartment, EditorSelection } from '@codemirror/state';
+import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle, indentUnit } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
-import { defaultKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, indentLess, insertNewlineKeepIndent } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { latex } from 'codemirror-lang-latex';
@@ -42,6 +42,21 @@ function reanchor(doc: Text, r: CommentRange): CommentRange {
   if (best === -1) return { ...r, from, to }; // quote gone — keep clamped offset
   return { ...r, from: best, to: best + r.quote.length };
 }
+
+// Tab inserts four spaces (soft tab) instead of a literal \t — the LaTeX
+// toolchain copies whatever the editor saved, so hard tabs would leak into
+// the source files. shift+Tab outdents.
+const insertFourSpaces: Command = ({ state, dispatch }) => {
+  const insert = '    ';
+  dispatch(state.update(
+    state.changeByRange((range) => ({
+      changes: { from: range.from, to: range.to, insert },
+      range: EditorSelection.cursor(range.from + insert.length),
+    })),
+    { scrollIntoView: true, userEvent: 'input' },
+  ));
+  return true;
+};
 
 export interface CodePaneHandle {
   gotoLine(line: number): void;
@@ -139,6 +154,29 @@ const aldineTheme = EditorView.theme({
   '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: 'var(--accent)', color: 'var(--on-accent)' },
   '.cm-completionDetail': { fontStyle: 'normal', opacity: 0.65, fontSize: '11px' },
   '.cm-panels': { backgroundColor: 'var(--bg-inset)', color: 'var(--text)', borderColor: 'var(--hairline)' },
+  // Search panel: without explicit input/button rules the browser-default
+  // white input background meets the inherited light text → invisible in dark mode.
+  '.cm-panel.cm-search': { padding: '4px 6px', backgroundColor: 'var(--bg-inset)', color: 'var(--text)' },
+  '.cm-panel.cm-search input': {
+    background: 'var(--bg-panel)',
+    color: 'var(--text)',
+    border: '1px solid var(--hairline)',
+    borderRadius: 'var(--radius-s)',
+    padding: '2px 6px',
+    font: 'inherit',
+  },
+  '.cm-panel.cm-search input:focus': { borderColor: 'var(--accent)', outline: 'none' },
+  '.cm-panel.cm-search button': {
+    background: 'var(--bg-panel)',
+    color: 'var(--text)',
+    border: '1px solid var(--hairline)',
+    borderRadius: 'var(--radius-s)',
+    padding: '0 8px',
+    height: '22px',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  '.cm-panel.cm-search button:hover': { background: 'var(--bg-hover)' },
 });
 
 /** Spellcheck is presentation config, swapped at runtime via a Compartment. */
@@ -263,6 +301,8 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           foldGutter(),
           drawSelection(),
           EditorState.allowMultipleSelections.of(true),
+          EditorState.tabSize.of(4),
+          indentUnit.of('    '),
           indentOnInput(),
           syntaxHighlighting(aldineHighlight),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
@@ -281,12 +321,17 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
           refCompletionSource(projectId, branch, () => filePath),
           citeHoverTooltip(projectId, branch),
           keymap.of([
+            // Enter carries the current line's leading whitespace onto the new
+            // line, so typed content keeps the surrounding indentation. The
+            // default (insertNewlineAndIndent) re-indents from syntax and
+            // snaps to the column edge; a bare newline drops all indent.
+            { key: 'Enter', run: insertNewlineKeepIndent },
             ...closeBracketsKeymap,
             ...defaultKeymap,
             ...searchKeymap,
             ...yUndoManagerKeymap,
             ...completionKeymap,
-            indentWithTab,
+            { key: 'Tab', run: insertFourSpaces, shift: indentLess },
             { key: 'Mod-s', run: () => { cbRef.current.onSave(); return true; } },
             { key: 'Mod-j', run: () => { cbRef.current.onJumpToPdf?.(); return true; } },
             { key: 'Mod-b', run: toggleStyle('bold') },
