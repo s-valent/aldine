@@ -256,6 +256,7 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
   useEffect(() => {
     if (!hostRef.current) return;
     let statsTimer: ReturnType<typeof setTimeout> | null = null;
+    let altClickPos: { x: number; y: number } | null = null;
     warmBib(projectId, branch); // so \cite hover tooltips have data immediately
     const docName = `${projectId}::${branch}::${filePath}`;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -367,6 +368,27 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
             { key: 'Mod-b', run: toggleStyle('bold') },
             { key: 'Mod-i', run: toggleStyle('italic') },
           ]),
+          EditorView.domEventHandlers({
+            // Alt+click → forward SyncTeX: put the caret where clicked and jump
+            // the PDF to that line. Alt-drag (rectangular selection) still works
+            // because a drag ends farther than 3px from its mousedown.
+            mousedown(event, view) {
+              if (event.altKey && event.button === 0) altClickPos = { x: event.clientX, y: event.clientY };
+              return false;
+            },
+            click(event, view) {
+              const down = altClickPos;
+              altClickPos = null;
+              if (!event.altKey || event.button !== 0 || !down) return false;
+              if (Math.abs(down.x - event.clientX) > 3 || Math.abs(down.y - event.clientY) > 3) return false;
+              event.preventDefault();
+              const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+              if (pos == null) return true;
+              view.dispatch({ selection: { anchor: pos } });
+              cbRef.current.onJumpToPdf?.();
+              return true;
+            },
+          }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) cbRef.current.onDocChanged?.();
             if (u.docChanged || u.selectionSet) {

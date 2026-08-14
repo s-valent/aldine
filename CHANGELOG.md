@@ -14,6 +14,9 @@ All notable changes to Aldine are documented here. The format follows
   bound to one email and/or expire. Admin emails can still self-register, so a
   fresh instance is always bootstrapable. Applies to both password sign-up and
   OAuth sign-up (`?invite=` is carried through the authorize flow).
+- Forward SyncTeX from the mouse: Alt+click anywhere in the source editor puts
+  the caret there and jumps the PDF to that line, alongside the existing ⌘J
+  shortcut. Alt-drag rectangular selection still works.
 
 ### Security
 - The minimal `docker-compose.yml` carries the compiler sandbox again: an
