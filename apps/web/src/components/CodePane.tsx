@@ -3,7 +3,7 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLi
 import { EditorState, StateField, StateEffect, Compartment, EditorSelection } from '@codemirror/state';
 import { indentOnInput, bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle, HighlightStyle, indentUnit } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
-import { defaultKeymap, indentLess, insertNewlineKeepIndent } from '@codemirror/commands';
+import { defaultKeymap, indentLess, insertNewlineKeepIndent, addCursorAbove, addCursorBelow, copyLineUp, copyLineDown, moveLineUp, moveLineDown } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { latex } from 'codemirror-lang-latex';
@@ -345,6 +345,17 @@ const CodePane = forwardRef<CodePaneHandle, Props>(function CodePane({ projectId
             // default (insertNewlineAndIndent) re-indents from syntax and
             // snaps to the column edge; a bare newline drops all indent.
             { key: 'Enter', run: insertNewlineKeepIndent },
+            // Remap of CodeMirror's Alt/Shift-Alt arrow defaults. macOS eats
+            // bare Ctrl-ArrowUp/Down at the OS level, so move-line is bound to
+            // Ctrl-Shift-ArrowUp/Down; Alt-ArrowUp/Down grows the cursor, and
+            // Shift-Alt-ArrowUp/Down duplicates the line. Ordered before
+            // ...defaultKeymap, whose Alt bindings would otherwise win.
+            { key: 'Alt-ArrowUp', run: addCursorAbove },
+            { key: 'Alt-ArrowDown', run: addCursorBelow },
+            { key: 'Shift-Alt-ArrowUp', run: copyLineUp },
+            { key: 'Shift-Alt-ArrowDown', run: copyLineDown },
+            { key: 'Ctrl-Shift-ArrowUp', run: moveLineUp },
+            { key: 'Ctrl-Shift-ArrowDown', run: moveLineDown },
             ...closeBracketsKeymap,
             ...defaultKeymap,
             ...searchKeymap,

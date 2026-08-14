@@ -73,6 +73,11 @@ All notable changes to Aldine are documented here. The format follows
   described resizing a server type that is no longer the default.
 - The landing page announced "Typeset in 0.4s" a paragraph above "about two
   seconds"; the README says ~2s, so the page does now too.
+- ESC now closes the commit-diff modal in History (before it only closed on the
+  Close button or a backdrop click). The editor shortcuts are remapped to be
+  macOS-safe: `Alt+ArrowUp/Down` grows the cursor, `Shift+Alt+ArrowUp/Down`
+  duplicates the line, and `Ctrl+Shift+ArrowUp/Down` moves the line (macOS
+  swallows bare `Ctrl+ArrowUp/Down`).
 
 ## [0.3.0] — 2026-08-03
 

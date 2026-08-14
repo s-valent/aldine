@@ -3,6 +3,7 @@ import { api, LogEntry, localUser } from '../api';
 import { useToast } from './Toast';
 import { friendlyDate } from '../util/dates';
 import DiffView from './DiffView';
+import Modal from './Modal';
 
 export default function HistoryPanel({ projectId, branch }: { projectId: string; branch: string }) {
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -57,14 +58,12 @@ export default function HistoryPanel({ projectId, branch }: { projectId: string;
       {log.length === 0 && <p style={{ color: 'var(--text-2)', padding: 8 }}>No history yet on this branch.</p>}
 
       {diff && (
-        <div className="modal-backdrop" onClick={() => setDiff(null)}>
-          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 2 }}>{diff.entry.message}</h2>
-            <p className="modal__sub">{diff.entry.author} · {friendlyDate(diff.entry.date)} · {diff.entry.hash.slice(0, 10)}</p>
-            <DiffView patch={diff.patch} />
-            <div className="modal__row"><button className="btn" onClick={() => setDiff(null)}>Close</button></div>
-          </div>
-        </div>
+        <Modal wide label={`Changes for ${diff.entry.message}`} onClose={() => setDiff(null)}>
+          <h2 style={{ marginBottom: 2 }}>{diff.entry.message}</h2>
+          <p className="modal__sub">{diff.entry.author} · {friendlyDate(diff.entry.date)} · {diff.entry.hash.slice(0, 10)}</p>
+          <DiffView patch={diff.patch} />
+          <div className="modal__row"><button className="btn" onClick={() => setDiff(null)}>Close</button></div>
+        </Modal>
       )}
     </div>
   );
